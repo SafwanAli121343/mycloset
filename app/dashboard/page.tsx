@@ -1,0 +1,190 @@
+"use client";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+
+const FONT = { fontFamily: "Arial, sans-serif" };
+
+const NAV = [
+  { label: "MY CLOSET", href: "/closet" },
+  { label: "ADD ITEM", href: "/add-item" },
+  { label: "CALENDAR", href: "/calendar" },
+  { label: "OUTFITS", href: "/outfits" },
+  { label: "BUILDER", href: "/builder" },
+  { label: "PREVIEW", href: "/preview" },
+  { label: "WARDROBE", href: "/wardrobe-analysis" },
+];
+
+const SCATTER_SRCS = Array.from({ length: 42 }, (_, i) => `/scatter/piece${i + 21}.png`);
+const SPEED  = 84; // px per second — consistent regardless of frame rate
+const COUNT  = 4;
+
+function rand(a: number, b: number) { return Math.random() * (b - a) + a; }
+
+type Piece = { src: string; h: number };
+type Ball  = { x: number; y: number; vx: number; vy: number };
+
+export default function DashboardPage() {
+  const router    = useRouter();
+  const { signOut } = useAuth();
+  const menuRef   = useRef<HTMLDivElement>(null);
+  const imgRefs   = useRef<(HTMLImageElement | null)[]>([]);
+  const balls     = useRef<Ball[]>([]);
+  const rafId     = useRef(0);
+
+  const [wardrobeScore, setWardrobeScore] = useState<number | null>(null);
+
+  // Pieces are stable — picked once on mount, never change
+  const [pieces] = useState<Piece[]>(() =>
+    [...SCATTER_SRCS]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, COUNT)
+      .map(src => ({ src, h: Math.round(rand(120, 175)) }))
+  );
+
+  useEffect(() => {
+    fetch("/api/scoring")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.wardrobeScore != null) setWardrobeScore(d.wardrobeScore); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+
+    // Place each piece near a corner, moving diagonally inward
+    const corners = [
+      { x: 40,       y: 40 },
+      { x: W - 200,  y: 40 },
+      { x: 40,       y: H - 200 },
+      { x: W - 200,  y: H - 200 },
+    ];
+    const signs = [
+      { sx:  1, sy:  1 },
+      { sx: -1, sy:  1 },
+      { sx:  1, sy: -1 },
+      { sx: -1, sy: -1 },
+    ];
+
+    balls.current = pieces.map((_, i) => ({
+      x:  corners[i].x,
+      y:  corners[i].y,
+      vx: SPEED * signs[i].sx,
+      vy: SPEED * signs[i].sy,
+    }));
+
+    let lastTime = 0;
+
+    function tick(now: number) {
+      // Delta time in seconds; cap at 3 frames worth to avoid large jumps after tab switch
+      const dt = lastTime === 0 ? 0 : Math.min((now - lastTime) / 1000, 3 / 60);
+      lastTime = now;
+
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      const menu = menuRef.current?.getBoundingClientRect() ?? null;
+
+      balls.current.forEach((b, i) => {
+        const el = imgRefs.current[i];
+        if (!el) return;
+        const pw = el.offsetWidth  || 100;
+        const ph = el.offsetHeight || pieces[i].h;
+
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+
+        // Screen edges
+        if (b.x <= 0)        { b.x = 0;      b.vx =  Math.abs(b.vx); }
+        if (b.x + pw >= W)   { b.x = W - pw; b.vx = -Math.abs(b.vx); }
+        if (b.y <= 0)        { b.y = 0;      b.vy =  Math.abs(b.vy); }
+        if (b.y + ph >= H)   { b.y = H - ph; b.vy = -Math.abs(b.vy); }
+
+        // Menu block — reflect off whichever face was penetrated least
+        if (menu) {
+          const pad = 20;
+          const ml = menu.left  - pad;
+          const mr = menu.right + pad;
+          const mt = menu.top   - pad;
+          const mb = menu.bottom + pad;
+
+          if (b.x + pw > ml && b.x < mr && b.y + ph > mt && b.y < mb) {
+            const dLeft   = b.x + pw - ml;
+            const dRight  = mr - b.x;
+            const dTop    = b.y + ph - mt;
+            const dBottom = mb - b.y;
+            const min = Math.min(dLeft, dRight, dTop, dBottom);
+
+            if (min === dLeft)        { b.x = ml - pw; b.vx = -Math.abs(b.vx); }
+            else if (min === dRight)  { b.x = mr;      b.vx =  Math.abs(b.vx); }
+            else if (min === dTop)    { b.y = mt - ph; b.vy = -Math.abs(b.vy); }
+            else                      { b.y = mb;      b.vy =  Math.abs(b.vy); }
+          }
+        }
+
+        // Re-normalize to exact speed after all collision resolution
+        b.vx = SPEED * Math.sign(b.vx);
+        b.vy = SPEED * Math.sign(b.vy);
+
+        el.style.left = `${b.x}px`;
+        el.style.top  = `${b.y}px`;
+      });
+
+      rafId.current = requestAnimationFrame(tick);
+    }
+
+    // Small delay so images paint and have real dimensions
+    const t = setTimeout(() => { rafId.current = requestAnimationFrame(tick); }, 80);
+    return () => { clearTimeout(t); cancelAnimationFrame(rafId.current); };
+  }, [pieces]);
+
+  return (
+    <main className="relative min-h-screen bg-white flex flex-col items-center justify-center overflow-hidden">
+      {pieces.map((p, i) => (
+        <img
+          key={i}
+          ref={el => { imgRefs.current[i] = el; }}
+          src={p.src}
+          alt=""
+          draggable={false}
+          className="absolute pointer-events-none select-none"
+          style={{ position: "absolute", height: p.h, width: "auto", left: 0, top: 0 }}
+          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+      ))}
+
+      <div
+        ref={menuRef}
+        className="relative z-10 flex flex-col items-center"
+        style={{ transform: "translateY(-4vh)" }}
+      >
+        <p
+          className="text-3xl font-bold uppercase tracking-[0.04em] mb-2 text-black"
+          style={FONT}
+        >
+          MYCLOSET
+        </p>
+
+        <div className="border border-black divide-y divide-black w-64">
+          {NAV.map(({ label, href }) => (
+            <button
+              key={label}
+              onClick={() => router.push(href)}
+              className="w-full py-4 bg-white text-black font-bold uppercase text-sm transition-colors duration-150 hover:bg-black hover:text-white"
+              style={FONT}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            onClick={signOut}
+            className="w-full py-4 bg-white text-black font-bold uppercase text-sm transition-colors duration-150 hover:bg-black hover:text-white"
+            style={FONT}
+          >
+            SIGN OUT
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}

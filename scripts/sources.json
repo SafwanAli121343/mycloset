@@ -1,0 +1,3445 @@
+[
+  {
+    "brand": "Stussy",
+    "type": "shopify",
+    "domain": "stussy.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "HUF",
+    "type": "shopify",
+    "domain": "www.hufworldwide.com",
+    "collections": [
+      "mens"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "skate"
+    ]
+  },
+  {
+    "brand": "Palace",
+    "type": "shopify",
+    "domain": "www.palaceskateboards.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "skate"
+    ]
+  },
+  {
+    "brand": "BAPE",
+    "type": "shopify",
+    "domain": "us.bape.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "hype"
+    ]
+  },
+  {
+    "brand": "Kith",
+    "type": "shopify",
+    "domain": "kith.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "luxury-streetwear"
+    ]
+  },
+  {
+    "brand": "Awake NY",
+    "type": "shopify",
+    "domain": "awakenyclothing.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Carrots",
+    "type": "shopify",
+    "domain": "anwarcarrots.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Corteiz",
+    "type": "shopify",
+    "domain": "crtz.xyz",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "hype"
+    ]
+  },
+  {
+    "brand": "Denim Tears",
+    "type": "shopify",
+    "domain": "denimtears.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Gallery Dept.",
+    "type": "shopify",
+    "domain": "gallerydept.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "vintage",
+      "art"
+    ]
+  },
+  {
+    "brand": "Pleasures",
+    "type": "shopify",
+    "domain": "pleasuresnow.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "punk"
+    ]
+  },
+  {
+    "brand": "Obey",
+    "type": "shopify",
+    "domain": "obeyclothing.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "skate"
+    ]
+  },
+  {
+    "brand": "Dime",
+    "type": "shopify",
+    "domain": "dimemtl.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "skate"
+    ]
+  },
+  {
+    "brand": "Golf Wang",
+    "type": "shopify",
+    "domain": "golfwang.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Nahmias",
+    "type": "shopify",
+    "domain": "nahmias.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "luxury-streetwear"
+    ]
+  },
+  {
+    "brand": "KidSuper",
+    "type": "shopify",
+    "domain": "kidsuper.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "art",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Market",
+    "type": "firecrawl",
+    "url": "https://marketstudios.com/collections/all",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Anti Social Social Club",
+    "type": "shopify",
+    "domain": "antisocialsocialclub.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "hype"
+    ]
+  },
+  {
+    "brand": "Hellstar",
+    "type": "shopify",
+    "domain": "hellstar.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "punk",
+      "goth"
+    ]
+  },
+  {
+    "brand": "MISBHV",
+    "type": "shopify",
+    "domain": "misbhv.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "club",
+      "y2k"
+    ]
+  },
+  {
+    "brand": "Museum of Peace & Quiet",
+    "type": "shopify",
+    "domain": "museumofpeaceandquiet.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Cherry LA",
+    "type": "shopify",
+    "domain": "cherrylosangeles.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "skate"
+    ]
+  },
+  {
+    "brand": "Honor the Gift",
+    "type": "shopify",
+    "domain": "honorthegift.co",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "One of These Days",
+    "type": "shopify",
+    "domain": "oneofthesedays.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Daily Paper",
+    "type": "shopify",
+    "domain": "dailypaperclothing.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "STAMPD",
+    "type": "shopify",
+    "domain": "stampd.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "MNML",
+    "type": "shopify",
+    "domain": "mnml.la",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "FFF Postal Service",
+    "type": "shopify",
+    "domain": "fffpostalservice.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "SECNDSLF",
+    "type": "shopify",
+    "domain": "secndslf.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Brain Dead",
+    "type": "firecrawl",
+    "url": "https://brain-dead.com/collections/all",
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "skate",
+      "punk"
+    ]
+  },
+  {
+    "brand": "ICECREAM",
+    "type": "firecrawl",
+    "url": "https://icecreamclo.com/collections/all",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "hype"
+    ]
+  },
+  {
+    "brand": "Billionaire Boys Club",
+    "type": "firecrawl",
+    "url": "https://bbcicecream.eu/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "hype"
+    ]
+  },
+  {
+    "brand": "Ripndip",
+    "type": "shopify",
+    "domain": "ripndip.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "skate",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Butter Goods",
+    "type": "shopify",
+    "domain": "www.buttergoods.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "skate",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Bianca Chandon",
+    "type": "shopify",
+    "domain": "biancachandon.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "skate",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "By Parra",
+    "type": "shopify",
+    "domain": "byparra.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "skate",
+      "streetwear",
+      "art"
+    ]
+  },
+  {
+    "brand": "The Quiet Life",
+    "type": "shopify",
+    "domain": "thequietlife.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "skate",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Aim\u00e9 Leon Dore",
+    "type": "shopify",
+    "domain": "www.aimeleondore.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "prep",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Fear of God",
+    "type": "shopify",
+    "domain": "fearofgod.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "Rhude",
+    "type": "shopify",
+    "domain": "rh-ude.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear"
+    ]
+  },
+  {
+    "brand": "AMIRI",
+    "type": "shopify",
+    "domain": "amiri.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "rock"
+    ]
+  },
+  {
+    "brand": "Heron Preston",
+    "type": "shopify",
+    "domain": "www.heronpreston.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Off-White",
+    "type": "firecrawl",
+    "url": "https://www.off---white.com/en-us/mens",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Palm Angels",
+    "type": "firecrawl",
+    "url": "https://www.palmangels.com/en-us/men",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "A.P.C.",
+    "type": "shopify",
+    "domain": "www.apc.fr",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "minimalist",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Studio Nicholson",
+    "type": "shopify",
+    "domain": "studionicholson.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "minimalist",
+      "contemporary",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "Our Legacy",
+    "type": "firecrawl",
+    "url": "https://www.ourlegacy.com/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Reigning Champ",
+    "type": "shopify",
+    "domain": "reigningchamp.myshopify.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "athletic",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "John Elliott",
+    "type": "shopify",
+    "domain": "johnelliott.co",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "streetwear",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Noah NYC",
+    "type": "shopify",
+    "domain": "noahny.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "prep",
+      "streetwear",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Corridor NYC",
+    "type": "shopify",
+    "domain": "corridornyc.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Wax London",
+    "type": "shopify",
+    "domain": "waxlondon.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "contemporary",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Universal Works",
+    "type": "shopify",
+    "domain": "universalworks.co.uk",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "contemporary",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Folk",
+    "type": "shopify",
+    "domain": "folkclothing.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Oliver Spencer",
+    "type": "shopify",
+    "domain": "oliverspencer.co.uk",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Sunspel",
+    "type": "shopify",
+    "domain": "www.sunspel.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "minimalist",
+      "quiet-luxury",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Albam",
+    "type": "shopify",
+    "domain": "www.albamclothing.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Soulland",
+    "type": "shopify",
+    "domain": "soulland.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Etudes",
+    "type": "shopify",
+    "domain": "etudes-studio.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "art"
+    ]
+  },
+  {
+    "brand": "Eytys",
+    "type": "shopify",
+    "domain": "www.eytys.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "contemporary",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Officine G\u00e9n\u00e9rale",
+    "type": "shopify",
+    "domain": "officinegenerale.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "contemporary",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "Carne Bollente",
+    "type": "shopify",
+    "domain": "carnebollente.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "art"
+    ]
+  },
+  {
+    "brand": "Filling Pieces",
+    "type": "shopify",
+    "domain": "www.fillingpieces.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Rowing Blazers",
+    "type": "shopify",
+    "domain": "rowingblazers.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "prep",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Drake's",
+    "type": "shopify",
+    "domain": "drakes.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "prep",
+      "tailoring"
+    ]
+  },
+  {
+    "brand": "Polo Ralph Lauren",
+    "type": "firecrawl",
+    "url": "https://www.ralphlauren.com/mens",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "old-money",
+      "prep",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Lacoste",
+    "type": "firecrawl",
+    "url": "https://www.lacoste.com/us/lacoste/men/",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "prep",
+      "sport",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Barbour",
+    "type": "firecrawl",
+    "url": "https://www.barbour.com/us/en/c/mens",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "old-money",
+      "heritage",
+      "british"
+    ]
+  },
+  {
+    "brand": "Margaret Howell",
+    "type": "shopify",
+    "domain": "margarethowell.co.uk",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "minimalist",
+      "quiet-luxury",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Monitaly",
+    "type": "shopify",
+    "domain": "www.monitaly.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "japanese-heritage",
+      "tailoring"
+    ]
+  },
+  {
+    "brand": "Evan Kinori",
+    "type": "shopify",
+    "domain": "evankinori.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "minimalist",
+      "contemporary",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "Saturdays NYC",
+    "type": "shopify",
+    "domain": "saturdaysnyc.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "surf",
+      "coastal",
+      "prep"
+    ]
+  },
+  {
+    "brand": "Snow Peak",
+    "type": "shopify",
+    "domain": "snowpeak.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "outdoor",
+      "japanese-gorpcore"
+    ]
+  },
+  {
+    "brand": "Gramicci",
+    "type": "shopify",
+    "domain": "gramicci.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "gorpcore",
+      "outdoor",
+      "japanese-gorpcore"
+    ]
+  },
+  {
+    "brand": "Post Archive Faction",
+    "type": "shopify",
+    "domain": "postarchivefaction.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "techwear"
+    ]
+  },
+  {
+    "brand": "Cotopaxi",
+    "type": "shopify",
+    "domain": "www.cotopaxi.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "gorpcore",
+      "outdoor"
+    ]
+  },
+  {
+    "brand": "White Mountaineering",
+    "type": "shopify",
+    "domain": "whitemountaineering.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "gorpcore",
+      "japanese-gorpcore",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Vollebak",
+    "type": "shopify",
+    "domain": "vollebak.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "techwear",
+      "outdoor"
+    ]
+  },
+  {
+    "brand": "District Vision",
+    "type": "shopify",
+    "domain": "districtvision.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "running",
+      "gorpcore",
+      "athletic"
+    ]
+  },
+  {
+    "brand": "The North Face",
+    "type": "firecrawl",
+    "url": "https://www.thenorthface.com/en-us/men",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "gorpcore",
+      "outdoor",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Patagonia",
+    "type": "firecrawl",
+    "url": "https://www.patagonia.com/shop/mens-new-arrivals",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "outdoor",
+      "surf"
+    ]
+  },
+  {
+    "brand": "Arc'teryx",
+    "type": "firecrawl",
+    "url": "https://arcteryx.com/us/en/shop/mens",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "techwear",
+      "outdoor"
+    ]
+  },
+  {
+    "brand": "Salomon",
+    "type": "firecrawl",
+    "url": "https://www.salomon.com/en-us/sport-us/trail-running/men",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "outdoor",
+      "running"
+    ]
+  },
+  {
+    "brand": "Hoka",
+    "type": "firecrawl",
+    "url": "https://www.hoka.com/en-us/mens/",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "gorpcore",
+      "running",
+      "athletic"
+    ]
+  },
+  {
+    "brand": "Nanamica",
+    "type": "firecrawl",
+    "url": "https://www.nanamica.com/shop/en/list",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "gorpcore",
+      "japanese-gorpcore",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Goldwin",
+    "type": "firecrawl",
+    "url": "https://goldwin.com/collections/all",
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "gorpcore",
+      "japanese-gorpcore",
+      "techwear"
+    ]
+  },
+  {
+    "brand": "Engineered Garments",
+    "type": "firecrawl",
+    "url": "https://engineeredgarments.com/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "gorpcore",
+      "workwear",
+      "americana"
+    ]
+  },
+  {
+    "brand": "GR10K",
+    "type": "shopify",
+    "domain": "gr10k.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "techwear",
+      "gorpcore"
+    ]
+  },
+  {
+    "brand": "AFFXWRKS",
+    "type": "shopify",
+    "domain": "affxwrks.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "techwear",
+      "gorpcore",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Dickies",
+    "type": "shopify",
+    "domain": "www.dickies.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "workwear",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Alpha Industries",
+    "type": "shopify",
+    "domain": "www.alphaindustries.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "workwear",
+      "military"
+    ]
+  },
+  {
+    "brand": "Champion",
+    "type": "shopify",
+    "domain": "www.champion.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "athletic",
+      "americana",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Filson",
+    "type": "shopify",
+    "domain": "www.filson.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "workwear",
+      "heritage",
+      "americana",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Carhartt WIP",
+    "type": "firecrawl",
+    "url": "https://www.carhartt-wip.com/en/collections/all",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "workwear",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Stan Ray",
+    "type": "firecrawl",
+    "url": "https://stan-ray.com/collections/all",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "workwear",
+      "vintage",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Maharishi",
+    "type": "shopify",
+    "domain": "maharishistore.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "military",
+      "gorpcore"
+    ]
+  },
+  {
+    "brand": "Story MFG.",
+    "type": "shopify",
+    "domain": "storymfg.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "sustainable",
+      "vintage"
+    ]
+  },
+  {
+    "brand": "New Era",
+    "type": "shopify",
+    "domain": "www.neweracap.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "athletic",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Satisfy Running",
+    "type": "shopify",
+    "domain": "satisfyrunning.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "running",
+      "gorpcore",
+      "athletic"
+    ]
+  },
+  {
+    "brand": "Tracksmith",
+    "type": "firecrawl",
+    "url": "https://www.tracksmith.com/collections/all",
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "running",
+      "prep",
+      "athletic"
+    ]
+  },
+  {
+    "brand": "Nike",
+    "type": "firecrawl",
+    "url": "https://www.nike.com/w/mens-lifestyle-shoes-13jrmznik1",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "athletic",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Jordan",
+    "type": "firecrawl",
+    "url": "https://www.nike.com/w/mens-jordan-shoes-37eefznik1zy7ok",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "athletic",
+      "streetwear",
+      "hype"
+    ]
+  },
+  {
+    "brand": "Adidas",
+    "type": "firecrawl",
+    "url": "https://www.adidas.com/us/men-originals",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "athletic",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "New Balance",
+    "type": "firecrawl",
+    "url": "https://www.newbalance.com/men/shoes/?srule=price-high-to-low",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "athletic",
+      "gorpcore",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "ASICS",
+    "type": "firecrawl",
+    "url": "https://www.asics.com/us/en-us/mens-shoes/",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "athletic",
+      "gorpcore",
+      "running"
+    ]
+  },
+  {
+    "brand": "Converse",
+    "type": "firecrawl",
+    "url": "https://www.converse.com/c/mens-shoes",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "skate",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Vans",
+    "type": "firecrawl",
+    "url": "https://www.vans.com/en-us/mens/shoes/",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "skate",
+      "streetwear",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Iron Heart",
+    "type": "shopify",
+    "domain": "www.ironheart.co.uk",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-heritage",
+      "workwear",
+      "denim"
+    ]
+  },
+  {
+    "brand": "Ksubi",
+    "type": "shopify",
+    "domain": "ksubi.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "denim",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Purple Brand",
+    "type": "shopify",
+    "domain": "purple-brand.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "denim"
+    ]
+  },
+  {
+    "brand": "Evisu",
+    "type": "shopify",
+    "domain": "us.evisu.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-heritage",
+      "denim",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Naked & Famous",
+    "type": "shopify",
+    "domain": "tateandyoko.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "denim",
+      "japanese-heritage"
+    ]
+  },
+  {
+    "brand": "Nudie Jeans",
+    "type": "firecrawl",
+    "url": "https://www.nudiejeans.com/collections/men",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "denim",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Edwin",
+    "type": "firecrawl",
+    "url": "https://edwinjeans.com/collections/men",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "denim",
+      "japanese-heritage"
+    ]
+  },
+  {
+    "brand": "Levi's",
+    "type": "firecrawl",
+    "url": "https://www.levi.com/US/en_US/clothing/men/",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "denim",
+      "americana",
+      "vintage"
+    ]
+  },
+  {
+    "brand": "WTAPS",
+    "type": "shopify",
+    "domain": "www.wtaps.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "military",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Neighborhood",
+    "type": "shopify",
+    "domain": "www.neighborhood.jp",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "americana",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Samurai Jeans",
+    "type": "shopify",
+    "domain": "www.samurai-jeans.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-heritage",
+      "denim"
+    ]
+  },
+  {
+    "brand": "Human Made",
+    "type": "firecrawl",
+    "url": "https://humanmade.jp/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "vintage",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Wacko Maria",
+    "type": "firecrawl",
+    "url": "https://wackomaria-paradisetokyo.jp/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "vintage",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Kapital",
+    "type": "firecrawl",
+    "url": "https://kapital-webshop.jp/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-heritage",
+      "vintage",
+      "americana"
+    ]
+  },
+  {
+    "brand": "Visvim",
+    "type": "firecrawl",
+    "url": "https://visvim.com/collections/all",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "japanese-heritage",
+      "americana",
+      "workwear"
+    ]
+  },
+  {
+    "brand": "Needles",
+    "type": "firecrawl",
+    "url": "https://www.nepenthes.co.jp/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "vintage",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Auralee",
+    "type": "firecrawl",
+    "url": "https://auralee.jp/en/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "japanese-heritage",
+      "minimalist",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "sacai",
+    "type": "shopify",
+    "domain": "sacai.jp",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "japanese-streetwear",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "TAAKK",
+    "type": "shopify",
+    "domain": "www.taakk.jp",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Rick Owens",
+    "type": "shopify",
+    "domain": "www.rickowens.eu",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "goth"
+    ]
+  },
+  {
+    "brand": "Craig Green",
+    "type": "shopify",
+    "domain": "craig-green.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Martine Rose",
+    "type": "shopify",
+    "domain": "martine-rose.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "avant-garde",
+      "streetwear",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Julius",
+    "type": "shopify",
+    "domain": "julius-garden.online",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "goth",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Issey Miyake",
+    "type": "shopify",
+    "domain": "www.isseymiyake.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Boris Bidjan Saberi",
+    "type": "firecrawl",
+    "url": "https://www.borisbidjansaberi.com/collections/all",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "goth",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Comme des Gar\u00e7ons",
+    "type": "firecrawl",
+    "url": "https://shop.comme-des-garcons.com/collections/all",
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Junya Watanabe",
+    "type": "firecrawl",
+    "url": "https://www.junlaw.jp/collections/all",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "japanese-streetwear",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Yohji Yamamoto",
+    "type": "firecrawl",
+    "url": "https://www.yohjiyamamoto.co.jp/collections/all",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "goth"
+    ]
+  },
+  {
+    "brand": "Undercover",
+    "type": "firecrawl",
+    "url": "https://undercoverism.com/collections/all",
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "japanese-streetwear",
+      "punk"
+    ]
+  },
+  {
+    "brand": "Vetements",
+    "type": "firecrawl",
+    "url": "https://vetementswebsite.com/collections/all",
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "streetwear",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Maison Mihara Yasuhiro",
+    "type": "firecrawl",
+    "url": "https://miharayasuhiro.jp/collections/all",
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "japanese-streetwear",
+      "y2k"
+    ]
+  },
+  {
+    "brand": "1017 ALYX 9SM",
+    "type": "firecrawl",
+    "url": "https://www.alyxstudio.com/collections/all",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "avant-garde",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Ambush",
+    "type": "firecrawl",
+    "url": "https://www.ambushdesign.com/collections/all",
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "avant-garde",
+      "jewelry"
+    ]
+  },
+  {
+    "brand": "Bode",
+    "type": "shopify",
+    "domain": "bodenewyork.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "vintage",
+      "americana",
+      "art"
+    ]
+  },
+  {
+    "brand": "Eckhaus Latta",
+    "type": "shopify",
+    "domain": "shop.eckhauslatta.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "art",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Jordan Luca",
+    "type": "shopify",
+    "domain": "jordanluca.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Bianca Saunders",
+    "type": "shopify",
+    "domain": "biancasaunders.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "contemporary",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Stefan Cooke",
+    "type": "shopify",
+    "domain": "stefan-cooke.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "tailoring",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "OAMC",
+    "type": "shopify",
+    "domain": "oamc.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "contemporary",
+      "military",
+      "gorpcore"
+    ]
+  },
+  {
+    "brand": "A-COLD-WALL*",
+    "type": "shopify",
+    "domain": "a-cold-wall.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "techwear",
+      "avant-garde",
+      "streetwear"
+    ]
+  },
+  {
+    "brand": "Random Identities",
+    "type": "shopify",
+    "domain": "randomidentities.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "goth",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Perks and Mini",
+    "type": "shopify",
+    "domain": "www.perksandmini.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "avant-garde",
+      "streetwear",
+      "art"
+    ]
+  },
+  {
+    "brand": "Martine Ali",
+    "type": "shopify",
+    "domain": "martineali.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "avant-garde",
+      "jewelry",
+      "rock"
+    ]
+  },
+  {
+    "brand": "Adidem Asterisks",
+    "type": "shopify",
+    "domain": "www.adidemasterisks.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "R\u00f3he",
+    "type": "shopify",
+    "domain": "roheframes.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "minimalist",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "ERD",
+    "type": "firecrawl",
+    "url": "https://enfantsrichesdeprimes.com/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "luxury-streetwear",
+      "punk",
+      "goth"
+    ]
+  },
+  {
+    "brand": "Cav Empt",
+    "type": "firecrawl",
+    "url": "https://cav-empt.com/collections/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "japanese-streetwear",
+      "techwear",
+      "graphic"
+    ]
+  },
+  {
+    "brand": "Lemaire",
+    "type": "shopify",
+    "domain": "www.lemaire.fr",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "minimalist",
+      "quiet-luxury",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Ami Paris",
+    "type": "shopify",
+    "domain": "www.amiparis.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "quiet-luxury",
+      "contemporary",
+      "prep"
+    ]
+  },
+  {
+    "brand": "Dries Van Noten",
+    "type": "shopify",
+    "domain": "www.driesvannoten.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "maximalist",
+      "art"
+    ]
+  },
+  {
+    "brand": "3.1 Phillip Lim",
+    "type": "shopify",
+    "domain": "www.31philliplim.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "contemporary",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "The Row",
+    "type": "shopify",
+    "domain": "therow.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "quiet-luxury",
+      "minimalist",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Casablanca",
+    "type": "shopify",
+    "domain": "casablancaparis.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "resort",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Jacquemus",
+    "type": "firecrawl",
+    "url": "https://www.jacquemus.com/en-us/mens",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "minimalist",
+      "resort"
+    ]
+  },
+  {
+    "brand": "Acne Studios",
+    "type": "firecrawl",
+    "url": "https://www.acnestudios.com/us/en/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "minimalist",
+      "contemporary",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Marni",
+    "type": "firecrawl",
+    "url": "https://www.marni.com/en-us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "maximalist",
+      "art"
+    ]
+  },
+  {
+    "brand": "Moncler",
+    "type": "firecrawl",
+    "url": "https://www.moncler.com/en-us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "gorpcore",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "JW Anderson",
+    "type": "shopify",
+    "domain": "jwanderson.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Thom Browne",
+    "type": "shopify",
+    "domain": "www.thombrowne.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "tailoring",
+      "prep",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Telfar",
+    "type": "shopify",
+    "domain": "www.telfar.net",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "high-fashion",
+      "art"
+    ]
+  },
+  {
+    "brand": "Ienki Ienki",
+    "type": "shopify",
+    "domain": "ienki-ienki.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "gorpcore",
+      "luxury-streetwear",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Sies Marjan",
+    "type": "shopify",
+    "domain": "siesmarjan.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "maximalist",
+      "art"
+    ]
+  },
+  {
+    "brand": "Aries",
+    "type": "shopify",
+    "domain": "ariesarise.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "vintage",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Suicoke",
+    "type": "shopify",
+    "domain": "suicoke.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mid",
+    "aesthetic": [
+      "gorpcore",
+      "streetwear",
+      "japanese-streetwear"
+    ]
+  },
+  {
+    "brand": "Madhappy",
+    "type": "shopify",
+    "domain": "madhappy.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "athleisure"
+    ]
+  },
+  {
+    "brand": "Louis Vuitton",
+    "type": "firecrawl",
+    "url": "https://us.louisvuitton.com/eng-us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "old-money",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Dior",
+    "type": "firecrawl",
+    "url": "https://www.dior.com/en_us/fashion/mens",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Saint Laurent",
+    "type": "firecrawl",
+    "url": "https://www.ysl.com/en-us/men-s-ready-to-wear-fashion",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "rock",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "Gucci",
+    "type": "firecrawl",
+    "url": "https://www.gucci.com/us/en/ca/men-c-men",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "maximalist",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Prada",
+    "type": "firecrawl",
+    "url": "https://www.prada.com/us/en/mens.html",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "minimalist",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Balenciaga",
+    "type": "firecrawl",
+    "url": "https://www.balenciaga.com/en-us/men",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury-streetwear",
+      "avant-garde",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Bottega Veneta",
+    "type": "firecrawl",
+    "url": "https://www.bottegaveneta.com/en-us/men",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "quiet-luxury",
+      "minimalist",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Loewe",
+    "type": "firecrawl",
+    "url": "https://www.loewe.com/us/en/man",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "quiet-luxury",
+      "minimalist",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Fendi",
+    "type": "firecrawl",
+    "url": "https://www.fendi.com/en-us/men",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "maximalist",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Celine",
+    "type": "firecrawl",
+    "url": "https://www.celine.com/en-us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "quiet-luxury",
+      "minimalist",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Givenchy",
+    "type": "firecrawl",
+    "url": "https://www.givenchy.com/en-us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "high-fashion",
+      "luxury-streetwear"
+    ]
+  },
+  {
+    "brand": "Valentino",
+    "type": "firecrawl",
+    "url": "https://www.valentino.com/en-us/man",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "high-fashion",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Versace",
+    "type": "firecrawl",
+    "url": "https://www.versace.com/us/en/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "maximalist",
+      "y2k"
+    ]
+  },
+  {
+    "brand": "Maison Margiela",
+    "type": "firecrawl",
+    "url": "https://www.maisonmargiela.com/en-us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Alexander McQueen",
+    "type": "firecrawl",
+    "url": "https://www.alexandermcqueen.com/en-us/mens.html",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "goth"
+    ]
+  },
+  {
+    "brand": "Tom Ford",
+    "type": "firecrawl",
+    "url": "https://www.tomford.com/mens",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "luxury",
+      "tailoring"
+    ]
+  },
+  {
+    "brand": "Brunello Cucinelli",
+    "type": "firecrawl",
+    "url": "https://us.brunellocucinelli.com/en/man.html",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "quiet-luxury",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Loro Piana",
+    "type": "firecrawl",
+    "url": "https://us.loropiana.com/en/man",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "quiet-luxury",
+      "gorpcore"
+    ]
+  },
+  {
+    "brand": "Jil Sander",
+    "type": "firecrawl",
+    "url": "https://www.jilsander.com/en-us/man/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "minimalist",
+      "quiet-luxury",
+      "high-fashion"
+    ]
+  },
+  {
+    "brand": "Ferragamo",
+    "type": "firecrawl",
+    "url": "https://www.ferragamo.com/us/en/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "luxury",
+      "tailoring"
+    ]
+  },
+  {
+    "brand": "Burberry",
+    "type": "firecrawl",
+    "url": "https://us.burberry.com/mens/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "heritage",
+      "british"
+    ]
+  },
+  {
+    "brand": "Dolce & Gabbana",
+    "type": "firecrawl",
+    "url": "https://www.dolcegabbana.com/us/men/",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "maximalist",
+      "mediterranean"
+    ]
+  },
+  {
+    "brand": "Armani",
+    "type": "firecrawl",
+    "url": "https://www.armani.com/en-us/giorgio-armani/man",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "old-money",
+      "quiet-luxury",
+      "tailoring"
+    ]
+  },
+  {
+    "brand": "Miu Miu",
+    "type": "firecrawl",
+    "url": "https://www.miumiu.com/us/en/mens.html",
+    "gender": "male",
+    "tier": "luxury",
+    "aesthetic": [
+      "luxury",
+      "high-fashion",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Khaite",
+    "type": "shopify",
+    "domain": "www.khaite.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "quiet-luxury",
+      "contemporary",
+      "old-money"
+    ]
+  },
+  {
+    "brand": "Toteme",
+    "type": "shopify",
+    "domain": "www.toteme-studio.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "minimalist",
+      "quiet-luxury",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Tibi",
+    "type": "shopify",
+    "domain": "tibi.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Paloma Wool",
+    "type": "shopify",
+    "domain": "palomawool.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "mid",
+    "aesthetic": [
+      "contemporary",
+      "art",
+      "indie"
+    ]
+  },
+  {
+    "brand": "Nanushka",
+    "type": "shopify",
+    "domain": "nanushka.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "minimalist",
+      "quiet-luxury"
+    ]
+  },
+  {
+    "brand": "St. Agni",
+    "type": "shopify",
+    "domain": "www.st-agni.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "minimalist",
+      "contemporary",
+      "resort"
+    ]
+  },
+  {
+    "brand": "Sporty & Rich",
+    "type": "shopify",
+    "domain": "sportyandrich.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "mid",
+    "aesthetic": [
+      "athleisure",
+      "prep",
+      "vintage"
+    ]
+  },
+  {
+    "brand": "Chopova Lowena",
+    "type": "shopify",
+    "domain": "chopovalowena.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "avant-garde",
+      "punk",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Coperni",
+    "type": "shopify",
+    "domain": "coperni.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "contemporary",
+      "y2k"
+    ]
+  },
+  {
+    "brand": "Cecilie Bahnsen",
+    "type": "shopify",
+    "domain": "ceciliebahnsen.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "romantic",
+      "art"
+    ]
+  },
+  {
+    "brand": "Baserange",
+    "type": "shopify",
+    "domain": "baserange.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "minimalist",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Staud",
+    "type": "shopify",
+    "domain": "www.staud.clothing",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "resort",
+      "prep"
+    ]
+  },
+  {
+    "brand": "Roksanda",
+    "type": "shopify",
+    "domain": "roksanda.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "high-fashion",
+      "art",
+      "maximalist"
+    ]
+  },
+  {
+    "brand": "Erdem",
+    "type": "shopify",
+    "domain": "erdem.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "romantic",
+      "high-fashion",
+      "art"
+    ]
+  },
+  {
+    "brand": "HYEIN SEO",
+    "type": "shopify",
+    "domain": "hyeinseo.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "avant-garde",
+      "high-fashion",
+      "y2k"
+    ]
+  },
+  {
+    "brand": "HYKE",
+    "type": "shopify",
+    "domain": "www.hyke.jp",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "gorpcore",
+      "japanese-gorpcore",
+      "minimalist"
+    ]
+  },
+  {
+    "brand": "Rouje",
+    "type": "shopify",
+    "domain": "www.rouje.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "premium",
+    "aesthetic": [
+      "french-girl",
+      "contemporary",
+      "vintage"
+    ]
+  },
+  {
+    "brand": "Isabel Marant",
+    "type": "shopify",
+    "domain": "www.isabelmarant.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "female",
+    "tier": "luxury",
+    "aesthetic": [
+      "bohemian",
+      "contemporary",
+      "french-girl"
+    ]
+  },
+  {
+    "brand": "PATTA",
+    "type": "shopify",
+    "domain": "patta.nl",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "hype",
+      "gorpcore"
+    ]
+  },
+  {
+    "brand": "Norse Projects",
+    "type": "shopify",
+    "domain": "norseprojects.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "premium",
+    "aesthetic": [
+      "contemporary",
+      "gorpcore",
+      "scandinavian"
+    ]
+  },
+  {
+    "brand": "Supreme",
+    "type": "firecrawl",
+    "url": "https://www.supremenewyork.com/shop/all",
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "streetwear",
+      "hype",
+      "skate"
+    ]
+  },
+  {
+    "brand": "thisisneverthat",
+    "type": "firecrawl",
+    "url": "https://thisisneverthat.com/collections/all",
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": [
+      "streetwear",
+      "korean-streetwear",
+      "gorpcore"
+    ]
+  },
+  {
+    "brand": "REPRESENT",
+    "type": "shopify",
+    "domain": "representclo.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "premium",
+    "aesthetic": [
+      "luxury-streetwear",
+      "contemporary"
+    ]
+  },
+  {
+    "brand": "Dover Street Market",
+    "type": "shopify",
+    "domain": "shop.doverstreetmarket.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "is_retailer": true
+  },
+  {
+    "brand": "Pilgrim Surf",
+    "type": "shopify",
+    "domain": "www.pilgrimsurfsupply.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Better Gift Shop",
+    "type": "shopify",
+    "domain": "bettergiftshop.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Union LA",
+    "type": "shopify",
+    "domain": "www.unionlosangeles.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Notre",
+    "type": "shopify",
+    "domain": "www.notre-shop.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Concepts",
+    "type": "shopify",
+    "domain": "cncpts.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Sneakersnstuff",
+    "type": "shopify",
+    "domain": "www.sneakersnstuff.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Extra Butter",
+    "type": "shopify",
+    "domain": "extrabutterny.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Flatspot",
+    "type": "shopify",
+    "domain": "flatspot.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Feature",
+    "type": "shopify",
+    "domain": "feature.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Slam Jam",
+    "type": "shopify",
+    "domain": "slamjam.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Tres Bien",
+    "type": "shopify",
+    "domain": "tres-bien.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Machine-A",
+    "type": "shopify",
+    "domain": "machine-a.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "H.Lorenzo",
+    "type": "shopify",
+    "domain": "hlorenzo.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Maxfield LA",
+    "type": "shopify",
+    "domain": "maxfieldla.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Antonioli",
+    "type": "shopify",
+    "domain": "antonioli.eu",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "A Ma Mani\u00e9r\u00e9",
+    "type": "shopify",
+    "domain": "amamaniere.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Social Status",
+    "type": "shopify",
+    "domain": "socialstatuspgh.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Sneaker Politics",
+    "type": "shopify",
+    "domain": "sneakerpolitics.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Archive SF",
+    "type": "shopify",
+    "domain": "archivesf.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "luxury",
+    "is_retailer": true
+  },
+  {
+    "brand": "10 Corso Como",
+    "type": "shopify",
+    "domain": "10corsocomo.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Patron of the New",
+    "type": "shopify",
+    "domain": "patronofthenew.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Browns Fashion",
+    "type": "shopify",
+    "domain": "www.brownsfashion.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "No Man Walks Alone",
+    "type": "shopify",
+    "domain": "nomanwalksalone.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "INCU",
+    "type": "shopify",
+    "domain": "incu.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Nomad Shop",
+    "type": "shopify",
+    "domain": "nomadshop.net",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Undefeated",
+    "type": "shopify",
+    "domain": "www.undefeated.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "SSENSE",
+    "type": "retailer",
+    "url": "https://www.ssense.com/en-us/men",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "MR PORTER",
+    "type": "retailer",
+    "url": "https://www.mrporter.com/en-us/mens",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "END.",
+    "type": "retailer",
+    "url": "https://www.endclothing.com/us/clothing",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Farfetch",
+    "type": "retailer",
+    "url": "https://www.farfetch.com/shopping/men/items.aspx",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "NET-A-PORTER",
+    "type": "retailer",
+    "url": "https://www.net-a-porter.com/en-us/shop/mens",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "HBX",
+    "type": "retailer",
+    "url": "https://hbx.com/men",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Luisaviaroma",
+    "type": "retailer",
+    "url": "https://www.luisaviaroma.com/en-us/men",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Selfridges",
+    "type": "retailer",
+    "url": "https://www.selfridges.com/en-gb/mens/",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Saks Fifth Avenue",
+    "type": "retailer",
+    "url": "https://www.saksfifthavenue.com/c/mens",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Neiman Marcus",
+    "type": "retailer",
+    "url": "https://www.neimanmarcus.com/men",
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true
+  },
+  {
+    "brand": "Cultizm",
+    "type": "shopify",
+    "domain": "www.cultizm.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true,
+    "aesthetic": [
+      "heritage",
+      "workwear",
+      "japanese-denim",
+      "prep"
+    ]
+  },
+  {
+    "brand": "Eastern Mountain Sports",
+    "type": "shopify",
+    "domain": "ems.com",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true,
+    "aesthetic": [
+      "gorpcore",
+      "outdoor",
+      "technical"
+    ]
+  },
+  {
+    "brand": "Deadstock",
+    "type": "shopify",
+    "domain": "deadstock.ca",
+    "collections": [
+      "all"
+    ],
+    "gender": "unisex",
+    "tier": "mixed",
+    "is_retailer": true,
+    "aesthetic": [
+      "streetwear",
+      "gorpcore",
+      "sneakers"
+    ]
+  },
+  {
+    "brand": "Bodega",
+    "type": "shopify",
+    "domain": "bdgastore.com",
+    "collections": ["all"],
+    "gender": "male",
+    "tier": "mixed",
+    "is_retailer": true,
+    "aesthetic": ["streetwear", "art", "lifestyle"]
+  },
+  {
+    "brand": "Ksubi",
+    "type": "shopify",
+    "domain": "ksubi.com",
+    "collections": ["all"],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": ["denim", "streetwear", "rock"]
+  },
+  {
+    "brand": "Purple Brand",
+    "type": "shopify",
+    "domain": "purple-brand.com",
+    "collections": ["all"],
+    "gender": "male",
+    "tier": "mid",
+    "aesthetic": ["denim", "luxury-streetwear", "hype"]
+  },
+  {
+    "brand": "DISCONTD",
+    "type": "shopify",
+    "domain": "discontd.com",
+    "collections": ["all"],
+    "gender": "unisex",
+    "tier": "indie",
+    "aesthetic": ["denim", "streetwear", "workwear"]
+  },
+  {
+    "brand": "BAGGY",
+    "type": "shopify",
+    "domain": "baggyclothing.us",
+    "collections": ["all"],
+    "gender": "unisex",
+    "tier": "indie",
+    "aesthetic": ["denim", "streetwear", "y2k"]
+  },
+  {
+    "brand": "Berlinc",
+    "type": "shopify",
+    "domain": "berlinc.co",
+    "collections": ["all"],
+    "gender": "unisex",
+    "tier": "indie",
+    "aesthetic": ["denim", "minimalist", "streetwear"]
+  }
+]
