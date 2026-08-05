@@ -1,3 +1,48 @@
+// Groups of semantically equivalent colors for gap-filling purposes.
+// If an item's color falls in the same group as a missing color it counts as a fill.
+export const COLOR_GROUPS: string[][] = [
+  // Muted yellow-greens — camo/camouflage is predominantly olive/army green in tone
+  ["olive", "moss", "army green", "military green", "dark olive", "olive green", "khaki green", "camo", "camouflage", "woodland camo", "desert camo"],
+  // Sage / dusty greens (lighter, greyer)
+  ["sage", "sage green", "dusty sage", "celadon", "mint green"],
+  // Dark greens
+  ["forest green", "hunter green", "dark green", "bottle green"],
+  // Burgundy family
+  ["burgundy", "wine", "maroon", "oxblood", "merlot", "claret", "bordeaux", "crimson"],
+  // Navy family
+  ["navy", "navy blue", "midnight blue", "dark navy", "deep navy"],
+  // Warm neutrals — cream through camel (all one spectrum; beige/khaki/tan cover camel and cream)
+  ["cream", "off-white", "ivory", "bone", "eggshell", "ecru", "butter", "beige", "sand", "tan", "camel", "khaki", "wheat", "fawn", "biscuit", "oatmeal", "linen"],
+  // Charcoal / dark grey
+  ["charcoal", "dark grey", "dark gray", "anthracite", "graphite"],
+  // Mid grey
+  ["grey", "gray", "slate gray", "slate grey", "heather gray", "heather grey", "medium gray"],
+  // Brown family
+  ["brown", "chocolate", "chestnut", "walnut", "mocha", "espresso", "mahogany", "cognac", "tobacco"],
+  // Rust / terracotta
+  ["rust", "brick red", "terracotta", "burnt sienna", "burnt orange", "clay"],
+  // Mustard / gold
+  ["mustard", "gold", "golden", "amber", "ochre", "honey"],
+  // Cobalt / deep blue
+  ["cobalt", "royal blue", "sapphire", "deep blue", "electric blue"],
+  // Blush / rose
+  ["blush", "dusty rose", "rose", "mauve", "pink beige", "petal"],
+  // Teal family
+  ["teal", "dark teal", "teal blue", "petrol blue"],
+  // Taupe / greige
+  ["taupe", "greige", "stone", "mushroom", "warm gray", "warm grey"],
+  // Purple family
+  ["purple", "violet", "plum", "eggplant", "deep purple", "grape"],
+];
+
+/** Returns true if colors a and b should be considered equivalent for gap-filling. */
+export function sameColorGroup(a: string, b: string): boolean {
+  const na = a.toLowerCase().trim();
+  const nb = b.toLowerCase().trim();
+  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+  return COLOR_GROUPS.some(g => g.includes(na) && g.includes(nb));
+}
+
 export const NAMED_COLORS: { name: string; rgb: [number, number, number] }[] = [
   // Neutrals
   { name: "Black", rgb: [20, 20, 20] },

@@ -2,7 +2,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { WardrobeAnalysis, WABackendState, CrossedEntry } from "@/lib/wardrobeAnalysis";
-import { computeEffectiveLevel, gapTotalProgress } from "@/lib/wardrobeAnalysis";
+import { computeEffectiveLevel, gapTotalProgress, computeGapProgress, getFunctionalSlot, resolveSubTypeFromTitle } from "@/lib/wardrobeAnalysis";
+import { sameColorGroup } from "@/lib/constants/colors";
 
 const FONT = { fontFamily: "Arial, sans-serif" };
 const LOADING_IMG = "/loading-tee.png";
@@ -88,11 +89,11 @@ interface WACache {
   backendState: WABackendState;
 }
 function readWACache(): WACache | null {
-  try { const r = localStorage.getItem("wa_cache_v8"); return r ? (JSON.parse(r) as WACache) : null; }
+  try { const r = localStorage.getItem("wa_cache_v16"); return r ? (JSON.parse(r) as WACache) : null; }
   catch { return null; }
 }
 function saveWACache(c: WACache): void {
-  try { localStorage.setItem("wa_cache_v8", JSON.stringify(c)); } catch {}
+  try { localStorage.setItem("wa_cache_v16", JSON.stringify(c)); } catch {}
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -228,7 +229,8 @@ export default function WardrobeAnalysisPage() {
     fetchedRef.current = true;
 
     (async () => {
-      const sData: { pieceCount?: number; pieces?: PieceImg[] } | null =
+      type GarmentAttr = { id: string; sub_type: string | null; category: string | null; color_primary: string | null; aesthetic_tags: string[] | null };
+      const sData: { pieceCount?: number; pieces?: PieceImg[]; wardrobeScore?: number; garmentAttrs?: GarmentAttr[] } | null =
         await fetch("/api/scoring").then(r => r.ok ? r.json() : null).catch(() => null);
 
       const currentCount = sData?.pieceCount ?? (sData?.pieces?.length ?? 0);
@@ -274,9 +276,9 @@ export default function WardrobeAnalysisPage() {
         }
         setGhostCons(ghosts);
 
-        // Score: accumulate from level-1 base score — new level analyses only provide gap/weakness
-        // content, their GPT score is never used as the base (it would cause regressions).
-        // Diminishing returns: bumps taper as score approaches 100.
+        // Base score: the stable Level 1 GPT score. Never changes on item addition
+        // so adding weak items can't regress the score. Score only moves via bumps
+        // (crossed gaps/aesthetics/colors/cons) or when crossed items are removed.
         const baseScore = bs.analysisHistory[0]?.score ?? displayA.score;
         let bumpedScore = baseScore;
 
@@ -290,27 +292,27 @@ export default function WardrobeAnalysisPage() {
           const levelA = bs.analysisHistory[L - 1];
           if (!levelA) break;
           const lc = bs.crossed.filter((e: CrossedEntry) => e.analysisLevel === L);
-          // Gap bumps
+
+          // Collect all point contributions for this level BEFORE applying scoreBonus,
+          // so the factor is based on the score at the START of the level (not an
+          // incrementally-inflated running total). This makes the score path-independent:
+          // remove-then-re-add an item always gives the same delta regardless of the
+          // order crossings were appended to bs.crossed.
+          let levelPts = 0;
           for (const g of levelA.gaps) {
             if (gapTotalProgress(bs.crossed, g.description, L) >= 100) {
-              const pts = g.costPoints > 0 ? g.costPoints : g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2;
-              bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, pts));
+              levelPts += g.costPoints > 0 ? g.costPoints : g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2;
             }
           }
-          // Color bumps (unique keys only)
           const lcColKeys = new Set(lc.filter((e: CrossedEntry) => e.category === "color").map((e: CrossedEntry) => e.key));
-          bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, lcColKeys.size * 2));
-          // Aesthetic bumps
+          levelPts += lcColKeys.size * 2;
           const lcAesKeys = new Set(lc.filter((e: CrossedEntry) => e.category === "aesthetic").map((e: CrossedEntry) => e.key));
-          bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, lcAesKeys.size));
-          // Con bumps
+          levelPts += lcAesKeys.size;
           const lcConCount = lc.filter((e: CrossedEntry) => e.category === "con").length;
-          bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, lcConCount * 2));
+          levelPts += lcConCount * 2;
+
+          bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, levelPts));
         }
-        // High-water mark: score can never go below the previous highest it reached
-        if (bs.highestScore && bs.highestScore > bumpedScore) bumpedScore = bs.highestScore;
-        // Persist the new high-water mark back into the state so it survives level transitions
-        if (!bs.highestScore || bumpedScore > bs.highestScore) bs.highestScore = bumpedScore;
         setAnalysis({ ...displayA, score: bumpedScore });
       }
 
@@ -362,14 +364,21 @@ export default function WardrobeAnalysisPage() {
         const effLevel = computeEffectiveLevel(state.analysisHistory, state.crossed, state.currentLevel);
         const displayA = state.analysisHistory[effLevel - 1];
 
+        // Merge backend crosses with cache crosses — backend may be missing entries
+        // saved locally before a state row existed, or during cache-key transitions.
+        const crossKey = (e: CrossedEntry) => `${e.category}|${e.key}|${e.garmentId ?? ""}|${e.analysisLevel}`;
+        const backendKeys = new Set(state.crossed.map(crossKey));
+        const extraFromCache = (cache?.backendState?.crossed ?? []).filter(e => !backendKeys.has(crossKey(e)));
+        const mergedCrossed: CrossedEntry[] = [...state.crossed, ...extraFromCache];
+
         // Advance to next level only when ALL categories are fully resolved at this level
-        const _atL = state.crossed.filter((e: CrossedEntry) => e.analysisLevel === effLevel);
+        const _atL = mergedCrossed.filter((e: CrossedEntry) => e.analysisLevel === effLevel);
         const allCrossed = displayA &&
-          (displayA.gaps.length === 0 || displayA.gaps.every(g => gapTotalProgress(state.crossed, g.description, effLevel) >= 100)) &&
+          (displayA.gaps.length === 0 || displayA.gaps.every(g => gapTotalProgress(mergedCrossed, g.description, effLevel) >= 100)) &&
           (displayA.cons.length === 0 || displayA.cons.every((_, i) => {
             if (_atL.some((e: CrossedEntry) => e.category === "con" && e.key === String(i))) return true;
             const linkedGap = (displayA.conGapLinks ?? {})[String(i)];
-            return linkedGap ? gapTotalProgress(state.crossed, linkedGap, effLevel) >= 100 : false;
+            return linkedGap ? gapTotalProgress(mergedCrossed, linkedGap, effLevel) >= 100 : false;
           })) &&
           (displayA.colors.missing.length === 0 || displayA.colors.missing.every(c => _atL.some((e: CrossedEntry) => e.category === "color" && e.key === c))) &&
           (displayA.aesthetics.missing.length === 0 || displayA.aesthetics.missing.every(ae => _atL.some((e: CrossedEntry) => e.category === "aesthetic" && e.key === ae)));
@@ -377,12 +386,14 @@ export default function WardrobeAnalysisPage() {
         if (allCrossed) {
           // All current-level items crossed — fetch fresh analysis for the next level.
           // Pass prior history so GPT finds NEW gaps/aesthetics/colors/weaknesses, not repeats.
-          const freshA = await fetchFreshAnalysis(state.analysisHistory);
+          let freshA;
+          try { freshA = await fetchFreshAnalysis(state.analysisHistory); }
+          catch (e) { console.error("[WA] fetchFreshAnalysis failed:", e); throw e; }
           const newState: WABackendState = {
             analysisHistory: [...state.analysisHistory, freshA],
-            crossed:         state.crossed,
+            crossed:         mergedCrossed,
             currentLevel:    state.currentLevel + 1,
-            highestScore:    state.highestScore,  // carried forward
+            highestScore:    state.highestScore,
           };
           const newEffLevel = state.currentLevel + 1;
           fetch("/api/wardrobe/state", {
@@ -392,33 +403,116 @@ export default function WardrobeAnalysisPage() {
           applyState(newState, newEffLevel, freshA);
           saveWACache({ pieceCount: currentCount, backendState: newState });
         } else {
-          applyState(state, effLevel, displayA);
-          saveWACache({ pieceCount: currentCount, backendState: state });
+          // Save merged crosses so cache never regresses to fewer entries than we have locally
+          const mergedState = { ...state, crossed: mergedCrossed };
+          applyState(mergedState, effLevel, displayA);
+          saveWACache({ pieceCount: currentCount, backendState: mergedState });
         }
-      } else if (fetchFailed && cache?.backendState?.analysisHistory?.length) {
-        // Backend fetch failed (network error / auth / server error) but localStorage has
-        // valid state — use it rather than wiping everything with a fresh analysis.
-        // This prevents accidental state resets on transient backend failures.
+      } else if ((fetchFailed || !state) && cache?.backendState?.analysisHistory?.length) {
+        // Backend unavailable or no state, but localStorage has valid state — use cache.
+        // Also run level-advancement check here so a backend outage doesn't block progression.
+        if (fetchFailed) console.warn("[WA] backend state fetch failed (500?) — using cache for level check");
         const bs = cache.backendState;
         const effLevel = computeEffectiveLevel(bs.analysisHistory, bs.crossed, bs.currentLevel);
         const displayA = bs.analysisHistory[effLevel - 1];
         if (displayA) {
-          applyState(bs, effLevel, displayA);
-          saveWACache({ pieceCount: currentCount, backendState: bs });
+          const atL = bs.crossed.filter((e: CrossedEntry) => e.analysisLevel === effLevel);
+          const allResolved =
+            (displayA.gaps.length === 0 || displayA.gaps.every(g => gapTotalProgress(bs.crossed, g.description, effLevel) >= 100)) &&
+            (displayA.cons.length === 0 || displayA.cons.every((_, i) => {
+              if (atL.some((e: CrossedEntry) => e.category === "con" && e.key === String(i))) return true;
+              const linkedGap = (displayA.conGapLinks ?? {})[String(i)];
+              return linkedGap ? gapTotalProgress(bs.crossed, linkedGap, effLevel) >= 100 : false;
+            })) &&
+            (displayA.colors.missing.length === 0 || displayA.colors.missing.every(c => atL.some((e: CrossedEntry) => e.category === "color" && e.key === c))) &&
+            (displayA.aesthetics.missing.length === 0 || displayA.aesthetics.missing.every(ae => atL.some((e: CrossedEntry) => e.category === "aesthetic" && e.key === ae)));
+          if (allResolved) {
+            let freshA;
+            try { freshA = await fetchFreshAnalysis(bs.analysisHistory); }
+            catch (e) { console.error("[WA] fetchFreshAnalysis failed:", e); applyState(bs, effLevel, displayA); return; }
+            const newState: WABackendState = {
+              analysisHistory: [...bs.analysisHistory, freshA],
+              crossed:         bs.crossed,
+              currentLevel:    bs.currentLevel + 1,
+            };
+            fetch("/api/wardrobe/state", {
+              method: "PUT", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(newState),
+            }).catch(() => {});
+            applyState(newState, bs.currentLevel + 1, freshA);
+            saveWACache({ pieceCount: currentCount, backendState: newState });
+          } else {
+            applyState(bs, effLevel, displayA);
+            saveWACache({ pieceCount: currentCount, backendState: bs });
+          }
         }
       } else {
-        // No state anywhere — first-time analysis (or intentional reset)
+        // No valid state — rebuild crossing state from current wardrobe.
+        // Always advance to Level 2: this path only runs as recovery (the user had history
+        // that got lost), so gap-crossing gates are skipped. Gaps remain open for the user
+        // to fill manually; only colors, aesthetics, and cons are auto-crossed.
         const freshA = await fetchFreshAnalysis();
-        const newState: WABackendState = {
-          analysisHistory: [freshA],
-          crossed:         [],
-          currentLevel:    1,
-        };
-        fetch("/api/wardrobe/state", {
-          method: "PUT", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newState),
-        }).catch(() => {});
-        applyState(newState, 1, freshA);
+        const attrs = sData?.garmentAttrs ?? [];
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+        const autoCrossed: CrossedEntry[] = [];
+
+        for (const gap of freshA.gaps) {
+          for (const g of attrs) {
+            const sub = g.sub_type ?? resolveSubTypeFromTitle("");
+            const funcSlot = getFunctionalSlot(sub);
+            const cat = (g.category ?? "").toLowerCase();
+            const progress = computeGapProgress(gap.description, sub, cat, funcSlot);
+            if (progress > 0) {
+              autoCrossed.push({ category: "gap", key: gap.description, garmentId: g.id, analysisLevel: 1, progress });
+            }
+          }
+        }
+        for (const missingColor of freshA.colors.missing) {
+          const filler = attrs.find(g => g.color_primary && sameColorGroup(g.color_primary, missingColor));
+          if (filler) autoCrossed.push({ category: "color", key: missingColor, garmentId: filler.id, analysisLevel: 1 });
+        }
+        for (const missingAes of freshA.aesthetics.missing) {
+          const filler = attrs.find(g =>
+            (g.aesthetic_tags ?? []).some(t => norm(t) === norm(missingAes))
+          );
+          if (filler) autoCrossed.push({ category: "aesthetic", key: missingAes, garmentId: filler.id, analysisLevel: 1 });
+        }
+        for (let ci = 0; ci < freshA.cons.length; ci++) {
+          const linkedGap = (freshA.conGapLinks ?? {})[String(ci)];
+          if (!linkedGap || gapTotalProgress(autoCrossed, linkedGap, 1) >= 100) {
+            autoCrossed.push({ category: "con", key: String(ci), garmentId: undefined as unknown as string, analysisLevel: 1 });
+          }
+        }
+
+        // Check if Level 1 is fully resolved after auto-crossing
+        const atL1 = autoCrossed.filter(e => e.analysisLevel === 1);
+        const l1GapsOk = freshA.gaps.length === 0 || freshA.gaps.every(g => gapTotalProgress(autoCrossed, g.description, 1) >= 100);
+        const l1ColsOk = freshA.colors.missing.length === 0 || freshA.colors.missing.every(c => atL1.some(e => e.category === "color" && e.key === c));
+        const l1AesOk  = freshA.aesthetics.missing.length === 0 || freshA.aesthetics.missing.every(ae => atL1.some(e => e.category === "aesthetic" && e.key === ae));
+        const l1Complete = l1GapsOk && l1ColsOk && l1AesOk;
+
+        let newState: WABackendState;
+        if (l1Complete) {
+          let freshA2: WardrobeAnalysis;
+          try { freshA2 = await fetchFreshAnalysis([freshA]); }
+          catch { freshA2 = freshA; }
+          const reachedL2 = freshA2 !== freshA;
+          newState = {
+            analysisHistory: reachedL2 ? [freshA, freshA2] : [freshA],
+            crossed:         autoCrossed,
+            currentLevel:    reachedL2 ? 2 : 1,
+          };
+          applyState(newState, newState.currentLevel, reachedL2 ? freshA2 : freshA);
+        } else {
+          newState = { analysisHistory: [freshA], crossed: autoCrossed, currentLevel: 1 };
+          applyState(newState, 1, freshA);
+        }
+        // Only PUT to backend if there was truly no state (first visit or wiped row).
+        // Never overwrite existing backend state with a rebuild that couldn't advance.
+        if (!state || !state.analysisHistory.length) {
+          fetch("/api/wardrobe/state", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newState) }).catch(() => {});
+        }
         saveWACache({ pieceCount: currentCount, backendState: newState });
       }
     })().catch((err: unknown) => {
@@ -823,22 +917,18 @@ CREATE POLICY "Users manage their own wardrobe analysis state"
             scrollRef={el => { colScrollRefs.current[1] = el; }}
             onScroll={makeScrollHandler(1)}
           >
-            {(a.cons.length > 0 || ghostCons.length > 0) && (
+            {a.cons.length > 0 && (
               <div style={{ marginBottom: 28 }}>
                 <SectionLabel label={weaknessesLabel()} />
-                {/* Ghost cons from fully-completed prior levels */}
-                {ghostCons.map((text, i) => (
-                  <p key={`gc-${i}`} style={{ ...FONT, fontSize: 17, color: "#ccc", margin: "0 0 12px", lineHeight: 1.5, textDecoration: "line-through" }}>{text}</p>
-                ))}
-                {/* Current level cons */}
                 {a.cons.map((text, i) => {
                   const linkedGap = (a.conGapLinks ?? {})[String(i)];
+                  const isDuplicate = ghostCons.some(g => g.trim().toLowerCase() === text.trim().toLowerCase());
                   const isCrossed =
+                    isDuplicate ||
                     crossedConIndices.includes(i) ||
                     (linkedGap ? crossedGapSet.has(linkedGap) : false);
-                  return isCrossed
-                    ? <p key={i} style={{ ...FONT, fontSize: 17, color: "#ccc", margin: "0 0 12px", lineHeight: 1.5, textDecoration: "line-through" }}>{text}</p>
-                    : <ItemText key={i} text={text} color="#c00" />;
+                  if (isCrossed) return null;
+                  return <ItemText key={i} text={text} color="#c00" />;
                 })}
               </div>
             )}

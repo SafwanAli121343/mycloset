@@ -8,6 +8,7 @@ import {
   resolveSubTypeFromTitle,
   type WardrobeAnalysis,
 } from "@/lib/wardrobeAnalysis";
+import { sameColorGroup } from "@/lib/constants/colors";
 import type { GarmentForScoring } from "@/lib/scoring";
 
 export const maxDuration = 60;
@@ -107,8 +108,9 @@ async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAn
     if (seenGaps.length)       lines.push(`  Gaps already suggested: ${seenGaps.join(", ")}`);
     if (seenAesthetics.length) lines.push(`  Missing aesthetics already suggested: ${seenAesthetics.join(", ")}`);
     if (seenColors.length)     lines.push(`  Missing colors already suggested: ${seenColors.join(", ")}`);
-    if (seenCons.length)       lines.push(`  Weaknesses already addressed: ${seenCons.join(" | ")}`);
-    lines.push("Find NEW gaps, aesthetics, colors, and weaknesses not in the above lists.");
+    if (seenCons.length)       lines.push(`  Weaknesses from prior analysis (go DEEPER — same category is fine, but add new specificity, context, or scenario): ${seenCons.join(" | ")}`);
+    lines.push("Find NEW gaps, aesthetics, and colors not in the above lists.");
+    lines.push("For weaknesses (cons): go deeper than the prior level. Identify SPECIFIC subcategory gaps, context failures (weather, occasion, formality transition), silhouette over-reliance, or systemic pattern issues not captured before. Every wardrobe has more specific weaknesses to surface — never return [].");
     priorSection = "\n\n" + lines.join("\n");
   }
 
@@ -145,11 +147,11 @@ Analyze this wardrobe. Return ONLY valid JSON (no markdown fences):
 
 Hard rules:
 - pros: 3-6 full-sentence observations about the WARDROBE AS A WHOLE. Analyze its aesthetic direction, color story, category balance, silhouette range, or formality coverage. Write about the collection as a singular entity — do NOT frame pros as what a specific piece does for or adds to the wardrobe.
-- cons: 0-4 full-sentence observations. Only report genuine weaknesses grounded in the data — do NOT fabricate cons to hit a target count. A strong, well-rounded wardrobe may have 0-2 real cons; return [] if there are none. Reference category counts, slot absences, or color/aesthetic weaknesses.
+- cons: 2-4 full-sentence observations. Every wardrobe below a perfect score has weaknesses — find them. Even strong wardrobes have blind spots: over-reliance on one silhouette, limited occasion coverage, weather-specific gaps, formality transition failures, or lack of versatility in a category. Be specific and grounded in the data. Never return [].
 - gaps: 0-4 items ordered high→low impact. ONLY use slot names from "Functional slots MISSING". Never suggest a slot from "Functional slots COVERED". Return [] if there are no meaningful functional gaps. Critical: if ALL footwear slots are missing (casual sneaker, boot, dress shoe, casual sandal / slide are ALL in "Functional slots MISSING"), you MUST include at least one footwear gap — it is the single highest-impact omission possible.
 - overdone: 0-4 items. ONLY include sub-types from "High-frequency sub-types (3+)". If that line says "none", return [].
 - missing_aesthetics: 2-3 items. ONLY choose from "Aesthetics completely absent" — never pick from "Aesthetics present".
-- missing_colors: 2-5 colors absent from "Colors present" that would benefit this specific wardrobe. Prioritize: if the wardrobe has no warm neutrals (Tan, Camel, Brown, Cream), suggest at least one. If all footwear gaps are missing, do NOT suggest footwear-adjacent colors first — focus on wearable palette gaps. Choose contextually: a streetwear wardrobe benefits from Olive, Burgundy; a formal wardrobe benefits from Camel, Cream, Burgundy. Never repeat a color already in "Colors present".
+- missing_colors: 2-5 colors that are genuinely absent and would benefit this wardrobe. CRITICAL: check "Color families covered" first — if a family is listed there, every synonym in that family is ALREADY PRESENT. Never suggest any color from a covered family. Never suggest a color from "All colors treated as present". Choose contextually: a streetwear wardrobe benefits from Olive, Burgundy; a formal wardrobe benefits from Brown, Burgundy. If warm neutrals are covered (Beige present → Camel/Cream/Tan covered), skip them and suggest other palette gaps instead.
 - insights: 2-4 full-sentence observations unique to this wardrobe. No em dashes — use colons instead.`;
 
   const completion = await openai.chat.completions.create({
@@ -179,9 +181,10 @@ Hard rules:
   }
 
   // Use GPT-provided missing colors if available, fall back to computed
-  const missingColors = gpt.missing_colors?.length
-    ? gpt.missing_colors
-    : metrics.missingEssentials.slice(0, 6);
+  // Post-process: strip any color GPT suggested that's already covered by a wardrobe color's synonym family
+  const rawMissingColors = gpt.missing_colors?.length ? gpt.missing_colors : metrics.missingEssentials.slice(0, 6);
+  const wardrobeColorNorms = metrics.allColors.map(c => c.toLowerCase().trim());
+  const missingColors = rawMissingColors.filter(mc => !wardrobeColorNorms.some(wc => sameColorGroup(mc, wc)));
 
   // Use GPT-provided missing aesthetics; validate they're actually absent; fall back to computed
   const missingAesthetics = (gpt.missing_aesthetics?.length

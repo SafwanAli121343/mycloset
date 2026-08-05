@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     sections.push(`WARDROBE WEAKNESSES (qualitative issues to address):\n${weakness_gaps.map((g,i)=>`${i+1}. ${g}`).join("\n")}`);
   }
 
-  const prompt = `${context}\n\n${sections.join("\n\n")}\n\nLook at the item in the image. For each section, return which entries this item fills/addresses.\nReturn ONLY JSON with these keys (use exact text from each list, empty array if none):\n{\n  "gap_fills": [],\n  "aesthetic_fills": [],\n  "color_fills": [],\n  "weakness_fills": []\n}`;
+  const prompt = `${context}\n\n${sections.join("\n\n")}\n\nLook at the item in the image. For each section, return which entries this item fills/addresses.\n\nColor matching rule: use broad family matching, not exact names. A beige, tan, or khaki item fills both "Camel" and "Cream" gaps. A wine or maroon item fills "Burgundy". A moss or army-green item fills "Olive". A midnight-blue item fills "Navy". Match the whole color family — similar shades and tones count.\n\nReturn ONLY JSON with these keys (use exact text from each list, empty array if none):\n{\n  "gap_fills": [],\n  "aesthetic_fills": [],\n  "color_fills": [],\n  "weakness_fills": []\n}`;
 
   try {
     const completion = await openai.chat.completions.create({

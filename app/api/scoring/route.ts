@@ -9,7 +9,7 @@ const adminClient = createClient(
 );
 
 const SELECT_COLS = [
-  "id","title","brand","sub_type","material","color_primary","color_secondary",
+  "id","title","brand","category","sub_type","material","color_primary","color_secondary",
   "pattern","formality","aesthetic_tags","pros","cons","color_pairings","color_clashes","tags","image",
 ].join(",");
 
@@ -50,11 +50,20 @@ export async function GET() {
     })),
   }));
 
+  const garmentAttrs = (data as unknown as Record<string, unknown>[]).map(g => ({
+    id:             g.id             as string,
+    sub_type:       g.sub_type       as string | null,
+    category:       g.category       as string | null,
+    color_primary:  g.color_primary  as string | null,
+    aesthetic_tags: g.aesthetic_tags as string[] | null,
+  }));
+
   return Response.json({
     wardrobeScore,
     pieceCount: garments.length,
     pieces,
     topOutfits,
+    garmentAttrs,
   });
 }
 

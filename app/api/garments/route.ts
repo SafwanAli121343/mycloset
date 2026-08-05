@@ -648,18 +648,24 @@ export async function DELETE(request: NextRequest) {
         .eq("user_id", ownerId)
         .single();
       if (stateRow) {
-        const prevCrossed = (stateRow.crossed as CrossedEntry[]) ?? [];
+        const prevCrossed    = (stateRow.crossed as CrossedEntry[]) ?? [];
+        const fullHistory    = (stateRow.analysis_history as WABackendState["analysisHistory"]) ?? [];
+        const prevLevel      = (stateRow.current_level as number) ?? 1;
         const updatedCrossed = prevCrossed.filter(e => e.garmentId !== id);
+
         if (updatedCrossed.length !== prevCrossed.length) {
-          const effectiveLevel = computeEffectiveLevel(
-            (stateRow.analysis_history as WABackendState["analysisHistory"]) ?? [],
-            updatedCrossed,
-            (stateRow.current_level as number) ?? 1
-          );
+          const effectiveLevel = computeEffectiveLevel(fullHistory, updatedCrossed, prevLevel);
+
+          // If the effective level regressed, truncate history to the new level so stale
+          // Level N analyses don't persist. The WA page will run a fresh analysis when
+          // the user re-fills the gaps and advances again.
+          const trimmedHistory = fullHistory.slice(0, effectiveLevel);
+
           await adminClient.from("wardrobe_analysis_state").update({
-            crossed:       updatedCrossed,
-            current_level: effectiveLevel,
-            updated_at:    new Date().toISOString(),
+            crossed:          updatedCrossed,
+            current_level:    effectiveLevel,
+            analysis_history: trimmedHistory,
+            updated_at:       new Date().toISOString(),
           }).eq("user_id", ownerId);
         }
       }

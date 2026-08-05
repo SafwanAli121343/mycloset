@@ -323,7 +323,20 @@ export default function ClosetPage() {
   const [scores, setScores]     = useState<Record<string, number>>({});
 
   const busy = useRef(false);
-  const refreshedRef = useRef<Set<string>>(new Set());
+  const refreshedRef   = useRef<Set<string>>(new Set());
+  const preloadedRef   = useRef<Set<string>>(new Set());
+
+  function preloadAround(list: Garment[], center: number) {
+    // Preload the center image + 2 ahead + 1 behind so navigation is instant
+    const indices = [-1, 0, 1, 2].map(d => (center + d + list.length) % list.length);
+    for (const i of indices) {
+      const url = list[i]?.image;
+      if (!url || preloadedRef.current.has(url)) continue;
+      preloadedRef.current.add(url);
+      const img = new Image();
+      img.src = url;
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -338,6 +351,7 @@ export default function ClosetPage() {
 
       setGarments(data);
       setLoading(false);
+      preloadAround(data, 0);
       const seed: Record<string, string[]> = {};
       for (const g of data) {
         seed[g.id] = g.style_pairings ?? [];
@@ -384,11 +398,13 @@ export default function ClosetPage() {
     setPhase("out");
 
     setTimeout(() => {
-      setIndex((prev) =>
-        d === "right"
+      setIndex((prev) => {
+        const next = d === "right"
           ? (prev + 1) % garments.length
-          : (prev - 1 + garments.length) % garments.length
-      );
+          : (prev - 1 + garments.length) % garments.length;
+        preloadAround(garments, next);
+        return next;
+      });
       setAnimKey((k) => k + 1);
       setPhase("in");
       setTimeout(() => {
@@ -416,7 +432,38 @@ export default function ClosetPage() {
       }).catch(() => {});
     }
 
-    try { localStorage.removeItem("wa_cache_v8"); } catch {}
+    // Remove this garment's crossings from the backend WA state so the
+    // next WA page load sees the correct score without this item's contributions.
+    fetch(`/api/wardrobe/state/cross?garmentId=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).catch(() => {});
+
+    try {
+      const raw = localStorage.getItem("wa_cache_v16");
+      if (raw) {
+        const cache = JSON.parse(raw);
+        if (cache?.backendState?.crossed) {
+          // Mirror the backend deletion in the local cache so the WA page fast-path
+          // also reflects the correct state without needing a backend round-trip.
+          const deleted = cache.backendState.crossed.filter(
+            (e: { garmentId?: string | null }) => e.garmentId === id
+          );
+          cache.backendState.crossed = cache.backendState.crossed.filter(
+            (e: { garmentId?: string | null }) => e.garmentId !== id
+          );
+          if (deleted.length > 0) {
+            if (!cache.removedCrossings) cache.removedCrossings = {};
+            cache.removedCrossings[id] = deleted;
+          }
+          cache.pieceCount = -1;
+          localStorage.setItem("wa_cache_v16", JSON.stringify(cache));
+        } else {
+          localStorage.removeItem("wa_cache_v16");
+        }
+      }
+    } catch {
+      try { localStorage.removeItem("wa_cache_v16"); } catch {}
+    }
     const updated = garments.filter((g) => g.id !== id);
     setGarments(updated);
     setIndex((prev) => Math.min(prev, Math.max(updated.length - 1, 0)));

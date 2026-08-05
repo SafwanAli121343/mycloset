@@ -4,8 +4,25 @@ import { flushSync } from "react-dom";
 import type { CSSProperties, ChangeEvent } from "react";
 import { computeGapProgress, getFunctionalSlot, gapTotalProgress } from "@/lib/wardrobeAnalysis";
 import type { CrossedEntry } from "@/lib/wardrobeAnalysis";
+import { sameColorGroup } from "@/lib/constants/colors";
+import { scorePiece } from "@/lib/scoring";
+import type { GarmentForScoring } from "@/lib/scoring";
 
 const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
+
+// Gap description keyword → aesthetics it implies (used by both algorithmic and AI image check)
+const GAP_AES: [string, string[]][] = [
+  ["formal",          ["formal", "business casual"]],
+  ["business casual", ["business casual", "smart casual"]],
+  ["dress shoe",      ["formal", "business casual"]],
+  ["blazer",          ["formal", "business casual", "smart casual", "preppy"]],
+  ["sport coat",      ["formal", "smart casual", "preppy"]],
+  ["chino",           ["business casual", "preppy", "smart casual"]],
+  ["military",        ["military", "gorpcore"]],
+  ["cargo",           ["gorpcore", "military"]],
+  ["western",         ["western", "americana"]],
+  ["athletic",        ["athleisure", "gorpcore"]],
+];
 const MAX_COMPARE        = 3;
 const CATS               = ["top","sweater","vest","outerwear","bottom","footwear","one-piece","accessory"] as const;
 const SPREAD_W           = 120;
@@ -176,9 +193,27 @@ function badOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct < 0.20 ? "#1d9e52" : pct < 0.40 ? "#c88800" : "#c83030";
 }
-function pieceScore(deep:DeepAttrs, od:OutfitCountResult) {
-  const cr = Math.min((deep.color_pairings?.length??0)/15*100, 100);
-  return Math.round(od.avgScore*0.40 + od.aestheticFit*0.35 + cr*0.25);
+function pieceScore(cb:BasicAttrs, deep:DeepAttrs): number {
+  const g: GarmentForScoring = {
+    id: "__preview__",
+    title: cb.title,
+    brand: cb.brand,
+    category: cb.category,
+    sub_type: deep.sub_type,
+    material: cb.material,
+    color_primary: cb.color_primary,
+    color_secondary: null,
+    pattern: deep.pattern,
+    formality: deep.formality,
+    aesthetic_tags: deep.aesthetic_tags,
+    pros: deep.pros,
+    cons: deep.cons,
+    color_pairings: deep.color_pairings,
+    color_clashes: deep.color_clashes,
+    tags: null,
+    image: cb.image,
+  };
+  return scorePiece(g);
 }
 function overallScore(ps:number, od:OutfitCountResult) {
   // goodRatio: what fraction of outfits are high-quality (score ≥75), scaled to 100
@@ -618,7 +653,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   if (!cb||!deep||!outfitData) return null;
 
   const imgSrc=removedBgUrl??cb.image??slot.imageDataUrl;
-  const pScore=pieceScore(deep,outfitData);
+  const pScore=pieceScore(cb,deep);
   const oScore=overallScore(pScore,outfitData);
 
   // Entrance animation
@@ -638,7 +673,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   useEffect(()=>{
     if (!deep||!cb) return;
     try {
-      const raw=localStorage.getItem("wa_cache_v8");
+      const raw=localStorage.getItem("wa_cache_v16");
       if (!raw) return;
       const parsed=JSON.parse(raw) as {
         backendState:{
@@ -683,11 +718,20 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
       if (patternStr.includes("tie-dye")||patternStr.includes("tie dye")||titleStr.includes("tie dye"))
         patternImplied.push("bohemian","y2k");
       const allAestheticCandidates = [...new Set([...(deep.aesthetic_tags??[]), ...patternImplied])];
-      const addsAesthetics = allAestheticCandidates
+      const baseAesthetics = allAestheticCandidates
         .filter(t=>analysis.aesthetics.missing.some(m=>norm(m)===norm(t)));
-      const pColor=cb.color_primary?norm(cb.color_primary):null;
+      // Infer additional aesthetics from filled gaps (e.g. "formal pant" → "formal", "business casual")
+      const algoAesNorms=new Set(baseAesthetics.map(norm));
+      const gapInferredAes:string[]=[];
+      for(const gap of algorithmic){
+        const gl=gap.toLowerCase();
+        for(const[kw,aes]of GAP_AES)if(gl.includes(kw))for(const a of aes)
+          if(analysis.aesthetics.missing.includes(a)&&!algoAesNorms.has(norm(a))){gapInferredAes.push(a);algoAesNorms.add(norm(a));}
+      }
+      const addsAesthetics=[...baseAesthetics,...gapInferredAes];
+      const pColor=cb.color_primary??null;
       const addsColors=pColor
-        ?analysis.colors.missing.filter(m=>{const nm=norm(m);return nm===pColor||nm.includes(pColor)||pColor.includes(nm);})
+        ?analysis.colors.missing.filter(m=>sameColorGroup(pColor,m))
         :[];
 
       // Open weaknesses (cons not yet crossed at this level)
@@ -698,7 +742,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
       setWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:[]});
 
       // AI image check: typed groups so GPT has context for each category
-      const imgUrl=cb.image;
+      const imgUrl=removedBgUrl??cb.image;
       const unmatchedGaps=openGaps.filter(g=>!algorithmic.includes(g.description)).map(g=>g.description);
       const unmatchedAesthetics=analysis.aesthetics.missing.filter(m=>
         !addsAesthetics.some(a=>norm(a)===norm(m))
@@ -720,9 +764,18 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         }).then(r=>r.json()).then((res:{gap_fills?:string[];aesthetic_fills?:string[];color_fills?:string[];weakness_fills?:string[]})=>{
           const hasAny=(res.gap_fills?.length||res.aesthetic_fills?.length||res.color_fills?.length||res.weakness_fills?.length);
           if (!hasAny) return;
+          // Infer additional aesthetics from all gap fills (algorithmic + AI)
+          const allGapFills=[...algorithmic,...(res.gap_fills??[])];
+          const postAiAes=[...addsAesthetics,...(res.aesthetic_fills??[])];
+          const postAiAesNorms=new Set(postAiAes.map(norm));
+          for(const gap of allGapFills){
+            const gl=gap.toLowerCase();
+            for(const[kw,aes]of GAP_AES)if(gl.includes(kw))for(const a of aes)
+              if(analysis.aesthetics.missing.includes(a)&&!postAiAesNorms.has(norm(a))){postAiAes.push(a);postAiAesNorms.add(norm(a));}
+          }
           setWaImpact({
-            fillsGaps:[...algorithmic,...(res.gap_fills??[])].slice(0,3),
-            addsAesthetics:[...addsAesthetics,...(res.aesthetic_fills??[])],
+            fillsGaps:allGapFills.slice(0,3),
+            addsAesthetics:postAiAes,
             addsColors:[...addsColors,...(res.color_fills??[])],
             addressesWeaknesses:res.weakness_fills??[],
           });
@@ -886,8 +939,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         if (!c) return null;
         const dir=(["left","right","bottom","top"] as const)[i];
         const cardSections=waImpact!=null ? (
-          c.key==="pros"       ? [{header:"GAPS FILLED",            items:waImpact.fillsGaps}]             :
-          c.key==="cons"       ? [{header:"WEAKNESSES ADDRESSED",   items:waImpact.addressesWeaknesses}]   :
+          c.key==="pros"       ? [{header:"GAPS FILLED",            items:waImpact.fillsGaps},{header:"WEAKNESSES ADDRESSED",items:waImpact.addressesWeaknesses}] :
           c.key==="aesthetics" ? [{header:"AESTHETICS FILLED",      items:waImpact.addsAesthetics}]        :
           c.key==="pairings"   ? [{header:"COLORS FILLED",          items:waImpact.addsColors}]            :
           undefined
@@ -944,6 +996,7 @@ function MultiResult({scoredSlots,onReset}:{
   const [panelsAtTop,   setPanelsAtTop   ]=useState<boolean[]>(()=>Array(n).fill(true));
   const [loaderShowing,setLoaderShowing]=useState(n===2);
   const [loaderShowing3,setLoaderShowing3]=useState(n===3);
+  const [selWaImpact,setSelWaImpact]=useState<{fillsGaps:string[];addsAesthetics:string[];addsColors:string[];addressesWeaknesses:string[]}|null>(null);
   const [compareEntered,setCompareEntered]=useState(false);
   const [three3Phase,setThree3Phase]=useState<'waiting'|'stacked'|'distributing'|'done'>(n===3?'waiting':'done');
   const [three3Moving,setThree3Moving]=useState(false);
@@ -1041,6 +1094,68 @@ function MultiResult({scoredSlots,onReset}:{
   useEffect(()=>{ prevSelectedIdx.current=selectedIdx; },[selectedIdx]);
 
   useEffect(()=>{
+    if(selectedIdx===null){setSelWaImpact(null);return;}
+    let cancelled=false;
+    const selSlot=scoredSlots[selectedIdx]?.slot;
+    const sCb=selSlot?.confirmedBasic;
+    const sDp=selSlot?.deep;
+    const sBg=selSlot?.removedBgUrl;
+    if(!sDp||!sCb){setSelWaImpact(null);return;}
+    try{
+      const raw=localStorage.getItem("wa_cache_v16");
+      if(!raw){setSelWaImpact(null);return;}
+      const parsed=JSON.parse(raw) as {backendState:{analysisHistory:Array<{gaps:{description:string}[];colors:{missing:string[]};aesthetics:{missing:string[]};cons:string[]}>;crossed:CrossedEntry[];currentLevel:number}};
+      const level=parsed.backendState?.currentLevel??1;
+      const analysis=parsed.backendState?.analysisHistory?.[level-1]??parsed.backendState?.analysisHistory?.[0];
+      if(!analysis){setSelWaImpact(null);return;}
+      const norm=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+      const cat=(sCb.category??"").toLowerCase();
+      const crossed:CrossedEntry[]=parsed.backendState?.crossed??[];
+      const openGaps=analysis.gaps.filter(g=>gapTotalProgress(crossed,g.description,level)<100);
+      const funcSlot=getFunctionalSlot(sDp.sub_type??"");
+      const algorithmic=openGaps.filter(g=>computeGapProgress(g.description,sDp.sub_type??"",cat,funcSlot)>=100).map(g=>g.description);
+      const patternStr=(sDp.pattern??'').toLowerCase();
+      const titleStr=(sCb.title??'').toLowerCase();
+      const sub=(sDp.sub_type??'').toLowerCase();
+      const patternImplied:string[]=[];
+      if(patternStr.includes("camo")||titleStr.includes("camo")||titleStr.includes("camouflage")||sub.includes("camo"))patternImplied.push("military","gorpcore");
+      if(patternStr.includes("floral")||titleStr.includes("floral"))patternImplied.push("bohemian","cottagecore");
+      if(patternStr.includes("plaid")||patternStr.includes("tartan")||titleStr.includes("plaid"))patternImplied.push("preppy","ivy league");
+      if(patternStr.includes("tie-dye")||patternStr.includes("tie dye")||titleStr.includes("tie dye"))patternImplied.push("bohemian","y2k");
+      const allAestheticCandidates=[...new Set([...(sDp.aesthetic_tags??[]),...patternImplied])];
+      const baseAesthetics=allAestheticCandidates.filter(t=>analysis.aesthetics.missing.some(m=>norm(m)===norm(t)));
+      const algoAesNorms=new Set(baseAesthetics.map(norm));
+      const gapInferredAes:string[]=[];
+      for(const gap of algorithmic){const gl=gap.toLowerCase();for(const[kw,aes]of GAP_AES)if(gl.includes(kw))for(const a of aes)if(analysis.aesthetics.missing.includes(a)&&!algoAesNorms.has(norm(a))){gapInferredAes.push(a);algoAesNorms.add(norm(a));}}
+      const addsAesthetics=[...baseAesthetics,...gapInferredAes];
+      const pColor=sCb.color_primary??null;
+      const addsColors=pColor?analysis.colors.missing.filter(m=>sameColorGroup(pColor,m)):[];
+      const crossedConKeys=new Set(crossed.filter(e=>e.category==="con"&&e.analysisLevel===level).map(e=>e.key));
+      const openCons=(analysis.cons??[]).filter((_,ci)=>!crossedConKeys.has(String(ci)));
+      const imgUrl=sBg??sCb.image;
+      const unmatchedGaps=openGaps.filter(g=>!algorithmic.includes(g.description)).map(g=>g.description);
+      const unmatchedAesthetics=analysis.aesthetics.missing.filter(m=>!addsAesthetics.some(a=>norm(a)===norm(m)));
+      const unmatchedColors=analysis.colors.missing.filter(m=>!addsColors.some(c=>norm(c)===norm(m)));
+      const anyUnmatched=unmatchedGaps.length||unmatchedAesthetics.length||unmatchedColors.length||openCons.length;
+      setSelWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:[]});
+      if(anyUnmatched&&imgUrl){
+        fetch("/api/wardrobe/gap-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sub_type:sDp.sub_type,category:sCb.category,image:imgUrl,gap_descriptions:unmatchedGaps,aesthetic_gaps:unmatchedAesthetics,color_gaps:unmatchedColors,weakness_gaps:openCons})})
+          .then(r=>r.json()).then((res:{gap_fills?:string[];aesthetic_fills?:string[];color_fills?:string[];weakness_fills?:string[]})=>{
+            if(cancelled)return;
+            const hasAny=res.gap_fills?.length||res.aesthetic_fills?.length||res.color_fills?.length||res.weakness_fills?.length;
+            if(!hasAny)return;
+            const allGapFills=[...algorithmic,...(res.gap_fills??[])];
+            const postAiAes=[...addsAesthetics,...(res.aesthetic_fills??[])];
+            const postAiAesNorms=new Set(postAiAes.map(norm));
+            for(const gap of allGapFills){const gl=gap.toLowerCase();for(const[kw,aes]of GAP_AES)if(gl.includes(kw))for(const a of aes)if(analysis.aesthetics.missing.includes(a)&&!postAiAesNorms.has(norm(a))){postAiAes.push(a);postAiAesNorms.add(norm(a));}}
+            setSelWaImpact({fillsGaps:allGapFills.slice(0,3),addsAesthetics:postAiAes,addsColors:[...addsColors,...(res.color_fills??[])],addressesWeaknesses:res.weakness_fills??[]});
+          }).catch(()=>{});
+      }
+    }catch{setSelWaImpact(null);}
+    return()=>{cancelled=true;};
+  },[selectedIdx]);
+
+  useEffect(()=>{
     if(three3Phase!=='stacked') return;
     if(three3AnimStarted.current) return;
     three3AnimStarted.current=true;
@@ -1060,8 +1175,8 @@ function MultiResult({scoredSlots,onReset}:{
   const rankOf=(i:number):RankLabel=>{const r=sorted.indexOf(i);if(r===0)return"best";if(r===n-1)return"worst";return"second";};
   // Use the same overallScore formula as the display so ties/labels match what the user sees
   const _scores=scoredSlots.map(({slot})=>{
-    if(!slot.deep||!slot.outfitData) return 0;
-    return overallScore(pieceScore(slot.deep,slot.outfitData),slot.outfitData);
+    if(!slot.confirmedBasic||!slot.deep||!slot.outfitData) return 0;
+    return overallScore(pieceScore(slot.confirmedBasic,slot.deep),slot.outfitData);
   });
   function getStripInfo(i:number):{label:string;color:string}{
     if(n===2){
@@ -1197,8 +1312,8 @@ function MultiResult({scoredSlots,onReset}:{
   const cb=selSS?.slot.confirmedBasic??null;
   const deep=selSS?.slot.deep??null;
   const outfitData=selSS?.slot.outfitData??null;
-  const pScore=deep&&outfitData?pieceScore(deep,outfitData):0;
-  const oScore=deep&&outfitData?overallScore(pScore,outfitData):0;
+  const pScore=cb&&deep&&outfitData?pieceScore(cb,deep):0;
+  const oScore=cb&&deep&&outfitData?overallScore(pScore,outfitData):0;
   const pieceMatchCount=outfitData?Object.keys(outfitData.items).length:0;
   const previewItem=cb&&deep&&selSS?{id:"__preview__",title:cb.title,image:selSS.slot.removedBgUrl??cb.image??selSS.slot.imageDataUrl,sub_type:deep.sub_type,category:cb.category,aesthetic_tags:deep.aesthetic_tags??null} as OutfitItem:null;
 
@@ -1208,10 +1323,11 @@ function MultiResult({scoredSlots,onReset}:{
   // Precompute 2-item comparison data
   const cmpData=(n===2)?(()=>{
     const s0=scoredSlots[0],s1=scoredSlots[1];
+    const cb0=s0.slot.confirmedBasic,cb1=s1.slot.confirmedBasic;
     const d0=s0.slot.deep,d1=s1.slot.deep;
     const od0=s0.slot.outfitData,od1=s1.slot.outfitData;
-    if(!d0||!d1||!od0||!od1) return null;
-    const ps0=pieceScore(d0,od0),ps1=pieceScore(d1,od1);
+    if(!cb0||!cb1||!d0||!d1||!od0||!od1) return null;
+    const ps0=pieceScore(cb0,d0),ps1=pieceScore(cb1,d1);
     const os0=overallScore(ps0,od0),os1=overallScore(ps1,od1);
     const pm0=Object.keys(od0.items).length,pm1=Object.keys(od1.items).length;
     const name0=s0.slot.confirmedBasic?.title??"Item 1";
@@ -1553,8 +1669,8 @@ function MultiResult({scoredSlots,onReset}:{
                 const scb=s.confirmedBasic;
                 const {badge,color}=RANK_BADGE[rankOf(i)];
                 const d=s.deep,od=s.outfitData;
-                const ps=d&&od?pieceScore(d,od):0;
-                const os=d&&od?overallScore(ps,od):0;
+                const ps=scb&&d&&od?pieceScore(scb,d):0;
+                const os=scb&&d&&od?overallScore(ps,od):0;
                 const naturalCenter=i*(cmpItemW+cmpGap)+cmpItemW/2;
                 const xOff=imgAtTop?0:Math.round(CMP_W/2-naturalCenter);
                 return (
@@ -1628,9 +1744,9 @@ function MultiResult({scoredSlots,onReset}:{
       {/* ── n===3: horizontal compare + shared piece view ── */}
       {n===3&&(()=>{
         const slots3=scoredSlots.map(({slot})=>{
-          const d=slot.deep,od=slot.outfitData;
-          const ps=d&&od?pieceScore(d,od):0;
-          const os=d&&od?overallScore(ps,od):0;
+          const scb3=slot.confirmedBasic,d=slot.deep,od=slot.outfitData;
+          const ps=scb3&&d&&od?pieceScore(scb3,d):0;
+          const os=scb3&&d&&od?overallScore(ps,od):0;
           const pm=od?Object.keys(od.items).length:0;
           return {slot,d,od,ps,os,pm};
         });
@@ -1916,10 +2032,17 @@ function MultiResult({scoredSlots,onReset}:{
       {/* Slide cards (selected mode only) */}
       {!inCompare&&deep&&outfitData&&(
         <>
-          {leftCard  &&<SlideCard cardKey={leftCard.key}  dir="left"  items={getCardItems(leftCard.key, deep,outfitData.items)} exiting={leftCard.exiting}  onHide={()=>exitCard(leftCard!.key)}/>}
-          {rightCard &&<SlideCard cardKey={rightCard.key} dir="right" items={getCardItems(rightCard.key,deep,outfitData.items)} exiting={rightCard.exiting} onHide={()=>exitCard(rightCard!.key)}/>}
-          {bottomCard&&<SlideCard cardKey={bottomCard.key}dir="bottom"items={getCardItems(bottomCard.key,deep,outfitData.items)}exiting={bottomCard.exiting}onHide={()=>exitCard(bottomCard!.key)}/>}
-          {topCard   &&<SlideCard cardKey={topCard.key}   dir="top"   items={getCardItems(topCard.key,  deep,outfitData.items)} exiting={topCard.exiting}   onHide={()=>exitCard(topCard!.key)}/>}
+          {([leftCard,rightCard,bottomCard,topCard] as const).map((c,i)=>{
+            if(!c) return null;
+            const dir=(["left","right","bottom","top"] as const)[i];
+            const secs=selWaImpact!=null?(
+              c.key==="pros"       ?[{header:"GAPS FILLED",items:selWaImpact.fillsGaps},{header:"WEAKNESSES ADDRESSED",items:selWaImpact.addressesWeaknesses}]:
+              c.key==="aesthetics" ?[{header:"AESTHETICS FILLED",items:selWaImpact.addsAesthetics}]:
+              c.key==="pairings"   ?[{header:"COLORS FILLED",items:selWaImpact.addsColors}]:
+              undefined
+            ):undefined;
+            return <SlideCard key={dir} cardKey={c.key} dir={dir} items={getCardItems(c.key,deep,outfitData!.items)} exiting={c.exiting} onHide={()=>exitCard(c.key)} sections={secs}/>;
+          })}
         </>
       )}
 

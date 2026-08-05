@@ -26,13 +26,15 @@ async function tableExists(): Promise<boolean> {
 async function loadState(userId: string): Promise<{ state: WABackendState | null; missing: boolean }> {
   const { data, error } = await sb
     .from("wardrobe_analysis_state")
-    .select("analysis_history, crossed, current_level, highest_score")
+    .select("analysis_history, crossed, current_level")
     .eq("user_id", userId)
     .single();
 
   if (error) {
     if (TABLE_MISSING_CODES.has(error.code ?? "")) return { state: null, missing: true };
     // PGRST116 = no rows — table exists but user has no state yet (first visit)
+    // Other errors (e.g. column not found after partial migration) also return null gracefully
+    if (error.code !== "PGRST116") return { state: null, missing: false };
     return { state: null, missing: false };
   }
   if (!data) return { state: null, missing: false };
@@ -41,7 +43,7 @@ async function loadState(userId: string): Promise<{ state: WABackendState | null
       analysisHistory: (data.analysis_history as WABackendState["analysisHistory"]) ?? [],
       crossed:         (data.crossed as WABackendState["crossed"]) ?? [],
       currentLevel:    (data.current_level as number) ?? 1,
-      highestScore:    (data.highest_score as number | null) ?? undefined,
+      // highestScore is computed fresh in applyState from history+crossed — no need to persist
     },
     missing: false,
   };
@@ -85,7 +87,6 @@ export async function PUT(req: NextRequest) {
       analysis_history: body.analysisHistory,
       crossed:          body.crossed,
       current_level:    effLevel,
-      highest_score:    body.highestScore ?? null,
       updated_at:       new Date().toISOString(),
     },
     { onConflict: "user_id" }

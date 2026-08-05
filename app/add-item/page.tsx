@@ -3,8 +3,22 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { gapTotalProgress, computeGapProgress } from "@/lib/wardrobeAnalysis";
 import type { CrossedEntry } from "@/lib/wardrobeAnalysis";
+import { sameColorGroup } from "@/lib/constants/colors";
 
 const FONT = { fontFamily: "Arial, sans-serif" };
+
+const GAP_AES: [string, string[]][] = [
+  ["formal",          ["formal", "business casual"]],
+  ["business casual", ["business casual", "smart casual"]],
+  ["dress shoe",      ["formal", "business casual"]],
+  ["blazer",          ["formal", "business casual", "smart casual", "preppy"]],
+  ["sport coat",      ["formal", "smart casual", "preppy"]],
+  ["chino",           ["business casual", "preppy", "smart casual"]],
+  ["military",        ["military", "gorpcore"]],
+  ["cargo",           ["gorpcore", "military"]],
+  ["western",         ["western", "americana"]],
+  ["athletic",        ["athleisure", "gorpcore"]],
+];
 const CATEGORIES = ["top", "bottom", "footwear", "outerwear", "accessory"];
 const SKIP_KEY   = "mycloset_skip_photo_tips";
 const VALID_FITS = new Set(["slim", "regular", "relaxed", "oversized", "baggy", "tapered", "straight", "wide", "skinny", "boxy"]);
@@ -428,7 +442,7 @@ export default function AddItemPage() {
     // Update the WA cache: compute which gaps/colors/aesthetics/cons the new item crosses,
     // record them with garment attribution, update localStorage, and fire-and-forget to backend.
     try {
-      const WA_KEY    = "wa_cache_v8";
+      const WA_KEY    = "wa_cache_v16";
       const garmentId = saved.id ?? "";
       const raw       = localStorage.getItem(WA_KEY);
 
@@ -449,50 +463,31 @@ export default function AddItemPage() {
       };
 
       if (raw) {
-        const cache    = JSON.parse(raw) as WACacheV7;
+        const cache    = JSON.parse(raw) as WACacheV7 & { removedCrossings?: Record<string, WACacheV7["backendState"]["crossed"]> };
         const bs       = cache.backendState;
         const level    = bs.currentLevel;
         const analysis = bs.analysisHistory[level - 1];
+
+        // If this exact item was previously removed, restore its crossings first so the
+        // score delta on re-add exactly matches the delta on remove.
+        const prevCrossings = cache.removedCrossings?.[garmentId];
+        if (prevCrossings && prevCrossings.length > 0) {
+          bs.crossed = [...bs.crossed, ...prevCrossings];
+          delete cache.removedCrossings![garmentId];
+          // pieceCount and cache save happen in the normal flow below — don't double-increment.
+          fetch("/api/wardrobe/state/cross", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(prevCrossings),
+          }).catch(() => {});
+          // Fall through — fresh analysis below will skip already-restored entries and add any new-level crossings.
+        }
 
         if (analysis) {
           const sub  = (saved.sub_type ?? "").toLowerCase();
           const cat  = (saved.category ?? category ?? "").toLowerCase();
           const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-          const newEntries: WACacheV7["backendState"]["crossed"] = [];
-          const existingColKeys = new Set(bs.crossed.filter(e => e.category === "color" && e.analysisLevel === level).map(e => e.key));
-          const existingAesKeys = new Set(bs.crossed.filter(e => e.category === "aesthetic" && e.analysisLevel === level).map(e => e.key));
-          const existingConKeys = new Set(bs.crossed.filter(e => e.category === "con" && e.analysisLevel === level).map(e => e.key));
-
-          for (const g of analysis.gaps) {
-            // Skip if already fully resolved by prior items
-            const totalSoFar = gapTotalProgress(bs.crossed as CrossedEntry[], g.description, level);
-            if (totalSoFar >= 100) continue;
-            // Skip if this exact garment already contributed to this gap
-            const alreadyContributed = bs.crossed.some(
-              (e: { category: string; key: string; garmentId: string; analysisLevel: number }) =>
-                e.category === "gap" && e.key === g.description && e.garmentId === garmentId && e.analysisLevel === level
-            );
-            if (alreadyContributed) continue;
-
-            const progress = computeGapProgress(g.description, saved.sub_type, saved.category ?? category, saved.functional_slot);
-            if (progress > 0) {
-              newEntries.push({ category: "gap", key: g.description, garmentId, analysisLevel: level, progress });
-            }
-          }
-
-          if (saved.color_primary) {
-            const pc = norm(saved.color_primary);
-            for (const c of analysis.colors.missing) {
-              if (existingColKeys.has(c)) continue;
-              const nm = norm(c);
-              if (nm === pc || nm.includes(pc) || pc.includes(nm)) {
-                newEntries.push({ category: "color", key: c, garmentId, analysisLevel: level });
-              }
-            }
-          }
-
-          // Pattern/title inference — same logic as preview so adding always matches previewing
+          // Pattern/aesthetic inference — item-specific, used across all levels
           const patternStr = (saved.pattern ?? "").toLowerCase();
           const titleStr   = (saved.title   ?? saved.sub_type ?? "").toLowerCase();
           const patternImplied: string[] = [];
@@ -504,15 +499,87 @@ export default function AddItemPage() {
             patternImplied.push("preppy", "ivy league");
           if (patternStr.includes("tie-dye") || patternStr.includes("tie dye") || titleStr.includes("tie dye"))
             patternImplied.push("bohemian", "y2k");
-
           const aestheticCandidates = [...new Set([...(saved.aesthetic_tags ?? []), ...patternImplied])];
+
+          const newEntries: WACacheV7["backendState"]["crossed"] = [];
+
+          // ── Algorithmic crossing for ALL prior levels ──────────────────────────
+          // Ensures removing-then-re-adding an item restores its full score delta
+          // even when it was originally added at a lower level.
+          for (let L = 1; L < level; L++) {
+            const priorA = bs.analysisHistory[L - 1];
+            if (!priorA) continue;
+            const priorColKeys = new Set(bs.crossed.filter(e => e.category === "color"     && e.analysisLevel === L).map(e => e.key));
+            const priorAesKeys = new Set(bs.crossed.filter(e => e.category === "aesthetic" && e.analysisLevel === L).map(e => e.key));
+            const priorConKeys = new Set(bs.crossed.filter(e => e.category === "con"       && e.analysisLevel === L).map(e => e.key));
+            for (const g of priorA.gaps) {
+              if (gapTotalProgress(bs.crossed as CrossedEntry[], g.description, L) >= 100) continue;
+              if (bs.crossed.some((e: { category: string; key: string; garmentId: string; analysisLevel: number }) =>
+                e.category === "gap" && e.key === g.description && e.garmentId === garmentId && e.analysisLevel === L)) continue;
+              const progress = computeGapProgress(g.description, saved.sub_type, saved.category ?? category, saved.functional_slot);
+              if (progress > 0) newEntries.push({ category: "gap", key: g.description, garmentId, analysisLevel: L, progress });
+            }
+            if (saved.color_primary) {
+              for (const c of priorA.colors.missing) {
+                if (priorColKeys.has(c)) continue;
+                if (sameColorGroup(saved.color_primary, c)) newEntries.push({ category: "color", key: c, garmentId, analysisLevel: L });
+              }
+            }
+            for (const tag of aestheticCandidates) {
+              const nt = norm(tag);
+              for (const a of priorA.aesthetics.missing) {
+                if (priorAesKeys.has(a)) continue;
+                if (norm(a) === nt) newEntries.push({ category: "aesthetic", key: a, garmentId, analysisLevel: L });
+              }
+            }
+            // Cons: same keyword-match logic as current level
+            const priorConGapLinks = (priorA.conGapLinks ?? {}) as Record<string, string>;
+            const priorCrossedGapKeys = new Set([
+              ...priorA.gaps.filter(g => gapTotalProgress(bs.crossed as CrossedEntry[], g.description, L) >= 100).map(g => g.description),
+              ...newEntries.filter(e => e.category === "gap" && e.analysisLevel === L).map(e => e.key),
+            ]);
+            for (let i = 0; i < priorA.cons.length; i++) {
+              if (priorConKeys.has(String(i))) continue;
+              const con = priorA.cons[i].toLowerCase();
+              const linkedGap = priorConGapLinks[String(i)];
+              const matches =
+                (sub && con.includes(sub)) ||
+                (cat && con.includes(cat)) ||
+                (linkedGap && priorCrossedGapKeys.has(linkedGap.toLowerCase())) ||
+                [...priorCrossedGapKeys].some(d => con.includes(d));
+              if (matches) newEntries.push({ category: "con", key: String(i), garmentId, analysisLevel: L });
+            }
+          }
+
+          // ── Current level: algorithmic + AI gap-check ──────────────────────────
+          const existingColKeys = new Set(bs.crossed.filter(e => e.category === "color"     && e.analysisLevel === level).map(e => e.key));
+          const existingAesKeys = new Set(bs.crossed.filter(e => e.category === "aesthetic" && e.analysisLevel === level).map(e => e.key));
+          const existingConKeys = new Set(bs.crossed.filter(e => e.category === "con"       && e.analysisLevel === level).map(e => e.key));
+
+          for (const g of analysis.gaps) {
+            const totalSoFar = gapTotalProgress(bs.crossed as CrossedEntry[], g.description, level);
+            if (totalSoFar >= 100) continue;
+            const alreadyContributed = bs.crossed.some(
+              (e: { category: string; key: string; garmentId: string; analysisLevel: number }) =>
+                e.category === "gap" && e.key === g.description && e.garmentId === garmentId && e.analysisLevel === level
+            );
+            if (alreadyContributed) continue;
+            const progress = computeGapProgress(g.description, saved.sub_type, saved.category ?? category, saved.functional_slot);
+            if (progress > 0) newEntries.push({ category: "gap", key: g.description, garmentId, analysisLevel: level, progress });
+          }
+
+          if (saved.color_primary) {
+            for (const c of analysis.colors.missing) {
+              if (existingColKeys.has(c)) continue;
+              if (sameColorGroup(saved.color_primary, c)) newEntries.push({ category: "color", key: c, garmentId, analysisLevel: level });
+            }
+          }
+
           for (const tag of aestheticCandidates) {
             const nt = norm(tag);
             for (const a of analysis.aesthetics.missing) {
               if (existingAesKeys.has(a)) continue;
-              if (norm(a) === nt) {
-                newEntries.push({ category: "aesthetic", key: a, garmentId, analysisLevel: level });
-              }
+              if (norm(a) === nt) newEntries.push({ category: "aesthetic", key: a, garmentId, analysisLevel: level });
             }
           }
 
@@ -596,13 +663,36 @@ export default function AddItemPage() {
                   aiEntries.push({ category: "aesthetic" as const, key: a, garmentId, analysisLevel: level });
               }
               for (const c of (res.color_fills ?? [])) {
-                if (unmatchedColor.includes(c))
+                if (unmatchedColor.includes(c) && (!saved.color_primary || sameColorGroup(saved.color_primary, c)))
                   aiEntries.push({ category: "color" as const, key: c, garmentId, analysisLevel: level });
               }
               for (const w of (res.weakness_fills ?? [])) {
                 const idx = analysis.cons.indexOf(w);
                 if (idx !== -1 && !existingConKeys.has(String(idx)))
                   aiEntries.push({ category: "con" as const, key: String(idx), garmentId, analysisLevel: level });
+              }
+              // Infer aesthetics from all gap fills (algorithmic + AI)
+              const allGapFills = [
+                ...newEntries.filter(e => e.category === "gap").map(e => e.key),
+                ...(res.gap_fills ?? []),
+              ];
+              const crossedAesNorms = new Set([
+                ...existingAesKeys,
+                ...algorithmicAesKeys,
+                ...aiEntries.filter(e => e.category === "aesthetic").map(e => norm(e.key)),
+              ]);
+              for (const gap of allGapFills) {
+                const gl = gap.toLowerCase();
+                for (const [kw, aes] of GAP_AES) {
+                  if (gl.includes(kw)) {
+                    for (const a of aes) {
+                      if (analysis.aesthetics.missing.includes(a) && !crossedAesNorms.has(norm(a))) {
+                        aiEntries.push({ category: "aesthetic" as const, key: a, garmentId, analysisLevel: level });
+                        crossedAesNorms.add(norm(a));
+                      }
+                    }
+                  }
+                }
               }
               applyEntries(aiEntries);
             }).catch(() => applyEntries([]));
@@ -613,7 +703,7 @@ export default function AddItemPage() {
       } else {
         localStorage.removeItem(WA_KEY);
       }
-    } catch { try { localStorage.removeItem("wa_cache_v8"); } catch {} }
+    } catch { try { localStorage.removeItem("wa_cache_v16"); } catch {} }
 
     // Pre-compute pairings so the closet never shows "no items pair with this"
     if (saved.id) {

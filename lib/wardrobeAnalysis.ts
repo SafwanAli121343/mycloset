@@ -3,6 +3,7 @@
 import { scoreWardrobe, scorePiece, getSlot } from "@/lib/scoring";
 import type { GarmentForScoring } from "@/lib/scoring";
 import { KNOWN_AESTHETICS } from "@/lib/constants/attributes";
+import { COLOR_GROUPS, sameColorGroup } from "@/lib/constants/colors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,28 +68,8 @@ export const ESSENTIAL_COLORS = [
   "Brown","Olive","Burgundy","Forest Green","Charcoal","Khaki","Stone",
 ];
 
-const COLOR_ALIASES: Record<string, string[]> = {
-  "Black":        ["black"],
-  "White":        ["white","off-white","ivory","cream","butter"],
-  "Navy":         ["navy","navy blue","dark navy"],
-  "Gray":         ["gray","grey","charcoal","heather gray","slate gray","ash gray","light gray"],
-  "Cream":        ["cream","ivory","off-white","butter"],
-  "Beige":        ["beige","taupe","stone","sand","wheat"],
-  "Tan":          ["tan","khaki","sand"],
-  "Camel":        ["camel","caramel","amber","honey"],
-  "Brown":        ["brown","chocolate","espresso","chestnut"],
-  "Olive":        ["olive","army green","olive green"],
-  "Burgundy":     ["burgundy","wine","maroon","oxblood","crimson"],
-  "Forest Green": ["forest green","hunter green","dark green","emerald"],
-  "Charcoal":     ["charcoal","charcoal gray","slate"],
-  "Khaki":        ["khaki","tan","sand","beige"],
-  "Stone":        ["stone","sand","beige","taupe"],
-};
-
 export function colorIsCovered(essential: string, wardrobeColors: string[]): boolean {
-  const aliases = COLOR_ALIASES[essential] ?? [essential.toLowerCase()];
-  const lowered = wardrobeColors.map(c => c.toLowerCase());
-  return lowered.some(wc => aliases.some(a => wc.includes(a) || a.includes(wc)));
+  return wardrobeColors.some(wc => sameColorGroup(essential, wc));
 }
 
 // ── Aesthetic normalization ────────────────────────────────────────────────────
@@ -397,8 +378,30 @@ export function buildWardrobePromptSection(
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k}×${v}`).join(", ");
 
+  // Build color presence section: actual colors + explicit synonym families so GPT
+  // never suggests a color whose family is already represented in the wardrobe.
+  const presentNorms = new Set(metrics.allColors.map(c => c.toLowerCase().trim()));
+  const coveredFamilies: string[] = [];
+  const expandedColorSet = new Set(metrics.allColors);
+  for (const group of COLOR_GROUPS) {
+    const normGroup = group.map(c => c.toLowerCase().trim());
+    const hits = normGroup.filter(c => presentNorms.has(c));
+    if (hits.length > 0) {
+      const synonymsNotPresent = group.filter(c => !hits.includes(c.toLowerCase().trim()));
+      if (synonymsNotPresent.length > 0) {
+        coveredFamilies.push(`${hits.map(h => h.charAt(0).toUpperCase() + h.slice(1)).join("/")} → also covers: ${synonymsNotPresent.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(", ")}`);
+      }
+      for (const c of group) expandedColorSet.add(c.charAt(0).toUpperCase() + c.slice(1));
+    }
+  }
+
   s += `=== METRICS ===\n`;
-  s += `Colors present: ${metrics.allColors.slice(0, 25).join(", ")}\n`;
+  s += `Colors present: ${metrics.allColors.join(", ")}\n`;
+  if (coveredFamilies.length > 0) {
+    s += `Color families covered (TREAT THESE AS PRESENT — do NOT suggest any of the synonyms as missing):\n`;
+    coveredFamilies.forEach(f => { s += `  • ${f}\n`; });
+  }
+  s += `All colors treated as present (actual + synonyms): ${[...expandedColorSet].join(", ")}\n`;
   s += `Aesthetics present: ${aestheticStr || "none tagged"}\n`;
   s += `Aesthetics completely absent: ${metrics.absentAesthetics.join(", ")}\n`;
   s += `Category counts: ${Object.entries(metrics.categoryCounts).map(([k, v]) => `${k}:${v}`).join(", ")}\n`;
@@ -584,25 +587,10 @@ export function computeGapProgress(
 // If all levels are complete, returns currentLevel (signals needsFresh).
 export function computeEffectiveLevel(
   analysisHistory: WardrobeAnalysis[],
-  crossed: CrossedEntry[],
+  _crossed: CrossedEntry[],
   currentLevel: number
 ): number {
-  for (let L = 1; L <= currentLevel; L++) {
-    const a = analysisHistory[L - 1];
-    if (!a) return L;
-    const atL    = crossed.filter(e => e.analysisLevel === L);
-    const colKeys = new Set(atL.filter(e => e.category === "color").map(e => e.key));
-    const aesKeys = new Set(atL.filter(e => e.category === "aesthetic").map(e => e.key));
-    // Level advances only when ALL categories are resolved at level L
-    const allG = a.gaps.length === 0 || a.gaps.every(g => gapTotalProgress(crossed, g.description, L) >= 100);
-    const allCons = a.cons.length === 0 || a.cons.every((_, i) => {
-      if (atL.some(e => e.category === "con" && e.key === String(i))) return true;
-      const linkedGap = (a.conGapLinks ?? {})[String(i)];
-      return linkedGap ? gapTotalProgress(crossed, linkedGap, L) >= 100 : false;
-    });
-    const allC = a.colors.missing.length === 0 || a.colors.missing.every(c => colKeys.has(c));
-    const allA = a.aesthetics.missing.length === 0 || a.aesthetics.missing.every(ae => aesKeys.has(ae));
-    if (!allG || !allCons || !allC || !allA) return L;
-  }
-  return currentLevel;
+  // Level is a permanent achievement — never regresses when items are removed.
+  // Cap only at analysisHistory length so we can't display a level not yet analyzed.
+  return Math.max(1, Math.min(currentLevel, analysisHistory.length));
 }
