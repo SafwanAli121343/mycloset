@@ -255,23 +255,35 @@ export default function WardrobeAnalysisPage() {
         const crossedAesKeys   = new Set(atLevel.filter((e: CrossedEntry) => e.category === "aesthetic").map((e: CrossedEntry) => e.key));
         setCrossedColors([...crossedColorKeys]);
         setCrossedAesthetics([...crossedAesKeys]);
-        setCrossedConIndices(atLevel.filter((e: CrossedEntry) => e.category === "con").map((e: CrossedEntry) => Number(e.key)));
+        // Crossed cons: a crossing entry is only active if its linked gap is still fully resolved.
+        // Con crossings use garmentId=undefined (auto-crossed via gap) so they persist even when
+        // the filling item is removed — we must re-check gap completion here to stay current.
+        const crossedConIdxs: number[] = [];
+        atLevel.filter((e: CrossedEntry) => e.category === "con").forEach(e => {
+          const idx = Number(e.key);
+          const linkedGap = (displayA.conGapLinks ?? {})[String(idx)];
+          if (!linkedGap || gapTotalProgress(bs.crossed, linkedGap, effLevel) >= 100) {
+            crossedConIdxs.push(idx);
+          }
+        });
+        setCrossedConIndices(crossedConIdxs);
         setGapsLevel(effLevel);
         setColorsLevel(effLevel);
         setAestheticsLevel(effLevel);
         setWeaknessesLevel(effLevel);
 
-        // Ghost cons: cons from PREVIOUS levels that were already crossed — shown as greyed strikethrough
+        // Ghost cons: cons from PREVIOUS levels that were resolved — same gap-link check applies
         const ghosts: string[] = [];
         for (let L = 1; L < effLevel; L++) {
           const prevA = bs.analysisHistory[L - 1];
           if (!prevA) continue;
           const prevCrossed = bs.crossed.filter((e: CrossedEntry) => e.analysisLevel === L);
           prevA.cons.forEach((text, i) => {
-            const directlyCrossed = prevCrossed.some((e: CrossedEntry) => e.category === "con" && e.key === String(i));
+            const hasCrossing = prevCrossed.some((e: CrossedEntry) => e.category === "con" && e.key === String(i));
+            if (!hasCrossing) return;
             const linkedGap = (prevA.conGapLinks ?? {})[String(i)];
-            const viaCap = linkedGap ? gapTotalProgress(bs.crossed, linkedGap, L) >= 100 : false;
-            if (directlyCrossed || viaCap) ghosts.push(text);
+            const gapStillFilled = linkedGap ? gapTotalProgress(bs.crossed, linkedGap, L) >= 100 : true;
+            if (gapStillFilled) ghosts.push(text);
           });
         }
         setGhostCons(ghosts);
@@ -308,7 +320,13 @@ export default function WardrobeAnalysisPage() {
           levelPts += lcColKeys.size * 2;
           const lcAesKeys = new Set(lc.filter((e: CrossedEntry) => e.category === "aesthetic").map((e: CrossedEntry) => e.key));
           levelPts += lcAesKeys.size;
-          const lcConCount = lc.filter((e: CrossedEntry) => e.category === "con").length;
+          // Cons: only count if linked gap is still at 100% (crossing entries persist even
+          // after their filling item is removed, so we must verify gap completion here).
+          let lcConCount = 0;
+          lc.filter((e: CrossedEntry) => e.category === "con").forEach(e => {
+            const linkedGap = (levelA.conGapLinks ?? {})[e.key];
+            if (!linkedGap || gapTotalProgress(bs.crossed, linkedGap, L) >= 100) lcConCount++;
+          });
           levelPts += lcConCount * 2;
 
           bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, levelPts));
