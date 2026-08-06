@@ -313,7 +313,26 @@ export default function WardrobeAnalysisPage() {
 
           bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, levelPts));
         }
-        setAnalysis({ ...displayA, score: bumpedScore });
+        // Safety net: strip aesthetics/colors that already appeared in a prior level's missing list,
+        // in case the data stored in Supabase predates the API-level dedup filter.
+        const priorAesSet = new Set(
+          bs.analysisHistory.slice(0, effLevel - 1).flatMap(a => a.aesthetics.missing.map(ae => ae.toLowerCase()))
+        );
+        const priorColSet = new Set(
+          bs.analysisHistory.slice(0, effLevel - 1).flatMap(a => a.colors.missing.map(c => c.toLowerCase().trim()))
+        );
+        const filteredDisplayA: WardrobeAnalysis = effLevel <= 1 ? displayA : {
+          ...displayA,
+          aesthetics: {
+            ...displayA.aesthetics,
+            missing: displayA.aesthetics.missing.filter(ae => !priorAesSet.has(ae.toLowerCase())),
+          },
+          colors: {
+            ...displayA.colors,
+            missing: displayA.colors.missing.filter(c => !priorColSet.has(c.toLowerCase().trim())),
+          },
+        };
+        setAnalysis({ ...filteredDisplayA, score: bumpedScore });
       }
 
       // Helper: run fresh GPT analysis, passing prior history so repeats are excluded

@@ -180,16 +180,25 @@ Hard rules:
     gpt = {};
   }
 
+  // Hard dedup sets — never repeat anything suggested in a prior level, regardless of GPT compliance
+  const priorAestheticsSet = new Set(priorAnalyses.flatMap(a => a.aesthetics.missing.map(ae => ae.toLowerCase())));
+  const priorColorsSet     = new Set(priorAnalyses.flatMap(a => a.colors.missing.map(c => c.toLowerCase().trim())));
+  const priorGapSet        = new Set(priorAnalyses.flatMap(a => a.gaps.map(g => g.description.toLowerCase())));
+
   // Use GPT-provided missing colors if available, fall back to computed
-  // Post-process: strip any color GPT suggested that's already covered by a wardrobe color's synonym family
+  // Post-process: strip any color GPT suggested that's already covered by a wardrobe color's synonym family,
+  // or that appeared in a prior level's missing colors list.
   const rawMissingColors = gpt.missing_colors?.length ? gpt.missing_colors : metrics.missingEssentials.slice(0, 6);
   const wardrobeColorNorms = metrics.allColors.map(c => c.toLowerCase().trim());
-  const missingColors = rawMissingColors.filter(mc => !wardrobeColorNorms.some(wc => sameColorGroup(mc, wc)));
+  const missingColors = rawMissingColors.filter(mc =>
+    !wardrobeColorNorms.some(wc => sameColorGroup(mc, wc)) &&
+    !priorColorsSet.has(mc.toLowerCase().trim())
+  );
 
-  // Use GPT-provided missing aesthetics; validate they're actually absent; fall back to computed
+  // Use GPT-provided missing aesthetics; validate they're actually absent and not from a prior level; fall back to computed
   const missingAesthetics = (gpt.missing_aesthetics?.length
-    ? gpt.missing_aesthetics.filter(a => !metrics.aestheticCounts[a])
-    : fallbackMissingAesthetics);
+    ? gpt.missing_aesthetics.filter(a => !metrics.aestheticCounts[a] && !priorAestheticsSet.has(a.toLowerCase()))
+    : fallbackMissingAesthetics.filter(a => !priorAestheticsSet.has(a.toLowerCase())));
 
   const analysis: WardrobeAnalysis = {
     score:       metrics.score,
@@ -220,14 +229,16 @@ Hard rules:
       missing: missingAesthetics,
     },
     subTypeFrequency: metrics.subTypeCounts,
-    gaps:     (gpt.gaps ?? []).map(g => ({
-      description: g.description,
-      type:        (g.type as "piece_type" | "specific_piece" | "category") || "piece_type",
-      impact:      (g.impact as "high" | "medium" | "low") || "medium",
-      reason:      stripDash(g.reason),
-      costPoints:  metrics.slotCostMap[g.description] ||
-                   (g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2),
-    })),
+    gaps:     (gpt.gaps ?? [])
+      .filter(g => !priorGapSet.has(g.description.toLowerCase()))
+      .map(g => ({
+        description: g.description,
+        type:        (g.type as "piece_type" | "specific_piece" | "category") || "piece_type",
+        impact:      (g.impact as "high" | "medium" | "low") || "medium",
+        reason:      stripDash(g.reason),
+        costPoints:  metrics.slotCostMap[g.description] ||
+                     (g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2),
+      })),
     overdone: gpt.overdone ?? [],
     insights: (gpt.insights ?? []).map(stripDash),
     generatedAt: new Date().toISOString(),
