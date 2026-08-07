@@ -122,6 +122,24 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json({ success: true });
 }
 
+// Upload a base64 data URI to Supabase Storage and return the public URL.
+// Used to avoid storing raw image bytes in the garments DB column.
+async function uploadBase64ToStorage(dataUri: string, userId: string): Promise<string> {
+  const semi = dataUri.indexOf(";base64,");
+  if (!dataUri.startsWith("data:") || semi === -1) return dataUri;
+  const mime = dataUri.slice(5, semi);
+  const b64  = dataUri.slice(semi + 8);
+  const buffer = Buffer.from(b64, "base64");
+  const ext = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
+  const storagePath = `${userId}/uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  await adminClient.storage.createBucket("garment-images", { public: true }).catch(() => {});
+  const { error } = await adminClient.storage
+    .from("garment-images")
+    .upload(storagePath, buffer, { contentType: mime, upsert: true });
+  if (error) return dataUri;
+  return adminClient.storage.from("garment-images").getPublicUrl(storagePath).data.publicUrl;
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const { title, price, source, link, image, user_id, category, manual, brand: manualBrand, color_primary: manualColor } = body;
@@ -131,12 +149,15 @@ export async function POST(request: NextRequest) {
     if (!title || !category || !user_id) {
       return NextResponse.json({ error: "title, category and user_id required for manual add" }, { status: 400 });
     }
+    const resolvedImageManual = image?.startsWith("data:")
+      ? await uploadBase64ToStorage(image, user_id).catch(() => image)
+      : (image ?? null);
     const garment = await insertGarment({
       title,
       price: price ?? null,
       source: "manual",
       link: link ?? null,
-      image: image ?? null,
+      image: resolvedImageManual,
       user_id,
       category,
       brand: manualBrand ?? null,
@@ -470,12 +491,16 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
     ...inferred.confidence,
   };
 
+  const resolvedImage = image?.startsWith("data:") && user_id
+    ? await uploadBase64ToStorage(image, user_id).catch(() => image)
+    : image;
+
   const garment = await insertGarment({
     title,
     price,
     source,
     link,
-    image,
+    image: resolvedImage,
     user_id,
     category,
     brand: finalBrand,
