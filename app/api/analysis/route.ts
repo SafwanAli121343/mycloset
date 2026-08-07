@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
 
     const { data: garments, error } = await supabase
         .from("garments")
-        .select("*")
+        .select("id, title, category, brand, price, sub_type, color_primary, color_secondary, material, aesthetic_tags")
         .eq("user_id", userId);
     
     if (error || !garments || garments.length == 0){
