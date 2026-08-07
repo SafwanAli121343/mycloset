@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSessionFromCookies } from "@/lib/auth/session";
 import { inferGarmentAttributes, inferGarmentAttributesTextOnly } from "@/lib/aiInference";
+import { revalidateGarmentCrossings } from "@/lib/db/wardrobeState";
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,6 +95,20 @@ export async function POST(req: NextRequest) {
     .eq("user_id", session.userId);
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
+
+  // aesthetic_tags is the only field here that wardrobe-analysis crossings depend on — if it
+  // changed, re-validate this item's existing aesthetic crossings against the new tags so a
+  // crossing earned under the old tags doesn't keep showing as resolved.
+  if ("aesthetic_tags" in updates) {
+    try {
+      await revalidateGarmentCrossings(adminClient, session.userId, garmentId, {
+        sub_type:      garment.sub_type,
+        category:      garment.category,
+        color_primary: garment.color_primary,
+        aesthetic_tags: updates.aesthetic_tags as string[],
+      });
+    } catch { /* non-critical */ }
+  }
 
   return NextResponse.json({ success: true, updated: updates });
 }

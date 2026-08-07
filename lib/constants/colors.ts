@@ -1,10 +1,14 @@
 // Groups of semantically equivalent colors for gap-filling purposes.
 // If an item's color falls in the same group as a missing color it counts as a fill.
 export const COLOR_GROUPS: string[][] = [
-  // Muted yellow-greens — camo/camouflage is predominantly olive/army green in tone
-  ["olive", "moss", "army green", "military green", "dark olive", "olive green", "khaki green", "camo", "camouflage", "woodland camo", "desert camo"],
+  // Muted yellow-greens — camo/camouflage is predominantly olive/army green in tone.
+  // Bare "green" is included here (and in the sage group below): a generic "Green" tag
+  // carries no shade specificity, so it reads as visually interchangeable with these
+  // muted/yellow-green variants — unlike e.g. "Red" vs "Burgundy", which are far enough
+  // apart in tone to stay separate groups.
+  ["olive", "moss", "army green", "military green", "dark olive", "olive green", "khaki green", "camo", "camouflage", "woodland camo", "desert camo", "green"],
   // Sage / dusty greens (lighter, greyer)
-  ["sage", "sage green", "dusty sage", "celadon", "mint green"],
+  ["sage", "sage green", "dusty sage", "celadon", "mint green", "green"],
   // Dark greens
   ["forest green", "hunter green", "dark green", "bottle green"],
   // Burgundy family
@@ -35,12 +39,21 @@ export const COLOR_GROUPS: string[][] = [
   ["purple", "violet", "plum", "eggplant", "deep purple", "grape"],
 ];
 
+// Normalizes formatting variance (hyphens/underscores/slashes, extra whitespace, case) so
+// "Army-Green", "army_green", and "army green" all compare equal — GPT-generated color
+// names aren't always consistently formatted.
+export function normalizeColorName(s: string): string {
+  return s.toLowerCase().trim().replace(/[-_/]+/g, " ").replace(/\s+/g, " ");
+}
+
+const NORMALIZED_COLOR_GROUPS: string[][] = COLOR_GROUPS.map(g => g.map(normalizeColorName));
+
 /** Returns true if colors a and b should be considered equivalent for gap-filling. */
 export function sameColorGroup(a: string, b: string): boolean {
-  const na = a.toLowerCase().trim();
-  const nb = b.toLowerCase().trim();
+  const na = normalizeColorName(a);
+  const nb = normalizeColorName(b);
   if (na === nb || na.includes(nb) || nb.includes(na)) return true;
-  return COLOR_GROUPS.some(g => g.includes(na) && g.includes(nb));
+  return NORMALIZED_COLOR_GROUPS.some(g => g.includes(na) && g.includes(nb));
 }
 
 export const NAMED_COLORS: { name: string; rgb: [number, number, number] }[] = [

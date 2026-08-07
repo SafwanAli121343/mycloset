@@ -6,7 +6,9 @@ import {
   computeMetrics,
   buildWardrobePromptSection,
   resolveSubTypeFromTitle,
+  gapTotalProgress,
   type WardrobeAnalysis,
+  type CrossedEntry,
 } from "@/lib/wardrobeAnalysis";
 import { sameColorGroup } from "@/lib/constants/colors";
 import type { GarmentForScoring } from "@/lib/scoring";
@@ -26,13 +28,16 @@ const GARMENT_FIELDS =
   "pattern, formality, aesthetic_tags, pros, cons, color_pairings, color_clashes, tags, image, fit";
 
 // POST /api/wardrobe/analysis
-// Body: { priorAnalyses?: WardrobeAnalysis[] }
+// Body: { priorAnalyses?: WardrobeAnalysis[], crossed?: CrossedEntry[] }
 // Same as GET but passes history context so GPT avoids repeating previously covered items.
+// `crossed` is the live crossing state: a prior gap/color/aesthetic only stays excluded from
+// this new level's suggestions if it's STILL currently resolved. If its filling item was since
+// deleted (so it's no longer crossed), it becomes eligible to be surfaced again here.
 export async function POST(req: NextRequest) {
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { priorAnalyses?: WardrobeAnalysis[] } = {};
+  let body: { priorAnalyses?: WardrobeAnalysis[]; crossed?: CrossedEntry[] } = {};
   try { body = await req.json(); } catch { /* ignore, treat as no context */ }
 
   const { data, error } = await sb
@@ -41,7 +46,7 @@ export async function POST(req: NextRequest) {
     .eq("user_id", session.userId);
   if (error || !data?.length) return NextResponse.json({ error: "No garments" }, { status: 404 });
 
-  return analyzeWardrobe(data as unknown as RawGarment[], body.priorAnalyses ?? []);
+  return analyzeWardrobe(data as unknown as RawGarment[], body.priorAnalyses ?? [], body.crossed ?? []);
 }
 
 // ── Test mode: GET /api/wardrobe/analysis?test=1&n=20
@@ -72,14 +77,38 @@ export async function GET(req: NextRequest) {
     garments = data as unknown as RawGarment[];
   }
 
-  return analyzeWardrobe(garments, []);
+  return analyzeWardrobe(garments, [], []);
 }
 
 function stripDash(s: string): string {
   return s.replace(/\s*—\s*/g, ": ");
 }
 
-async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAnalysis[]): Promise<NextResponse> {
+// Deterministic safety net: strips any color GPT proposed that's already covered by a wardrobe
+// color's family (per COLOR_GROUPS — the heuristic), already used in a prior level, or duplicates
+// another candidate GPT proposed in the same response. The actual shade-similarity judgment call
+// (is this candidate too close to an owned color?) is made by GPT itself as part of generating the
+// list in the first place — see the missing_colors instructions below — not by a second AI pass
+// after the fact. This filter only catches what the deterministic family table already knows for
+// certain, as a backstop against GPT instruction-following slips.
+function dedupeAgainstWardrobe(
+  candidates: string[],
+  wardrobeColorNorms: string[],
+  priorColorsSet: Set<string>,
+): string[] {
+  const kept: string[] = [];
+  for (const mcRaw of candidates) {
+    const mc = mcRaw.trim();
+    if (!mc) continue;
+    if (wardrobeColorNorms.some(wc => sameColorGroup(mc, wc))) continue;
+    if (priorColorsSet.has(mc.toLowerCase())) continue;
+    if (kept.some(k => sameColorGroup(k, mc))) continue;
+    kept.push(mc);
+  }
+  return kept;
+}
+
+async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAnalysis[], crossed: CrossedEntry[]): Promise<NextResponse> {
   // Fill in sub_type from title for items added without deep analysis,
   // so scoring, the GPT prompt, and gap detection all see the garment correctly.
   const resolvedGarments: RawGarment[] = garments.map(g =>
@@ -97,13 +126,29 @@ async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAn
   // Fallback missing aesthetics = absent aesthetics list from metrics
   const fallbackMissingAesthetics = metrics.absentAesthetics.slice(0, 3);
 
-  // Build exclusion block from all prior analyses so GPT never repeats something already covered
+  // Build exclusion block from prior analyses so GPT never repeats something STILL covered.
+  // A prior gap/color/aesthetic only counts as "covered" here if it's still currently resolved
+  // in `crossed` — if its filling item was since deleted, it's no longer resolved and should be
+  // eligible to be suggested again at this new level (see isStillResolved* below).
+  const isGapStillResolved = (description: string, level: number) =>
+    gapTotalProgress(crossed, description, level) >= 100;
+  const isEntryStillResolved = (category: "color" | "aesthetic", key: string, level: number) =>
+    crossed.some(e => e.category === category && e.key === key && e.analysisLevel === level);
+
   let priorSection = "";
   if (priorAnalyses.length > 0) {
-    const seenGaps      = [...new Set(priorAnalyses.flatMap(a => a.gaps.map(g => g.description)))];
-    const seenAesthetics= [...new Set(priorAnalyses.flatMap(a => a.aesthetics.missing))];
-    const seenColors    = [...new Set(priorAnalyses.flatMap(a => a.colors.missing))];
-    const seenCons      = [...new Set(priorAnalyses.flatMap(a => a.cons))];
+    const seenGaps = [...new Set(
+      priorAnalyses.flatMap((a, i) => a.gaps.filter(g => isGapStillResolved(g.description, i + 1)).map(g => g.description))
+    )];
+    const seenAesthetics = [...new Set(
+      priorAnalyses.flatMap((a, i) => a.aesthetics.missing.filter(ae => isEntryStillResolved("aesthetic", ae, i + 1)))
+    )];
+    const seenColors = [...new Set(
+      priorAnalyses.flatMap((a, i) => a.colors.missing.filter(c => isEntryStillResolved("color", c, i + 1)))
+    )];
+    // Cons aren't tracked by resolution here — the instruction below already asks GPT to go
+    // deeper rather than treating them as a permanent exclusion list.
+    const seenCons = [...new Set(priorAnalyses.flatMap(a => a.cons))];
     const lines: string[] = ["PREVIOUSLY COVERED — do NOT repeat any of these in your output:"];
     if (seenGaps.length)       lines.push(`  Gaps already suggested: ${seenGaps.join(", ")}`);
     if (seenAesthetics.length) lines.push(`  Missing aesthetics already suggested: ${seenAesthetics.join(", ")}`);
@@ -118,40 +163,37 @@ async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAn
 
   const userPrompt = `${wardrobeSection}${priorSection}
 
-Analyze this wardrobe. Return ONLY valid JSON (no markdown fences):
+Analyze this wardrobe. Return ONLY valid JSON (no markdown fences). Every bracketed placeholder below describes what belongs there — it is not example content, and none of it should ever appear literally in your answer:
 {
-  "pros": [
-    "The color palette holds a tight range of controlled neutrals with deliberate accent pops: cohesive and low-conflict across the full wardrobe.",
-    "..."
-  ],
-  "cons": [
-    "With only 2 outerwear pieces and no heavy outerwear, cold-weather layering options are thin: the wardrobe cannot handle a sustained temperature drop.",
-    "..."
-  ],
+  "pros": ["<full-sentence observation about the wardrobe AS A WHOLE, derived only from the data below>", "..."],
+  "cons": ["<full-sentence weakness derived only from the data below>", "..."],
   "gaps": [
     {
-      "description": "structured outerwear",
+      "description": "<a slot name copied verbatim from 'Functional slots MISSING' below>",
       "type": "piece_type",
-      "impact": "high",
-      "reason": "No blazer or sport coat: the wardrobe has no smart-casual register and cannot dress up beyond a button-up shirt."
+      "impact": "high | medium | low",
+      "reason": "<why this specific wardrobe needs it, derived only from the data below>"
     }
   ],
-  "overdone": [],
-  "missing_aesthetics": ["avant-garde", "military"],
-  "missing_colors": ["Burgundy", "Olive"],
-  "insights": [
-    "Four baggy/relaxed denim pieces dominate the bottom half: versatile in isolation but heavy on one silhouette.",
-    "..."
-  ]
+  "overdone": [
+    {
+      "description": "<a sub-type copied verbatim from 'High-frequency sub-types' below>",
+      "count": <its actual count from the data below, as a number>,
+      "suggestion": "<actionable suggestion for diversifying>"
+    }
+  ],
+  "missing_aesthetics": ["<an aesthetic copied verbatim from 'Aesthetics completely absent' below>", "..."],
+  "missing_colors": ["<a color genuinely absent from this wardrobe, not a synonym or close shade of any covered color>", "..."],
+  "insights": ["<full-sentence observation unique to this wardrobe, derived only from the data below>", "..."]
 }
 
-Hard rules:
+Hard rules — apply identically regardless of what kind of wardrobe this is; none of these are specific to any one wardrobe:
 - pros: 3-6 full-sentence observations about the WARDROBE AS A WHOLE. Analyze its aesthetic direction, color story, category balance, silhouette range, or formality coverage. Write about the collection as a singular entity — do NOT frame pros as what a specific piece does for or adds to the wardrobe.
-- cons: 2-4 full-sentence observations. Every wardrobe below a perfect score has weaknesses — find them. Even strong wardrobes have blind spots: over-reliance on one silhouette, limited occasion coverage, weather-specific gaps, formality transition failures, or lack of versatility in a category. Be specific and grounded in the data. Never return [].
-- gaps: 0-4 items ordered high→low impact. ONLY use slot names from "Functional slots MISSING". Never suggest a slot from "Functional slots COVERED". Return [] if there are no meaningful functional gaps. Critical: if ALL footwear slots are missing (casual sneaker, boot, dress shoe, casual sandal / slide are ALL in "Functional slots MISSING"), you MUST include at least one footwear gap — it is the single highest-impact omission possible.
+- cons: 2-4 full-sentence observations. Every wardrobe below a perfect score has weaknesses — find them. Consider (only where the data actually supports it): over-reliance on one silhouette, limited occasion coverage, weather-specific gaps, formality transition failures, or lack of versatility in a category. Every con must cite a specific count, color, or item from the data below — never a generic claim. Never return [].
+- gaps: 0-4 items ordered high→low impact. ONLY use slot names from "Functional slots MISSING". Never suggest a slot from "Functional slots COVERED". Return [] if there are no meaningful functional gaps. If ALL footwear slots are missing (casual sneaker, boot, dress shoe, casual sandal / slide are ALL in "Functional slots MISSING"), include at least one footwear gap — going shoeless is always the single highest-impact omission possible, for any wardrobe.
 - overdone: 0-4 items. ONLY include sub-types from "High-frequency sub-types (3+)". If that line says "none", return [].
 - missing_aesthetics: 2-3 items. ONLY choose from "Aesthetics completely absent" — never pick from "Aesthetics present".
-- missing_colors: 2-5 colors that are genuinely absent and would benefit this wardrobe. CRITICAL: check "Color families covered" first — if a family is listed there, every synonym in that family is ALREADY PRESENT. Never suggest any color from a covered family. Never suggest a color from "All colors treated as present". Choose contextually: a streetwear wardrobe benefits from Olive, Burgundy; a formal wardrobe benefits from Brown, Burgundy. If warm neutrals are covered (Beige present → Camel/Cream/Tan covered), skip them and suggest other palette gaps instead.
+- missing_colors: propose as many colors as this wardrobe genuinely lacks, aiming for 3-6 when the palette supports it (fewer only if the wardrobe's palette is already broad — there is no fixed minimum). Work in two steps for every candidate: (1) identify colors that would meaningfully round out THIS wardrobe's palette given its actual aesthetic direction and existing colors — consider the full color wheel (neutrals, earth tones, jewel tones, accent colors) rather than defaulting to any particular color; (2) check each candidate against "Colors present", "Color families covered", and "All colors treated as present" below, AND against every other candidate already chosen — discard it if it matches, is a synonym of, or is a close shade/tone of any of those (the kind of pair a stylist would call "basically the same color"). Only candidates that survive step 2 go in the final list. Every suggestion must be justified by what this specific wardrobe's data shows is missing — there is no default or generically "safe" color to fall back on.
 - insights: 2-4 full-sentence observations unique to this wardrobe. No em dashes — use colons instead.`;
 
   const completion = await openai.chat.completions.create({
@@ -180,20 +222,26 @@ Hard rules:
     gpt = {};
   }
 
-  // Hard dedup sets — never repeat anything suggested in a prior level, regardless of GPT compliance
-  const priorAestheticsSet = new Set(priorAnalyses.flatMap(a => a.aesthetics.missing.map(ae => ae.toLowerCase())));
-  const priorColorsSet     = new Set(priorAnalyses.flatMap(a => a.colors.missing.map(c => c.toLowerCase().trim())));
-  const priorGapSet        = new Set(priorAnalyses.flatMap(a => a.gaps.map(g => g.description.toLowerCase())));
+  // Hard dedup sets — never repeat anything STILL currently resolved from a prior level,
+  // regardless of GPT compliance. Same resolution-aware logic as seenGaps/seenColors/
+  // seenAesthetics above: something resolved-then-unresolved-again is NOT excluded here.
+  const priorAestheticsSet = new Set(
+    priorAnalyses.flatMap((a, i) => a.aesthetics.missing.filter(ae => isEntryStillResolved("aesthetic", ae, i + 1)).map(ae => ae.toLowerCase()))
+  );
+  const priorColorsSet = new Set(
+    priorAnalyses.flatMap((a, i) => a.colors.missing.filter(c => isEntryStillResolved("color", c, i + 1)).map(c => c.toLowerCase().trim()))
+  );
+  const priorGapSet = new Set(
+    priorAnalyses.flatMap((a, i) => a.gaps.filter(g => isGapStillResolved(g.description, i + 1)).map(g => g.description.toLowerCase()))
+  );
 
   // Use GPT-provided missing colors if available, fall back to computed
   // Post-process: strip any color GPT suggested that's already covered by a wardrobe color's synonym family,
-  // or that appeared in a prior level's missing colors list.
+  // that appeared in a prior level's missing colors list, or that duplicates another candidate already
+  // kept in this same list (e.g. GPT proposing both "Wine" and "Burgundy" — same family, pick one).
   const rawMissingColors = gpt.missing_colors?.length ? gpt.missing_colors : metrics.missingEssentials.slice(0, 6);
   const wardrobeColorNorms = metrics.allColors.map(c => c.toLowerCase().trim());
-  const missingColors = rawMissingColors.filter(mc =>
-    !wardrobeColorNorms.some(wc => sameColorGroup(mc, wc)) &&
-    !priorColorsSet.has(mc.toLowerCase().trim())
-  );
+  const missingColors = dedupeAgainstWardrobe(rawMissingColors, wardrobeColorNorms, priorColorsSet).slice(0, 6);
 
   // Use GPT-provided missing aesthetics; validate they're actually absent and not from a prior level; fall back to computed
   const missingAesthetics = (gpt.missing_aesthetics?.length
@@ -239,7 +287,11 @@ Hard rules:
         costPoints:  metrics.slotCostMap[g.description] ||
                      (g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2),
       })),
-    overdone: gpt.overdone ?? [],
+    // Validate against real data: only keep sub-types that actually appear 3+ times, and use
+    // the real count rather than trusting whatever number GPT returned.
+    overdone: (gpt.overdone ?? [])
+      .filter(o => (metrics.subTypeCounts[o.description] ?? 0) >= 3)
+      .map(o => ({ ...o, count: metrics.subTypeCounts[o.description] })),
     insights: (gpt.insights ?? []).map(stripDash),
     generatedAt: new Date().toISOString(),
     conGapLinks: (() => {

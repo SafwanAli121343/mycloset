@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { flushSync } from "react-dom";
 import type { CSSProperties, ChangeEvent } from "react";
@@ -10,7 +10,7 @@ import type { GarmentForScoring } from "@/lib/scoring";
 
 const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
 
-// Gap description keyword → aesthetics it implies (used by both algorithmic and AI image check)
+// Gap description keyword â†’ aesthetics it implies (used by both algorithmic and AI image check)
 const GAP_AES: [string, string[]][] = [
   ["formal",          ["formal", "business casual"]],
   ["business casual", ["business casual", "smart casual"]],
@@ -50,7 +50,7 @@ const KEYFRAMES_CSS = `
   @keyframes loadbar       { 0%{width:0%} 55%{width:65%} 80%{width:84%} 100%{width:93%} }
 `;
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type PageStep  = "input"|"basic_analyzing"|"confirming"|"deep_analyzing"|"results";
 type InputMode = "url"|"image";
@@ -89,7 +89,7 @@ type CardDir = "left"|"right"|"bottom"|"top";
 type CardSlots = {left:CardKey|null; right:CardKey|null; bottom:CardKey|null; top:CardKey|null};
 type SpreadCfg = {containerW:number; containerH:number; stackLeft:number; stackTop:number};
 
-// ── Module-level helpers ──────────────────────────────────────────────────────
+// â”€â”€ Module-level helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function normalizeToJpeg(dataUrl: string): Promise<string> {
   if (dataUrl.startsWith("data:image/jpeg") || dataUrl.startsWith("data:image/png")) {
@@ -171,24 +171,24 @@ function vSpreadZoom(N:number): number {
 }
 const DEFAULT_CFG = buildSpreadCfg(3);
 
-// ── Score helpers ─────────────────────────────────────────────────────────────
+// â”€â”€ Score helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function sColor(v:number) { return v>=75?"#1d9e52":v>=50?"#c88800":"#c83030"; }
 function outfitCountColor(n:number) { return n>=25?"#1d9e52":n>=10?"#c88800":"#c83030"; }
 function pieceMatchColor(n:number)  { return n>=10?"#1d9e52":n>=4?"#c88800":"#c83030"; }
 // Thresholds scale with total outfits so a 20-outfit wardrobe and an 800-outfit wardrobe
 // are judged by the same ideal ratios, not the same absolute counts.
-// Good: ≥30% good = green, 15–29% = amber, <15% = red
+// Good: â‰¥30% good = green, 15â€“29% = amber, <15% = red
 function goodOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct >= 0.30 ? "#1d9e52" : pct >= 0.15 ? "#c88800" : "#c83030";
 }
-// Mid: ≥25% mid = green, 12–24% = amber, <12% = red
+// Mid: â‰¥25% mid = green, 12â€“24% = amber, <12% = red
 function midOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct >= 0.25 ? "#1d9e52" : pct >= 0.12 ? "#c88800" : "#c83030";
 }
-// Bad: <20% bad = green, 20–39% = amber, ≥40% = red (inverted — fewer is better)
+// Bad: <20% bad = green, 20â€“39% = amber, â‰¥40% = red (inverted â€” fewer is better)
 function badOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct < 0.20 ? "#1d9e52" : pct < 0.40 ? "#c88800" : "#c83030";
@@ -216,7 +216,7 @@ function pieceScore(cb:BasicAttrs, deep:DeepAttrs): number {
   return scorePiece(g);
 }
 function overallScore(ps:number, od:OutfitCountResult) {
-  // goodRatio: what fraction of outfits are high-quality (score ≥75), scaled to 100
+  // goodRatio: what fraction of outfits are high-quality (score â‰¥75), scaled to 100
   const total = od.outfitCount || 1;
   const goodRatio = Math.min((od.goodCount ?? 0) / total * 100 * 2, 100); // 50%+ good = 100 pts
   return Math.round(ps*0.35 + od.avgScore*0.25 + Math.min(od.outfitCount/25*100,100)*0.15 + od.aestheticFit*0.15 + goodRatio*0.10);
@@ -228,7 +228,7 @@ function compareScore(slot:Slot, max:number) {
   return Math.round(slot.outfitData.avgScore*0.40+on*0.30+slot.outfitData.aestheticFit*0.20+cr*0.10);
 }
 
-// ── Misc helpers ──────────────────────────────────────────────────────────────
+// â”€â”€ Misc helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function blobToDataUrl(blob:Blob): Promise<string> {
   return new Promise((res,rej)=>{
@@ -264,12 +264,12 @@ function getCardItems(key:CardKey, deep:DeepAttrs, outfitItems?:Record<string,Ou
   if (key==="piece_pairings") return Object.values(outfitItems??{}).map(i=>{
     const name=i.title??i.sub_type??i.id;
     const aesthetic=(i.aesthetic_tags??[]).slice(0,2).join(", ");
-    return aesthetic?`${name} → ${aesthetic}`:name;
+    return aesthetic?`${name} â†’ ${aesthetic}`:name;
   }).filter(Boolean) as string[];
   return deep.aesthetic_tags??[];
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// â”€â”€ Main page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function PreviewPage() {
   const [slots,    setSlots]    = useState<Slot[]>(()=>Array.from({length:MAX_COMPARE},emptySlot));
@@ -318,7 +318,7 @@ export default function PreviewPage() {
     const deepRes=await fetch("/api/preview/deep-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:confirmed.title,brand:confirmed.brand,category:confirmed.category,color_primary:confirmed.color_primary,material:confirmed.material,fit:confirmed.fit,image:img})});
     const deepJson=await deepRes.json();
     if (!deepRes.ok||deepJson.error) {
-      const msg=deepRes.status===401?"Session expired — please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
+      const msg=deepRes.status===401?"Session expired â€” please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
       updateSlot(idx,{deepError:msg,analysisStep:null}); return;
     }
     const deep:DeepAttrs=deepJson;
@@ -326,7 +326,7 @@ export default function PreviewPage() {
     const outfitRes=await fetch("/api/preview/outfit-count",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({garment:{title:confirmed.title,brand:confirmed.brand,category:confirmed.category,sub_type:deep.sub_type,material:confirmed.material,color_primary:confirmed.color_primary,formality:deep.formality,aesthetic_tags:deep.aesthetic_tags,pros:deep.pros,cons:deep.cons,color_pairings:deep.color_pairings,color_clashes:deep.color_clashes,image:confirmed.image}})});
     const outfitJson=await outfitRes.json();
     if (!outfitRes.ok||outfitJson.error) {
-      const msg=outfitRes.status===401?"Session expired — please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
+      const msg=outfitRes.status===401?"Session expired â€” please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
       updateSlot(idx,{deepError:msg,analysisStep:null}); return;
     }
     updateSlot(idx,{outfitData:outfitJson as OutfitCountResult,analysisStep:null});
@@ -485,7 +485,7 @@ export default function PreviewPage() {
   return <MultiResult scoredSlots={scoredSlots} onReset={handleReset}/>;
 }
 
-// ── InputSlot ─────────────────────────────────────────────────────────────────
+// â”€â”€ InputSlot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
   slot:Slot; onFilePick:(e:ChangeEvent<HTMLInputElement>)=>void;
@@ -520,7 +520,7 @@ function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
             <input ref={inputRef} type="file" accept="image/*" style={{display:"none"}} onChange={onFilePick}/>
             <div onClick={()=>inputRef.current?.click()} style={{border:"1px dashed #ccc",height:80,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",gap:5}}>
               {slot.imageDataUrl?<img src={slot.imageDataUrl} style={{maxHeight:74,maxWidth:"100%",objectFit:"contain"}} alt=""/>
-                :<><span style={{fontSize:18,color:"#ccc"}}>↑</span><span style={{fontSize:9,color:"#bbb",letterSpacing:"0.1em"}}>CLICK TO UPLOAD</span></>}
+                :<><span style={{fontSize:18,color:"#ccc"}}>â†‘</span><span style={{fontSize:9,color:"#bbb",letterSpacing:"0.1em"}}>CLICK TO UPLOAD</span></>}
             </div>
           </>
         )}
@@ -530,7 +530,7 @@ function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
   );
 }
 
-// ── SlideCard — calendar-style edge-anchored, form-fitting ────────────────────
+// â”€â”€ SlideCard â€” calendar-style edge-anchored, form-fitting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
   cardKey:CardKey; dir:CardDir; items:string[]; exiting:boolean; onHide:()=>void;
@@ -646,7 +646,7 @@ function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
   );
 }
 
-// ── SingleResult ──────────────────────────────────────────────────────────────
+// â”€â”€ SingleResult â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   const {confirmedBasic:cb,removedBgUrl,deep,outfitData}=slot;
@@ -666,14 +666,14 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
     return ()=>{clearTimeout(t1);clearTimeout(t2);};
   },[]);
 
-  // Wardrobe fill impact — computed from wa_cache in localStorage
+  // Wardrobe fill impact â€” computed from wa_cache in localStorage
   type WImpact = {fillsGaps:string[]; addsAesthetics:string[]; addsColors:string[]; addressesWeaknesses:string[]};
   const [waImpact, setWaImpact] = useState<WImpact|null>(null);
 
   useEffect(()=>{
     if (!deep||!cb) return;
     try {
-      const raw=localStorage.getItem("wa_cache_v16");
+      const raw=localStorage.getItem("wa_cache_v20");
       if (!raw) return;
       const parsed=JSON.parse(raw) as {
         backendState:{
@@ -704,7 +704,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         computeGapProgress(g.description,deep.sub_type??"",cat,funcSlot)>=100
       ).map(g=>g.description);
 
-      // Pattern/title-implied aesthetics — use substring matching so "camouflage" still resolves to military
+      // Pattern/title-implied aesthetics â€” use substring matching so "camouflage" still resolves to military
       const patternStr=(deep.pattern??'').toLowerCase();
       const titleStr=(cb.title??'').toLowerCase();
       const sub=(deep.sub_type??'').toLowerCase();
@@ -720,7 +720,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
       const allAestheticCandidates = [...new Set([...(deep.aesthetic_tags??[]), ...patternImplied])];
       const baseAesthetics = allAestheticCandidates
         .filter(t=>analysis.aesthetics.missing.some(m=>norm(m)===norm(t)));
-      // Infer additional aesthetics from filled gaps (e.g. "formal pant" → "formal", "business casual")
+      // Infer additional aesthetics from filled gaps (e.g. "formal pant" â†’ "formal", "business casual")
       const algoAesNorms=new Set(baseAesthetics.map(norm));
       const gapInferredAes:string[]=[];
       for(const gap of algorithmic){
@@ -789,7 +789,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   const [rightCard,  setRightCard]  = useState<{key:CardKey;exiting:boolean}|null>(null);
   const [bottomCard, setBottomCard] = useState<{key:CardKey;exiting:boolean}|null>(null);
   const [topCard,    setTopCard]    = useState<{key:CardKey;exiting:boolean}|null>(null);
-  // Tracks insertion order oldest→newest for eviction when a 5th card is opened
+  // Tracks insertion order oldestâ†’newest for eviction when a 5th card is opened
   const [openOrder,  setOpenOrder]  = useState<CardKey[]>([]);
 
   function visibleMap(): CardSlots {
@@ -826,18 +826,18 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   function openCard(key:CardKey) {
     const vm=visibleMap();
     if (Object.values(vm).includes(key)) {
-      // Already open — close it and remove from order
+      // Already open â€” close it and remove from order
       exitCard(key);
       setOpenOrder(prev=>prev.filter(k=>k!==key));
       return;
     }
     const dir=findCardDir(key,vm);
     if (dir!==null) {
-      // Free slot — open immediately
+      // Free slot â€” open immediately
       setterFor(dir)({key,exiting:false});
       setOpenOrder(prev=>[...prev,key]);
     } else {
-      // All 4 slots full — evict the oldest card, open new one in that same slot
+      // All 4 slots full â€” evict the oldest card, open new one in that same slot
       const oldest=openOrder[0];
       if (!oldest) return;
       const evictDir=dirOf(oldest,vm);
@@ -871,7 +871,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
 
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingBottom:80}}>
 
-        {/* Title bar + brand — fade in after image settles */}
+        {/* Title bar + brand â€” fade in after image settles */}
         <div style={{
           opacity:contentVisible?1:0,
           transition:"opacity 0.6s ease",
@@ -906,14 +906,14 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         {cb.brand&&<p style={{...FONT,fontSize:11,fontWeight:700,color:"#111",letterSpacing:"0.15em",margin:0,marginTop:-4,marginBottom:12}}>{cb.brand.toUpperCase()}</p>}
         </div>
 
-        {/* Item image — always visible; CSS transform starts at viewport center, transitions to natural position */}
+        {/* Item image â€” always visible; CSS transform starts at viewport center, transitions to natural position */}
         {imgSrc&&<img src={imgSrc} alt={cb.title} style={{
           height:210,maxWidth:"60%",objectFit:"contain",marginBottom:28,
           transform:imgAtTop?"none":"translateY(calc(50vh - 178px))",
           transition:"transform 0.7s cubic-bezier(0.4,0,0.2,1)",
         }}/>}
 
-        {/* Stats and gallery — fade in after image settles */}
+        {/* Stats and gallery â€” fade in after image settles */}
         <div style={{opacity:contentVisible?1:0,transition:"opacity 0.6s ease",display:"flex",flexDirection:"column",alignItems:"center",width:"100%"}}>
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:24,marginBottom:36,paddingInline:24}}>
             <div style={{display:"flex",gap:56,alignItems:"flex-start",justifyContent:"center",flexWrap:"wrap"}}>
@@ -951,13 +951,13 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   );
 }
 
-// ── MultiResult ───────────────────────────────────────────────────────────────
+// â”€â”€ MultiResult â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type RankLabel = "best"|"second"|"worst";
 const RANK_BADGE: Record<RankLabel,{badge:string;color:string}> = {
-  best:   {badge:"★", color:"#1d9e52"},
-  second: {badge:"•", color:"#f0b429"},
-  worst:  {badge:"—", color:"#c83030"},
+  best:   {badge:"â˜…", color:"#1d9e52"},
+  second: {badge:"â€¢", color:"#f0b429"},
+  worst:  {badge:"â€”", color:"#c83030"},
 };
 // Layout constants for the 5-column compare view
 const ITEM_COL_W  = 230;
@@ -1102,7 +1102,7 @@ function MultiResult({scoredSlots,onReset}:{
     const sBg=selSlot?.removedBgUrl;
     if(!sDp||!sCb){setSelWaImpact(null);return;}
     try{
-      const raw=localStorage.getItem("wa_cache_v16");
+      const raw=localStorage.getItem("wa_cache_v20");
       if(!raw){setSelWaImpact(null);return;}
       const parsed=JSON.parse(raw) as {backendState:{analysisHistory:Array<{gaps:{description:string}[];colors:{missing:string[]};aesthetics:{missing:string[]};cons:string[]}>;crossed:CrossedEntry[];currentLevel:number}};
       const level=parsed.backendState?.currentLevel??1;
@@ -1162,7 +1162,7 @@ function MultiResult({scoredSlots,onReset}:{
     const t=setTimeout(()=>{
       // Frame 1: enable the transition property (transform still at stack offset)
       setThree3Phase('distributing');
-      // Frame 2: change the transform — browser now sees it against an active transition
+      // Frame 2: change the transform â€” browser now sees it against an active transition
       requestAnimationFrame(()=>{
         setThree3Moving(true);
         setTimeout(()=>setThree3Phase('done'),720);
@@ -1221,7 +1221,7 @@ function MultiResult({scoredSlots,onReset}:{
     if(selectedIdx===i||transAnim!==null)return;
     closeAllCards();
     if(selectedIdx===null){
-      // Scroll to top and lock scrolling — animation always starts from a consistent position.
+      // Scroll to top and lock scrolling â€” animation always starts from a consistent position.
       window.scrollTo(0,0);
       document.body.style.overflow='hidden';
 
@@ -1234,12 +1234,12 @@ function MultiResult({scoredSlots,onReset}:{
       // For n===3: set display order so selected piece is always at center slot.
       if(n===3) setPieceViewOrder(getInitialArrangement(i));
 
-      // Fade to white, place overlay at compare positions, mount piece view — all one commit.
+      // Fade to white, place overlay at compare positions, mount piece view â€” all one commit.
       setSurAlpha(0);
       setTransAnim({images:getImgs(),fromX,fromY,toX:Array(n).fill(0),toY:0,phase:'setup'});
       flushSync(()=>setSelectedIdx(i));
 
-      // Piece view is now in DOM. Measure REAL pixel positions — no approximation.
+      // Piece view is now in DOM. Measure REAL pixel positions â€” no approximation.
       // getBoundingClientRect() reflects CSS transforms, so n===3 per-piece offsets are included.
       requestAnimationFrame(()=>{
         const destRects=pieceImgRefs.current.slice(0,n).map(el=>el?.getBoundingClientRect()??null);
@@ -1281,7 +1281,7 @@ function MultiResult({scoredSlots,onReset}:{
     const fromX=displayRects.map(r=>r?Math.round(r.left+r.width/2):0);
     const fromY=displayRects[0]?Math.round(displayRects[0].top+displayRects[0].height/2):178;
 
-    // Fade to white, place overlay at piece positions, mount compare view — all one commit.
+    // Fade to white, place overlay at piece positions, mount compare view â€” all one commit.
     setSurAlpha(0);
     setTransAnim({images:getImgs(),fromX,fromY,toX:Array(n).fill(0),toY:0,phase:'setup'});
     flushSync(()=>{setSelectedIdx(null);if(n===3)setPieceViewOrder([0,1,2]);});
@@ -1392,8 +1392,8 @@ function MultiResult({scoredSlots,onReset}:{
   return (
     <div style={{...FONT,minHeight:"100vh",background:"#fff"}}>
       <style suppressHydrationWarning>{KEYFRAMES_CSS}</style>
-      {/* ── n===2: unified three-column layout (compare + selected, no branch swap) ── */}
-      {/* Compare loading overlay — spinner that fades out when AI data arrives */}
+      {/* â”€â”€ n===2: unified three-column layout (compare + selected, no branch swap) â”€â”€ */}
+      {/* Compare loading overlay â€” spinner that fades out when AI data arrives */}
       {n===2&&loaderShowing&&(
         <div style={{position:"fixed",inset:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",...FONT,
           zIndex:100,opacity:aiCmp==="loading"?1:0,transition:aiCmp==="loading"?"none":"opacity 0.4s ease",
@@ -1454,11 +1454,11 @@ function MultiResult({scoredSlots,onReset}:{
                   </div>
                 ))}
               </div>
-              {/* Top fade — appears as user scrolls down */}
+              {/* Top fade â€” appears as user scrolls down */}
               <div style={{position:"absolute",top:52,left:0,right:0,height:80,
                 background:"linear-gradient(to bottom,rgba(255,255,255,1) 0%,rgba(255,255,255,0) 100%)",
                 pointerEvents:"none",opacity:atTop?0:1,transition:"opacity 0.3s ease"}}/>
-              {/* Bottom section — gradient hides scrollable content; arrow flips and scrolls */}
+              {/* Bottom section â€” gradient hides scrollable content; arrow flips and scrolls */}
               <div style={{position:"absolute",bottom:0,left:0,right:0,pointerEvents:"none"}}>
                 <div style={{height:220,width:"100%",background:"linear-gradient(to bottom,rgba(255,255,255,0) 0%,rgba(255,255,255,1) 35%)",
                   opacity:atBot?0:1,transition:"opacity 0.3s ease"}}/>
@@ -1485,7 +1485,7 @@ function MultiResult({scoredSlots,onReset}:{
             {/* === COMPARE MODE: full-viewport 5-column, Reset button overlaid === */}
             {inCompare&&(
               <div style={{display:"flex",justifyContent:"center",height:"100vh",overflow:"hidden" as const,position:"relative" as const}}>
-                {/* Reset button — absolute so it overlays the top-right of the panel area */}
+                {/* Reset button â€” absolute so it overlays the top-right of the panel area */}
                 <div style={{position:"absolute" as const,top:14,right:24,zIndex:2,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                   <button onClick={onReset} style={cardBtnStyle("#c83030")}>Reset</button>
                 </div>
@@ -1537,7 +1537,7 @@ function MultiResult({scoredSlots,onReset}:{
               </div>
             )}
 
-            {/* === SPECIFIC MODE: header — normal flow, scrolls with page === */}
+            {/* === SPECIFIC MODE: header â€” normal flow, scrolls with page === */}
             {!inCompare&&cb&&(
               <div style={{height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",
                 paddingInline:24,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1555,7 +1555,7 @@ function MultiResult({scoredSlots,onReset}:{
               </div>
             )}
 
-            {/* Overlay container — always in DOM so its GPU compositing layer is never destroyed mid-animation */}
+            {/* Overlay container â€” always in DOM so its GPU compositing layer is never destroyed mid-animation */}
             <div style={{position:"fixed" as const,inset:0,pointerEvents:"none" as const,zIndex:999}}>
               {transAnim&&transAnim.images.map((img,idx)=>{
                 const a=transAnim;
@@ -1573,7 +1573,7 @@ function MultiResult({scoredSlots,onReset}:{
               })}
             </div>
 
-            {/* === SPECIFIC MODE: image strip — normal flow, scrolls with page === */}
+            {/* === SPECIFIC MODE: image strip â€” normal flow, scrolls with page === */}
             {!inCompare&&(
               <div style={{width:"100%",display:"flex",justifyContent:"center",overflow:"hidden",
                 paddingBlock:16,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1601,7 +1601,7 @@ function MultiResult({scoredSlots,onReset}:{
               </div>
             )}
 
-            {/* === SPECIFIC MODE: scrollable content — follows image strip in normal flow === */}
+            {/* === SPECIFIC MODE: scrollable content â€” follows image strip in normal flow === */}
             {!inCompare&&selectedIdx!==null&&cb&&deep&&outfitData&&(
               <div style={{paddingBottom:80,display:"flex",flexDirection:"column",alignItems:"center",width:"100%",opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                 <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
@@ -1627,11 +1627,11 @@ function MultiResult({scoredSlots,onReset}:{
         );
       })()}
 
-      {/* ── n===1: single-item centered column ── */}
+      {/* â”€â”€ n===1: single-item centered column â”€â”€ */}
       {n===1&&(
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingBottom:80}}>
 
-        {/* Selected-mode header bar — sticky so it doesn't scroll away */}
+        {/* Selected-mode header bar â€” sticky so it doesn't scroll away */}
         {!inCompare&&cb&&deep&&outfitData&&(
           <div style={{opacity:vis?1:0,transition:"opacity 0.6s ease",width:"100%",display:"flex",flexDirection:"column",alignItems:"center",position:"sticky",top:0,zIndex:10,background:"#fff"}}>
             <div style={{width:"100%",height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",paddingInline:24}}>
@@ -1695,7 +1695,7 @@ function MultiResult({scoredSlots,onReset}:{
           );
         })()}
 
-        {/* Selected-mode item strip — sticky below the header */}
+        {/* Selected-mode item strip â€” sticky below the header */}
         {!inCompare&&(
           <div style={{width:"100%",overflow:"hidden",marginBottom:20,opacity:vis?1:0,transition:"opacity 0.6s ease",position:"sticky",top:52,zIndex:9,background:"#fff"}}>
             <div style={{display:"flex",gap:STRIP_GAP,alignItems:"flex-end",transition:"transform 0.4s cubic-bezier(0.4,0,0.2,1)",transform:stripTranslate}}>
@@ -1741,7 +1741,7 @@ function MultiResult({scoredSlots,onReset}:{
       </div>
       )}
 
-      {/* ── n===3: horizontal compare + shared piece view ── */}
+      {/* â”€â”€ n===3: horizontal compare + shared piece view â”€â”€ */}
       {n===3&&(()=>{
         const slots3=scoredSlots.map(({slot})=>{
           const scb3=slot.confirmedBasic,d=slot.deep,od=slot.outfitData;
@@ -1874,7 +1874,7 @@ function MultiResult({scoredSlots,onReset}:{
         const cmpColor=(i:number)=>getStripInfo(i).color;
         return (
           <div style={{display:"flex",flexDirection:"column",opacity:compareEntered?1:0,transition:"opacity 0.4s ease"}}>
-            {/* ── COMPARE MODE ── */}
+            {/* â”€â”€ COMPARE MODE â”€â”€ */}
             {inCompare&&(
               <div style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",position:"relative"}}>
                 <div style={{position:"absolute",top:14,right:24,zIndex:2,opacity:vis&&three3Phase==='done'?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1896,7 +1896,7 @@ function MultiResult({scoredSlots,onReset}:{
                     </div>
                   ))}
                 </div>
-                {/* Three item+panel columns — overflow:visible during entrance so items can cross column boundaries */}
+                {/* Three item+panel columns â€” overflow:visible during entrance so items can cross column boundaries */}
                 <div style={{flex:1,display:"flex",minHeight:0,overflow:three3Phase==='done'?"hidden":"visible"}}>
                   {scoredSlots.map(({slot:s},i)=>{
                     const sImg=s.removedBgUrl??s.confirmedBasic?.image??s.imageDataUrl;
@@ -1941,7 +1941,7 @@ function MultiResult({scoredSlots,onReset}:{
                 </div>
               </div>
             )}
-            {/* ── PIECE VIEW: header ── */}
+            {/* â”€â”€ PIECE VIEW: header â”€â”€ */}
             {!inCompare&&cb&&(
               <div style={{height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",
                 paddingInline:24,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1958,7 +1958,7 @@ function MultiResult({scoredSlots,onReset}:{
                 </div>
               </div>
             )}
-            {/* ── OVERLAY (fixed, GPU layer always in DOM during animation) ── */}
+            {/* â”€â”€ OVERLAY (fixed, GPU layer always in DOM during animation) â”€â”€ */}
             <div style={{position:"fixed" as const,inset:0,pointerEvents:"none" as const,zIndex:999}}>
               {transAnim&&transAnim.images.map((img,idx)=>{
                 const a=transAnim;
@@ -1974,7 +1974,7 @@ function MultiResult({scoredSlots,onReset}:{
                 );
               })}
             </div>
-            {/* ── PIECE VIEW: image strip ── */}
+            {/* â”€â”€ PIECE VIEW: image strip â”€â”€ */}
             {!inCompare&&(
               <div style={{width:"100%",display:"flex",justifyContent:"center",overflow:"hidden",
                 paddingBlock:16,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -2004,7 +2004,7 @@ function MultiResult({scoredSlots,onReset}:{
                 </div>
               </div>
             )}
-            {/* ── PIECE VIEW: scrollable content ── */}
+            {/* â”€â”€ PIECE VIEW: scrollable content â”€â”€ */}
             {!inCompare&&selectedIdx!==null&&cb&&deep&&outfitData&&(
               <div style={{paddingBottom:80,display:"flex",flexDirection:"column",alignItems:"center",width:"100%",opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                 <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
@@ -2055,7 +2055,7 @@ function MultiResult({scoredSlots,onReset}:{
   );
 }
 
-// ── OutfitGallery — exact outfits-page animation ──────────────────────────────
+// â”€â”€ OutfitGallery â€” exact outfits-page animation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
   outfits:{score:number;itemIds:string[]}[];
@@ -2343,17 +2343,17 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
             })}
           </div>
           <div style={{position:"fixed",inset:0,zIndex:2003,pointerEvents:"none"}}>
-            {/* × and arrows only appear after spread animation is fully done */}
+            {/* Ã— and arrows only appear after spread animation is fully done */}
             {(() => { const done = isSpread && !animateItems; return (<>
-              <button onClick={closeOverlay} style={{position:"absolute",top:20,right:22,background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#000",lineHeight:1,padding:4,opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}>×</button>
+              <button onClick={closeOverlay} style={{position:"absolute",top:20,right:22,background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#000",lineHeight:1,padding:4,opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}>Ã—</button>
               <button
                 onClick={()=>navigateOutfit(displayIdx-1)}
                 style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:displayIdx>0?"pointer":"default",fontSize:32,color:displayIdx>0?"#333":"#ddd",lineHeight:1,padding:"4px 10px",opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}
-              >‹</button>
+              >â€¹</button>
               <button
                 onClick={()=>navigateOutfit(displayIdx+1)}
                 style={{position:"absolute",right:18,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:displayIdx<outfits.length-1?"pointer":"default",fontSize:32,color:displayIdx<outfits.length-1?"#333":"#ddd",lineHeight:1,padding:"4px 10px",opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}
-              >›</button>
+              >â€º</button>
             </>); })()}
             <p style={{position:"absolute",top:28,left:"50%",transform:"translateX(-50%)",margin:0,fontSize:22,fontWeight:700,letterSpacing:".06em",color:sc(current?.score??0),opacity:isSpread?1:0,transition:"opacity .3s .1s",...FONT}}>
               {current?.score} / 100
@@ -2365,7 +2365,7 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
   );
 }
 
-// ── Shared components ─────────────────────────────────────────────────────────
+// â”€â”€ Shared components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function StatNum({value,label,color,small,big}:{value:string;label:string;color:string;small?:boolean;big?:boolean}) {
   return (

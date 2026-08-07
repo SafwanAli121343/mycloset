@@ -3,7 +3,7 @@
 import { scoreWardrobe, scorePiece, getSlot } from "@/lib/scoring";
 import type { GarmentForScoring } from "@/lib/scoring";
 import { KNOWN_AESTHETICS } from "@/lib/constants/attributes";
-import { COLOR_GROUPS, sameColorGroup } from "@/lib/constants/colors";
+import { COLOR_GROUPS, sameColorGroup, normalizeColorName } from "@/lib/constants/colors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -380,14 +380,14 @@ export function buildWardrobePromptSection(
 
   // Build color presence section: actual colors + explicit synonym families so GPT
   // never suggests a color whose family is already represented in the wardrobe.
-  const presentNorms = new Set(metrics.allColors.map(c => c.toLowerCase().trim()));
+  const presentNorms = new Set(metrics.allColors.map(normalizeColorName));
   const coveredFamilies: string[] = [];
   const expandedColorSet = new Set(metrics.allColors);
   for (const group of COLOR_GROUPS) {
-    const normGroup = group.map(c => c.toLowerCase().trim());
+    const normGroup = group.map(normalizeColorName);
     const hits = normGroup.filter(c => presentNorms.has(c));
     if (hits.length > 0) {
-      const synonymsNotPresent = group.filter(c => !hits.includes(c.toLowerCase().trim()));
+      const synonymsNotPresent = group.filter((c, i) => !hits.includes(normGroup[i]));
       if (synonymsNotPresent.length > 0) {
         coveredFamilies.push(`${hits.map(h => h.charAt(0).toUpperCase() + h.slice(1)).join("/")} → also covers: ${synonymsNotPresent.map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(", ")}`);
       }
@@ -483,8 +483,6 @@ export type WABackendState = {
   analysisHistory: WardrobeAnalysis[];
   crossed: CrossedEntry[];
   currentLevel: number;
-  // Monotonic high-water mark — score can never go below this even after a backend glitch.
-  highestScore?: number;
 };
 
 // Sum progress for a specific gap key at a given level.
@@ -534,7 +532,9 @@ export function computeGapProgress(
 
   // 2b. All gap-description words appear in sub-type words — strong semantic signal.
   // Handles "Denim Shorts" → "shorts" gap: "shorts" ∈ longSub → 100%.
-  if (longSub.length > 0 && [...dWords].every(w => longSub.includes(w))) return 100;
+  // dWords.size guard: without it, a gap description with zero words ≥3 chars would make
+  // the `.every()` vacuously true and award 100% to any item with a sub_type.
+  if (dWords.size > 0 && longSub.length > 0 && [...dWords].every(w => longSub.includes(w))) return 100;
 
   // 3. Sub-type word overlap with gap description.
   // Guard: if the item has a functional_slot that didn't match the gap (step 1 didn't fire),

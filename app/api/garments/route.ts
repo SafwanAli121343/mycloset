@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import sharp from "sharp";
 import { insertGarment, deleteGarment } from "@/lib/db/garments";
-import { getFunctionalSlot, computeEffectiveLevel } from "@/lib/wardrobeAnalysis";
-import type { CrossedEntry, WABackendState } from "@/lib/wardrobeAnalysis";
+import { getFunctionalSlot } from "@/lib/wardrobeAnalysis";
+import type { CrossedEntry } from "@/lib/wardrobeAnalysis";
+import { revalidateGarmentCrossings } from "@/lib/db/wardrobeState";
 import { getDiscoveredBrands, addDiscoveredBrand } from "@/lib/db/discoveredBrands";
 import {
   detectSubType,
@@ -97,13 +98,25 @@ export async function PATCH(request: NextRequest) {
   }
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "No valid fields" }, { status: 400 });
 
-  const { error } = await adminClient
+  const { data: updatedGarment, error } = await adminClient
     .from("garments")
     .update(updates)
     .eq("id", id)
-    .eq("user_id", session.userId);
+    .eq("user_id", session.userId)
+    .select("sub_type, category, color_primary, aesthetic_tags")
+    .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // If a crossing-relevant attribute changed, re-validate this item's existing wardrobe-analysis
+  // crossings against its new attributes — a color crossing earned under the old color, for
+  // example, must not keep showing as resolved after the edit.
+  const CROSSING_RELEVANT = ["category", "sub_type", "color_primary"];
+  if (CROSSING_RELEVANT.some(k => k in updates) && updatedGarment) {
+    try { await revalidateGarmentCrossings(adminClient, session.userId, id, updatedGarment); }
+    catch { /* non-critical */ }
+  }
+
   return NextResponse.json({ success: true });
 }
 
@@ -639,33 +652,26 @@ export async function DELETE(request: NextRequest) {
 
   await deleteGarment(id);
 
-  // Remove this garment's crossed entries from wardrobe analysis state and regress level if needed
+  // Remove this garment's crossed entries from wardrobe analysis state. Levels are a permanent
+  // achievement and never regress by design (computeEffectiveLevel never goes below currentLevel)
+  // — this only uncrosses whatever this item resolved so the score recomputes without its
+  // contribution, and the freed-up gap/color/aesthetic/con becomes eligible to be crossed again
+  // by a future item, or resurfaced by a future level's analysis.
   if (ownerId) {
     try {
       const { data: stateRow } = await adminClient
         .from("wardrobe_analysis_state")
-        .select("crossed, analysis_history, current_level")
+        .select("crossed, current_level")
         .eq("user_id", ownerId)
         .single();
       if (stateRow) {
         const prevCrossed    = (stateRow.crossed as CrossedEntry[]) ?? [];
-        const fullHistory    = (stateRow.analysis_history as WABackendState["analysisHistory"]) ?? [];
-        const prevLevel      = (stateRow.current_level as number) ?? 1;
         const updatedCrossed = prevCrossed.filter(e => e.garmentId !== id);
 
         if (updatedCrossed.length !== prevCrossed.length) {
-          const effectiveLevel = computeEffectiveLevel(fullHistory, updatedCrossed, prevLevel);
-
-          // If the effective level regressed, truncate history to the new level so stale
-          // Level N analyses don't persist. The WA page will run a fresh analysis when
-          // the user re-fills the gaps and advances again.
-          const trimmedHistory = fullHistory.slice(0, effectiveLevel);
-
           await adminClient.from("wardrobe_analysis_state").update({
-            crossed:          updatedCrossed,
-            current_level:    effectiveLevel,
-            analysis_history: trimmedHistory,
-            updated_at:       new Date().toISOString(),
+            crossed:    updatedCrossed,
+            updated_at: new Date().toISOString(),
           }).eq("user_id", ownerId);
         }
       }

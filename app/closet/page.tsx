@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const LOADING_IMG = "/loading-tee.png";
@@ -99,14 +99,14 @@ function EditModal({ initial, onSave, onClose }: {
         position: "relative",
       }}>
 
-        {/* ✕ close */}
+        {/* âœ• close */}
         <button onClick={onClose} style={{
           position: "absolute", top: 14, right: 18,
           background: "none", border: "none", cursor: "pointer",
           fontSize: 14, color: "#bbb", lineHeight: 1, ...FONT,
-        }}>✕</button>
+        }}>âœ•</button>
 
-        {/* Input rows — hint floats right on the bar, always visible */}
+        {/* Input rows â€” hint floats right on the bar, always visible */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {([
             { key: "title",         hint: "Title"         },
@@ -174,7 +174,7 @@ function EditModal({ initial, onSave, onClose }: {
                     color: saving ? "#aaa" : "#1d9e52", padding: 0, ...FONT,
                   }}
                 >
-                  {saving ? "SAVING…" : "SAVE"}
+                  {saving ? "SAVINGâ€¦" : "SAVE"}
                 </button>
               </>
             )}
@@ -284,7 +284,7 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
             {s.items.length > 0
               ? s.items.map((text, i) => (
                   <p key={i} style={{ fontSize: 17, color: s.color, marginBottom: 10, lineHeight: 1.5, ...FONT }}>
-                    {text.replace(/ — /g, ": ")}
+                    {text.replace(/ â€” /g, ": ")}
                   </p>
                 ))
               : <p style={{ fontSize: 17, color: "#bbb", ...FONT }}>{s.emptyText}</p>
@@ -380,7 +380,7 @@ export default function ClosetPage() {
     const item = garments[index];
     if (!item || refreshedRef.current.has(item.id)) return;
     refreshedRef.current.add(item.id);
-    // Silent background fetch — no loading state, no "PAIRS WITH ·" spinner
+    // Silent background fetch â€” no loading state, no "PAIRS WITH Â·" spinner
     fetch(`/api/garments/pairings?id=${item.id}`)
       .then(r => r.ok ? r.json() : null)
       .then((data: { pairings: string[] } | null) => {
@@ -439,7 +439,7 @@ export default function ClosetPage() {
     }).catch(() => {});
 
     try {
-      const raw = localStorage.getItem("wa_cache_v16");
+      const raw = localStorage.getItem("wa_cache_v20");
       if (raw) {
         const cache = JSON.parse(raw);
         if (cache?.backendState?.crossed) {
@@ -456,13 +456,13 @@ export default function ClosetPage() {
             cache.removedCrossings[id] = deleted;
           }
           cache.pieceCount = -1;
-          localStorage.setItem("wa_cache_v16", JSON.stringify(cache));
+          localStorage.setItem("wa_cache_v20", JSON.stringify(cache));
         } else {
-          localStorage.removeItem("wa_cache_v16");
+          localStorage.removeItem("wa_cache_v20");
         }
       }
     } catch {
-      try { localStorage.removeItem("wa_cache_v16"); } catch {}
+      try { localStorage.removeItem("wa_cache_v20"); } catch {}
     }
     const updated = garments.filter((g) => g.id !== id);
     setGarments(updated);
@@ -505,7 +505,7 @@ export default function ClosetPage() {
     ? "slideInFromRight 0.28s ease-out forwards"
     : "slideInFromLeft 0.28s ease-out forwards";
 
-  // Closet frame is always visible — only the item area shows loading state.
+  // Closet frame is always visible â€” only the item area shows loading state.
   // This makes the page feel instant: layout appears immediately on navigation.
   const showEmpty = !loading && garments.length === 0;
 
@@ -536,7 +536,7 @@ export default function ClosetPage() {
     >
       <style suppressHydrationWarning>{ANIMATIONS}</style>
 
-      {/* Empty state — only shown after load confirms no garments */}
+      {/* Empty state â€” only shown after load confirms no garments */}
       {showEmpty && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <img
@@ -551,7 +551,7 @@ export default function ClosetPage() {
         </div>
       )}
 
-      {/* Main layout — rendered only after data is fully loaded */}
+      {/* Main layout â€” rendered only after data is fully loaded */}
       {!showEmpty && (
         <>
           {/* Full-width row: [PROS/PAIRS flex:1] [Arrow] [Closet] [Arrow] [CONS/AVOID flex:1] */}
@@ -563,20 +563,20 @@ export default function ClosetPage() {
                 !item
                   ? []
                   : [
-                      { label: "SCORE", items: [scores[item.id] != null ? `${scores[item.id]} / 100` : "—"], color: "#111" },
-                      { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
+                      { label: "SCORE", items: [scores[item.id] != null ? `${scores[item.id]} / 100` : "â€”"], color: "#111" },
+                      { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzingâ€¦" : "none" },
                       {
                         label: "PAIRS WITH",
                         items: pairingsForItem,
                         color: "#555",
-                        emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet — add more items",
+                        emptyText: item.pros === null ? "analyzingâ€¦" : "nothing in your wardrobe pairs well with this yet â€” add more items",
                       },
                       { label: "COLORS", items: item.color_pairings ?? [], color: "#555" },
                     ]
               }
             />
 
-            {/* Center block — arrow + closet image + arrow */}
+            {/* Center block â€” arrow + closet image + arrow */}
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
               <Arrow dir="left" onClick={() => navigate("left")} disabled={garments.length < 2} />
 
@@ -587,7 +587,7 @@ export default function ClosetPage() {
                   style={{ height: "82vh", width: "auto", display: "block" }}
                   draggable={false}
                 />
-                {/* Garment area — loading spinner or actual item image */}
+                {/* Garment area â€” loading spinner or actual item image */}
                 <div
                   style={{
                     position: "absolute",
@@ -635,14 +635,14 @@ export default function ClosetPage() {
                 !item
                   ? []
                   : [
-                      { label: "CONS",  items: item.cons ?? [],          color: "#c00", emptyText: item.cons === null ? "analyzing…" : "no cons" },
-                      { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzing…" : "none" },
+                      { label: "CONS",  items: item.cons ?? [],          color: "#c00", emptyText: item.cons === null ? "analyzingâ€¦" : "no cons" },
+                      { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzingâ€¦" : "none" },
                     ]
               }
             />
           </div>
 
-          {/* Bottom: brand name + remove — fixed height so layout never shifts */}
+          {/* Bottom: brand name + remove â€” fixed height so layout never shifts */}
           <div style={{ height: "8vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {item && (
               <>

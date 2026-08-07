@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { gapTotalProgress, computeGapProgress } from "@/lib/wardrobeAnalysis";
@@ -50,7 +50,7 @@ type AIFields = {
   color_primary?: string; material?: string; fit?: string; image?: string;
 };
 
-// ── T-shirt icon ─────────────────────────────────────────────────────────────
+// â”€â”€ T-shirt icon â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function TShirt({ size = 60, color = "#ccc", style = {} }: {
   size?: number; color?: string; style?: React.CSSProperties;
@@ -80,13 +80,13 @@ function TShirt({ size = 60, color = "#ccc", style = {} }: {
   );
 }
 
-// ── Tutorial slides ───────────────────────────────────────────────────────────
+// â”€â”€ Tutorial slides â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const SLIDES = [
   { title: "LAY IT FLAT",      body: "Place the item completely flat on a plain, solid-colour surface. Unfold it fully so all details are visible.", visual: "flat" },
   { title: "FILL THE FRAME",   body: "Get close enough that the item fills most of the photo. Leave only a small border of background around it.",  visual: "frame" },
   { title: "EVEN LIGHTING",    body: "Use soft, indirect light. Avoid harsh shadows from overhead lamps, camera flash, or direct sunlight.",         visual: "light" },
-  { title: "PLAIN BACKGROUND", body: "A single-colour surface works best — white, grey, or black. Avoid patterns or other objects nearby.",          visual: "bg" },
+  { title: "PLAIN BACKGROUND", body: "A single-colour surface works best â€” white, grey, or black. Avoid patterns or other objects nearby.",          visual: "bg" },
   { title: "ONE ITEM ONLY",    body: "Each photo should contain exactly one item. For multiple pieces, photograph each one separately.",              visual: "one" },
 ];
 
@@ -182,7 +182,7 @@ function SlideVisual({ type }: { type: string }) {
   return null;
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function AddItemPage() {
   const { user } = useAuth();
@@ -272,7 +272,7 @@ export default function AddItemPage() {
     }
   }
 
-  // ── Camera (getUserMedia on desktop, file input fallback) ─────────────────
+  // â”€â”€ Camera (getUserMedia on desktop, file input fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function startCamera() {
     setCameraErrMsg(null);
@@ -293,7 +293,7 @@ export default function AddItemPage() {
         setNoCameraDetected(true);
         setCameraErrMsg("No camera detected on this device. Select an image using the option below.");
       } else {
-        // Permission denied or hardware error — fall back to file picker silently
+        // Permission denied or hardware error â€” fall back to file picker silently
         cameraRef.current?.click();
       }
     }
@@ -326,7 +326,7 @@ export default function AddItemPage() {
     await runAIAnalysis(dataUrl, undefined);
   }
 
-  // ── Tutorial ──────────────────────────────────────────────────────────────
+  // â”€â”€ Tutorial â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function launchCamera() {
     if (noCameraDetected) {
@@ -348,14 +348,14 @@ export default function AddItemPage() {
     startCamera();
   }
 
-  // ── AI analysis ───────────────────────────────────────────────────────────
+  // â”€â”€ AI analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setImageFile(file);
     const raw    = await fileToDataUrl(file);
-    const dataUrl = await normalizeToJpeg(raw); // AVIF/HEIC → JPEG before sending to server
+    const dataUrl = await normalizeToJpeg(raw); // AVIF/HEIC â†’ JPEG before sending to server
     setImagePreview(dataUrl);
     setAnalyzed(false);
     setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit("");
@@ -381,17 +381,17 @@ export default function AddItemPage() {
       });
       const json = await res.json();
       if (!res.ok) {
-        if (!productUrl) showNotice("err", json.error ?? "Analysis failed — fill in fields manually.");
+        if (!productUrl) showNotice("err", json.error ?? "Analysis failed â€” fill in fields manually.");
         return false;
       }
       applyAIFields(json as AIFields);
       setAnalyzed(true);
-      // Kick off background removal non-blocking — image updates when ready
+      // Kick off background removal non-blocking â€” image updates when ready
       const imageToProcess = productUrl ? (json as AIFields).image : imageDataUrl;
       if (imageToProcess) applyBgRemoval(imageToProcess);
       return true;
     } catch {
-      if (!productUrl) showNotice("err", "Analysis failed — fill in fields manually.");
+      if (!productUrl) showNotice("err", "Analysis failed â€” fill in fields manually.");
       return false;
     } finally {
       setAnalyzing(false);
@@ -442,7 +442,7 @@ export default function AddItemPage() {
     // Update the WA cache: compute which gaps/colors/aesthetics/cons the new item crosses,
     // record them with garment attribution, update localStorage, and fire-and-forget to backend.
     try {
-      const WA_KEY    = "wa_cache_v16";
+      const WA_KEY    = "wa_cache_v20";
       const garmentId = saved.id ?? "";
       const raw       = localStorage.getItem(WA_KEY);
 
@@ -474,12 +474,12 @@ export default function AddItemPage() {
         if (prevCrossings && prevCrossings.length > 0) {
           bs.crossed = [...bs.crossed, ...prevCrossings];
           delete cache.removedCrossings![garmentId];
-          // pieceCount and cache save happen in the normal flow below — don't double-increment.
+          // pieceCount and cache save happen in the normal flow below â€” don't double-increment.
           fetch("/api/wardrobe/state/cross", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify(prevCrossings),
           }).catch(() => {});
-          // Fall through — fresh analysis below will skip already-restored entries and add any new-level crossings.
+          // Fall through â€” fresh analysis below will skip already-restored entries and add any new-level crossings.
         }
 
         if (analysis) {
@@ -487,7 +487,7 @@ export default function AddItemPage() {
           const cat  = (saved.category ?? category ?? "").toLowerCase();
           const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-          // Pattern/aesthetic inference — item-specific, used across all levels
+          // Pattern/aesthetic inference â€” item-specific, used across all levels
           const patternStr = (saved.pattern ?? "").toLowerCase();
           const titleStr   = (saved.title   ?? saved.sub_type ?? "").toLowerCase();
           const patternImplied: string[] = [];
@@ -503,7 +503,7 @@ export default function AddItemPage() {
 
           const newEntries: WACacheV7["backendState"]["crossed"] = [];
 
-          // ── Algorithmic crossing for ALL prior levels ──────────────────────────
+          // â”€â”€ Algorithmic crossing for ALL prior levels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           // Ensures removing-then-re-adding an item restores its full score delta
           // even when it was originally added at a lower level.
           for (let L = 1; L < level; L++) {
@@ -551,7 +551,7 @@ export default function AddItemPage() {
             }
           }
 
-          // ── Current level: algorithmic + AI gap-check ──────────────────────────
+          // â”€â”€ Current level: algorithmic + AI gap-check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           const existingColKeys = new Set(bs.crossed.filter(e => e.category === "color"     && e.analysisLevel === level).map(e => e.key));
           const existingAesKeys = new Set(bs.crossed.filter(e => e.category === "aesthetic" && e.analysisLevel === level).map(e => e.key));
           const existingConKeys = new Set(bs.crossed.filter(e => e.category === "con"       && e.analysisLevel === level).map(e => e.key));
@@ -603,7 +603,7 @@ export default function AddItemPage() {
             if (matches) newEntries.push({ category: "con", key: String(i), garmentId, analysisLevel: level });
           }
 
-          // Determine which gaps had 0 algorithmic progress — ask AI + image for those
+          // Determine which gaps had 0 algorithmic progress â€” ask AI + image for those
           const algorithmicGapKeys = new Set(newEntries.filter(e => e.category === "gap").map(e => e.key));
           const unmatched = analysis.gaps.filter(g =>
             !algorithmicGapKeys.has(g.description) &&
@@ -703,7 +703,7 @@ export default function AddItemPage() {
       } else {
         localStorage.removeItem(WA_KEY);
       }
-    } catch { try { localStorage.removeItem("wa_cache_v16"); } catch {} }
+    } catch { try { localStorage.removeItem("wa_cache_v20"); } catch {} }
 
     // Pre-compute pairings so the closet never shows "no items pair with this"
     if (saved.id) {
@@ -747,7 +747,7 @@ export default function AddItemPage() {
         ${DOT_KEYFRAMES}
       `}</style>
 
-      {/* ── Camera modal ──────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Camera modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showCamera && (
         <div style={{ position: "fixed", inset: 0, zIndex: 4000, background: "#000", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <video
@@ -780,7 +780,7 @@ export default function AddItemPage() {
         </div>
       )}
 
-      {/* ── Tutorial modal ────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Tutorial modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showTutorial && (
         <div
           onClick={e => { if (e.target === e.currentTarget) closeTutorial(); }}
@@ -815,13 +815,13 @@ export default function AddItemPage() {
                 onClick={() => setTutorialSlide(s => s - 1)}
                 style={{ background: "none", border: "none", cursor: tutorialSlide > 0 ? "pointer" : "default", fontSize: 10, color: "#888", letterSpacing: "0.1em", textTransform: "uppercase", padding: 0, visibility: tutorialSlide > 0 ? "visible" : "hidden", ...FONT }}
               >
-                ← BACK
+                â† BACK
               </button>
               <button
                 onClick={isLast ? closeTutorial : () => setTutorialSlide(s => s + 1)}
                 style={{ background: "none", border: "none", padding: 0, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", cursor: "pointer", color: "#111", fontWeight: 700, ...FONT }}
               >
-                {isLast ? "TAKE PHOTO" : "NEXT →"}
+                {isLast ? "TAKE PHOTO" : "NEXT â†’"}
               </button>
             </div>
 
@@ -834,7 +834,7 @@ export default function AddItemPage() {
         </div>
       )}
 
-      {/* ── Main content ─────────────────────────────────────────────────────── */}
+      {/* â”€â”€ Main content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div style={{ width: "100%", maxWidth: 420, transform: translateY }}>
 
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
@@ -844,7 +844,7 @@ export default function AddItemPage() {
 
         <div style={{ width: "100%" }}>
 
-          {/* ── PHOTO TAB ───────────────────────────────────────────────────── */}
+          {/* â”€â”€ PHOTO TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {tab === "photo" && (
             <div style={{ marginBottom: 32 }}>
               {/* Fallback file inputs */}
@@ -912,18 +912,18 @@ export default function AddItemPage() {
 
               {analyzing && (
                 <p style={{ fontSize: 10, color: "#aaa", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 12, textAlign: "center" }}>
-                  ANALYZING IMAGE…
+                  ANALYZING IMAGEâ€¦
                 </p>
               )}
               {!analyzing && removingBg && imagePreview && (
                 <p style={{ fontSize: 10, color: "#aaa", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 12, textAlign: "center" }}>
-                  REMOVING BACKGROUND…
+                  REMOVING BACKGROUNDâ€¦
                 </p>
               )}
             </div>
           )}
 
-          {/* ── URL TAB ─────────────────────────────────────────────────────── */}
+          {/* â”€â”€ URL TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {tab === "url" && (
             <div style={{ marginBottom: 32 }}>
               {!analyzed && (
@@ -958,7 +958,7 @@ export default function AddItemPage() {
                   <img src={imagePreview} alt="preview" referrerPolicy="no-referrer" crossOrigin="anonymous" style={{ maxHeight: 180, maxWidth: "100%", objectFit: "contain", display: "block" }} />
                   {removingBg && (
                     <p style={{ fontSize: 10, color: "#aaa", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 8 }}>
-                      REMOVING BACKGROUND…
+                      REMOVING BACKGROUNDâ€¦
                     </p>
                   )}
                 </div>
@@ -971,7 +971,7 @@ export default function AddItemPage() {
             </div>
           )}
 
-          {/* ── SHARED FIELDS ───────────────────────────────────────────────── */}
+          {/* â”€â”€ SHARED FIELDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {(analyzed || imagePreview) && !analyzing && (
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
@@ -1064,7 +1064,7 @@ export default function AddItemPage() {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
