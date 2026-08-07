@@ -2,8 +2,9 @@
 // If an item's color falls in the same group as a missing color it counts as a fill.
 export const COLOR_GROUPS: string[][] = [
   // Muted yellow-greens — camo/camouflage is predominantly olive/army green in tone.
-  ["olive", "moss", "army green", "military green", "dark olive", "olive green", "khaki green", "camo", "camouflage", "woodland camo", "desert camo"],
-  // Sage / dusty greens (lighter, greyer)
+  // Generic "green" is included because owning a green item means olive is not a meaningful gap.
+  ["olive", "moss", "army green", "military green", "dark olive", "olive green", "khaki green", "camo", "camouflage", "woodland camo", "desert camo", "green"],
+  // Sage / dusty greens (lighter, greyer) — grey-toned enough to stay separate from generic green
   ["sage", "sage green", "dusty sage", "celadon", "mint green"],
   // Dark greens
   ["forest green", "hunter green", "dark green", "bottle green"],
