@@ -33,6 +33,7 @@ type Garment = {
   id: string;
   title: string;
   brand: string | null;
+  sub_type: string | null;
   material: string | null;
   color_primary: string | null;
   color_secondary: string | null;
@@ -321,6 +322,8 @@ export default function ClosetPage() {
   const [freshPairings, setFreshPairings] = useState<Record<string, string[] | null>>({});
   const [editItem, setEditItem] = useState<EditState | null>(null);
   const [scores, setScores]     = useState<Record<string, number>>({});
+  // sub_type.toLowerCase() → suggestion text from WA analysis overdone array
+  const [overdoneMap, setOverdoneMap] = useState<Record<string, string>>({});
 
   const busy = useRef(false);
   const refreshedRef   = useRef<Set<string>>(new Set());
@@ -342,11 +345,22 @@ export default function ClosetPage() {
     Promise.all([
       fetch("/api/garments").then(r => r.json()),
       fetch("/api/scoring").then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([data, scoringData]) => {
+      fetch("/api/wardrobe/state").then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([data, scoringData, waState]) => {
       if (scoringData?.pieces) {
         const map: Record<string, number> = {};
         for (const p of scoringData.pieces) map[p.id] = p.score;
         setScores(map);
+      }
+
+      if (waState?.analysisHistory?.length && waState.currentLevel >= 1) {
+        const level = Math.max(1, Math.min(waState.currentLevel, waState.analysisHistory.length));
+        const analysis = waState.analysisHistory[level - 1];
+        const omap: Record<string, string> = {};
+        for (const o of (analysis?.overdone ?? [])) {
+          omap[o.description.toLowerCase()] = o.suggestion;
+        }
+        setOverdoneMap(omap);
       }
 
       setGarments(data);
@@ -431,12 +445,6 @@ export default function ClosetPage() {
         body:    JSON.stringify({ year: y, month: m, overwrite: false }),
       }).catch(() => {});
     }
-
-    // Remove this garment's crossings from the backend WA state so the
-    // next WA page load sees the correct score without this item's contributions.
-    fetch(`/api/wardrobe/state/cross?garmentId=${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    }).catch(() => {});
 
     try {
       const raw = localStorage.getItem("wa_cache_v20");
@@ -634,10 +642,14 @@ export default function ClosetPage() {
               sections={
                 !item
                   ? []
-                  : [
-                      { label: "CONS",  items: item.cons ?? [],          color: "#c00", emptyText: item.cons === null ? "analyzingâ€¦" : "no cons" },
-                      { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzingâ€¦" : "none" },
-                    ]
+                  : (() => {
+                      const overdoneSuggestion = item.sub_type ? overdoneMap[item.sub_type.toLowerCase()] : undefined;
+                      return [
+                        { label: "CONS",  items: item.cons ?? [],          color: "#c00", emptyText: item.cons === null ? "analyzingâ€¦" : "no cons" },
+                        { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzingâ€¦" : "none" },
+                        ...(overdoneSuggestion ? [{ label: "OVERDONE", items: [overdoneSuggestion], color: "#c88800" }] : []),
+                      ];
+                    })()
               }
             />
           </div>

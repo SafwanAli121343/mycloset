@@ -248,6 +248,11 @@ Hard rules — apply identically regardless of what kind of wardrobe this is; no
     ? gpt.missing_aesthetics.filter(a => !metrics.aestheticCounts[a] && !priorAestheticsSet.has(a.toLowerCase()))
     : fallbackMissingAesthetics.filter(a => !priorAestheticsSet.has(a.toLowerCase())));
 
+  // Gaps must come verbatim from "Functional slots MISSING" (the prompt requires this).
+  // If GPT paraphrases or invents a slot name, it won't match the canonical set and is dropped.
+  // This makes exact-string prior-level dedup reliable: all descriptions share the same vocabulary.
+  const validMissingSlots = new Set(metrics.functionalSlotsMissing.map(s => s.toLowerCase()));
+
   const analysis: WardrobeAnalysis = {
     score:       metrics.score,
     scoreBreakdown: {
@@ -278,6 +283,7 @@ Hard rules — apply identically regardless of what kind of wardrobe this is; no
     },
     subTypeFrequency: metrics.subTypeCounts,
     gaps:     (gpt.gaps ?? [])
+      .filter(g => validMissingSlots.has(g.description.toLowerCase()))
       .filter(g => !priorGapSet.has(g.description.toLowerCase()))
       .map(g => ({
         description: g.description,

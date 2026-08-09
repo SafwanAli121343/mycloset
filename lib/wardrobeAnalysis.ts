@@ -518,8 +518,10 @@ export function computeGapProgress(
   const isDiversity = /\b(more|variety|diverse|multiple|several|additional|another|lack of variety)\b/.test(d);
   const isAbsence   = /\b(no |none|missing|lack|without|need a|add a|have no)\b/.test(d);
 
-  // 1. Slot exact match — all slot words appear in the gap description
-  if (slot && slotWords.length >= 1 && slotWords.every(w => dWords.has(w))) {
+  // 1. Slot exact match — all slot words appear in the gap description.
+  // Short words (< 3 chars, e.g. "up" in "zip-up") are exempt: they survive split but not dWords
+  // filter (which requires >= 3 chars), so they must not block an otherwise complete match.
+  if (slot && slotWords.length >= 1 && slotWords.every(w => w.length < 3 || dWords.has(w))) {
     const extraWords = [...dWords].filter(w => !slotWords.includes(w)).length;
     if (extraWords <= 1) return 100; // description ≈ slot name itself
     if (isDiversity) return 50;
@@ -540,7 +542,7 @@ export function computeGapProgress(
   // Guard: if the item has a functional_slot that didn't match the gap (step 1 didn't fire),
   // skip sub_type word overlap — slot is a more reliable signal and prevents false positives
   // like "Denim Shorts" (slot="shorts") contributing to "denim bottom" gap via the word "denim".
-  const slotMatchesGap = slot && slotWords.length >= 1 && slotWords.every(w => dWords.has(w));
+  const slotMatchesGap = slot && slotWords.length >= 1 && slotWords.every(w => w.length < 3 || dWords.has(w));
   if (!slot || slotMatchesGap) {
     if (longSub.length > 0) {
       const hits  = longSub.filter(w => dWords.has(w)).length;
@@ -564,7 +566,7 @@ export function computeGapProgress(
       const anotherSlotMatchesGap = Object.keys(FUNCTIONAL_SLOT_MAP).some(s => {
         if (s === slot) return false;
         const sw = s.split(/[\s\/\-]+/).filter(w => w.length >= 2);
-        return sw.length >= 1 && sw.every(w => dWords.has(w));
+        return sw.length >= 1 && sw.every(w => w.length < 3 || dWords.has(w));
       });
       if (!anotherSlotMatchesGap) {
         if (isAbsence) return 100;
