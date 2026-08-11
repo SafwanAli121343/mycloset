@@ -100,14 +100,16 @@ function EditModal({ initial, onSave, onClose }: {
         position: "relative",
       }}>
 
-        {/* âœ• close */}
+        {/* close icon - SVG, not a text glyph, so it renders identically on every device/platform */}
         <button onClick={onClose} style={{
           position: "absolute", top: 14, right: 18,
           background: "none", border: "none", cursor: "pointer",
-          fontSize: 14, color: "#bbb", lineHeight: 1, ...FONT,
-        }}>âœ•</button>
+          lineHeight: 1,
+        }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1L11 11M11 1L1 11" stroke="#bbb" strokeWidth="1.3" strokeLinecap="round"/></svg>
+        </button>
 
-        {/* Input rows â€” hint floats right on the bar, always visible */}
+        {/* Input rows — hint floats right on the bar, always visible */}
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {([
             { key: "title",         hint: "Title"         },
@@ -175,7 +177,7 @@ function EditModal({ initial, onSave, onClose }: {
                     color: saving ? "#aaa" : "#1d9e52", padding: 0, ...FONT,
                   }}
                 >
-                  {saving ? "SAVINGâ€¦" : "SAVE"}
+                  {saving ? "SAVING..." : "SAVE"}
                 </button>
               </>
             )}
@@ -189,6 +191,15 @@ function EditModal({ initial, onSave, onClose }: {
 type Phase = "idle" | "out" | "in";
 
 const FONT = { fontFamily: "Arial, sans-serif" };
+
+// Responsive compression: the bottom action bar has a sane min/max height so it
+// stays readable and never gets squeezed to nothing, and the closet illustration
+// caps itself to whatever's left after that bar (plus a little breathing room)
+// instead of a flat 82vh that can overflow a short viewport and clip the bar
+// below it (the "EDIT/REMOVE cut off on smaller screens" case).
+const BOTTOM_BAR_H = "clamp(64px, 9vh, 96px)";
+const CLOSET_IMG_H = `min(82vh, calc(100vh - ${BOTTOM_BAR_H} - 24px))`;
+const CLOSET_IMG_H_EMPTY = "min(82vh, calc(100vh - 60px))";
 
 
 function Arrow({ dir, onClick, disabled }: { dir: "left" | "right"; onClick: () => void; disabled?: boolean }) {
@@ -218,47 +229,25 @@ type PanelSection = {
   emptyText?: string;
 };
 
+// Same scroll-fade + click-to-scroll-arrow system used in wardrobe-analysis/page.tsx's
+// ScrollCol and preview/PreviewClient.tsx's SlideCard: a top fade appears once scrolled
+// past the top, a bottom fade + clickable chevron appears while more content remains
+// below (the chevron flips to "back to top" once at the bottom).
 function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sections: PanelSection[]; side?: "left" | "right"; spacerHeight?: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [thumbTop, setThumbTop]       = useState(0);
-  const [thumbHeight, setThumbHeight] = useState(0);
-  const [showBar, setShowBar]         = useState(false);
-  const isDragging      = useRef(false);
-  const dragStartY      = useRef(0);
-  const dragStartScroll = useRef(0);
+  const [atTop, setAtTop] = useState(true);
+  const [atBot, setAtBot] = useState(false);
 
-  function updateBar() {
+  function updateEdges() {
     const el = scrollRef.current;
     if (!el) return;
-    const ratio = el.clientHeight / el.scrollHeight;
-    const scrollable = ratio < 0.99;
-    setShowBar(scrollable);
-    if (!scrollable) return;
-    setThumbHeight(ratio * el.clientHeight);
-    setThumbTop((el.scrollTop / el.scrollHeight) * el.clientHeight);
+    const isBot = el.scrollHeight <= el.clientHeight + 8 || el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+    const isTop = el.scrollTop <= 8;
+    setAtBot(isBot);
+    setAtTop(isTop);
   }
 
-  useLayoutEffect(() => { updateBar(); });
-
-  function onThumbDown(e: React.MouseEvent) {
-    e.preventDefault();
-    isDragging.current      = true;
-    dragStartY.current      = e.clientY;
-    dragStartScroll.current = scrollRef.current?.scrollTop ?? 0;
-
-    function onMove(ev: MouseEvent) {
-      if (!isDragging.current || !scrollRef.current) return;
-      const el = scrollRef.current;
-      el.scrollTop = dragStartScroll.current + (ev.clientY - dragStartY.current) * (el.scrollHeight / el.clientHeight);
-    }
-    function onUp() {
-      isDragging.current = false;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }
+  useLayoutEffect(() => { updateEdges(); });
 
   const visible = sections.filter(s => s.items.length > 0 || !!s.emptyText);
   if (!visible.length) return <div style={{ flex: 1 }} />;
@@ -269,12 +258,12 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
 
       <div
         ref={scrollRef}
-        onScroll={updateBar}
+        onScroll={updateEdges}
         className="closet-panel-scroll"
         style={{
           flex: 1, overflowY: "auto", scrollbarWidth: "none",
           textAlign: "center", paddingBottom: 40, minHeight: 0,
-          paddingLeft: 12, paddingRight: showBar ? 18 : 12,
+          paddingLeft: 12, paddingRight: 12,
         }}
       >
         {visible.map((s, si) => (
@@ -285,7 +274,7 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
             {s.items.length > 0
               ? s.items.map((text, i) => (
                   <p key={i} style={{ fontSize: 17, color: s.color, marginBottom: 10, lineHeight: 1.5, ...FONT }}>
-                    {text.replace(/ â€” /g, ": ")}
+                    {text.replace(/ — /g, ": ")}
                   </p>
                 ))
               : <p style={{ fontSize: 17, color: "#bbb", ...FONT }}>{s.emptyText}</p>
@@ -294,20 +283,43 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
         ))}
       </div>
 
-      {showBar && (
+      {/* Top fade - appears after the user scrolls down */}
+      <div style={{
+        position: "absolute", top: spacerHeight, left: 0, right: 0, height: 50,
+        background: "linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0) 100%)",
+        pointerEvents: "none",
+        opacity: atTop ? 0 : 1,
+        transition: "opacity 0.3s ease",
+      }} />
+
+      {/* Bottom fade + flip arrow */}
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, pointerEvents: "none" }}>
         <div style={{
-          position: "absolute", ...(side === "left" ? { left: 4 } : { right: 4 }), top: spacerHeight, bottom: 0,
-          width: 2, background: "#ebebeb", borderRadius: 1,
-        }}>
-          <div
-            onMouseDown={onThumbDown}
-            style={{
-              position: "absolute", top: thumbTop, height: thumbHeight,
-              width: "100%", background: "#bbb", borderRadius: 1, cursor: "ns-resize",
-            }}
-          />
+          height: 90, width: "100%",
+          background: "linear-gradient(to bottom, rgba(255,255,255,0) 0%, rgba(255,255,255,1) 55%)",
+          opacity: atBot ? 0 : 1,
+          transition: "opacity 0.3s ease",
+        }} />
+        <div
+          onClick={() => {
+            const el = scrollRef.current;
+            if (!el) return;
+            atBot ? el.scrollTo({ top: 0, behavior: "smooth" }) : el.scrollBy({ top: 220, behavior: "smooth" });
+          }}
+          style={{
+            background: "#fff", width: "100%", display: "flex", justifyContent: "center",
+            paddingTop: 4, paddingBottom: 12,
+            cursor: "pointer", pointerEvents: "auto",
+            opacity: (atTop && atBot) ? 0 : 1,
+            transition: "opacity 0.3s ease",
+          }}
+        >
+          {atBot
+            ? <svg width="14" height="8" viewBox="0 0 14 8" fill="none"><path d="M1 7L7 1L13 7" stroke="#bbb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            : <svg width="14" height="8" viewBox="0 0 14 8" fill="none"><path d="M1 1L7 7L13 1" stroke="#bbb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          }
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -356,9 +368,19 @@ export default function ClosetPage() {
       if (waState?.analysisHistory?.length && waState.currentLevel >= 1) {
         const level = Math.max(1, Math.min(waState.currentLevel, waState.analysisHistory.length));
         const analysis = waState.analysisHistory[level - 1];
+        // Re-check against the CURRENT wardrobe (data, just fetched) rather than the
+        // frozen count from whenever this level's analysis was generated - an entry
+        // stops showing the moment its actual sub-type count drops back below the
+        // overdone threshold (3+), independent of levels/scoring.
+        const liveSubTypeCounts: Record<string, number> = {};
+        for (const g of (data as Garment[])) {
+          if (g.sub_type) liveSubTypeCounts[g.sub_type] = (liveSubTypeCounts[g.sub_type] ?? 0) + 1;
+        }
         const omap: Record<string, string> = {};
         for (const o of (analysis?.overdone ?? [])) {
-          omap[o.description.toLowerCase()] = o.suggestion;
+          if ((liveSubTypeCounts[o.description] ?? 0) >= 3) {
+            omap[o.description.toLowerCase()] = o.suggestion;
+          }
         }
         setOverdoneMap(omap);
       }
@@ -394,7 +416,7 @@ export default function ClosetPage() {
     const item = garments[index];
     if (!item || refreshedRef.current.has(item.id)) return;
     refreshedRef.current.add(item.id);
-    // Silent background fetch â€” no loading state, no "PAIRS WITH Â·" spinner
+    // Silent background fetch — no loading state, no "PAIRS WITH ·" spinner
     fetch(`/api/garments/pairings?id=${item.id}`)
       .then(r => r.ok ? r.json() : null)
       .then((data: { pairings: string[] } | null) => {
@@ -513,7 +535,7 @@ export default function ClosetPage() {
     ? "slideInFromRight 0.28s ease-out forwards"
     : "slideInFromLeft 0.28s ease-out forwards";
 
-  // Closet frame is always visible â€” only the item area shows loading state.
+  // Closet frame is always visible — only the item area shows loading state.
   // This makes the page feel instant: layout appears immediately on navigation.
   const showEmpty = !loading && garments.length === 0;
 
@@ -544,13 +566,13 @@ export default function ClosetPage() {
     >
       <style suppressHydrationWarning>{ANIMATIONS}</style>
 
-      {/* Empty state â€” only shown after load confirms no garments */}
+      {/* Empty state — only shown after load confirms no garments */}
       {showEmpty && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <img
             src="/closet.png"
             alt="closet"
-            style={{ height: "82vh", width: "auto", display: "block" }}
+            style={{ height: CLOSET_IMG_H_EMPTY, width: "auto", display: "block" }}
             draggable={false}
           />
           <p style={{ marginTop: 14, color: "#aaa", fontSize: 14, letterSpacing: "0.08em" }}>
@@ -559,7 +581,7 @@ export default function ClosetPage() {
         </div>
       )}
 
-      {/* Main layout â€” rendered only after data is fully loaded */}
+      {/* Main layout — rendered only after data is fully loaded */}
       {!showEmpty && (
         <>
           {/* Full-width row: [PROS/PAIRS flex:1] [Arrow] [Closet] [Arrow] [CONS/AVOID flex:1] */}
@@ -571,20 +593,20 @@ export default function ClosetPage() {
                 !item
                   ? []
                   : [
-                      { label: "SCORE", items: [scores[item.id] != null ? `${scores[item.id]} / 100` : "â€”"], color: "#111" },
-                      { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzingâ€¦" : "none" },
+                      { label: "SCORE", items: [scores[item.id] != null ? `${scores[item.id]} / 100` : "—"], color: "#111" },
+                      { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
                       {
                         label: "PAIRS WITH",
                         items: pairingsForItem,
                         color: "#555",
-                        emptyText: item.pros === null ? "analyzingâ€¦" : "nothing in your wardrobe pairs well with this yet â€” add more items",
+                        emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet — add more items",
                       },
                       { label: "COLORS", items: item.color_pairings ?? [], color: "#555" },
                     ]
               }
             />
 
-            {/* Center block â€” arrow + closet image + arrow */}
+            {/* Center block — arrow + closet image + arrow */}
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
               <Arrow dir="left" onClick={() => navigate("left")} disabled={garments.length < 2} />
 
@@ -592,10 +614,10 @@ export default function ClosetPage() {
                 <img
                   src="/closet.png"
                   alt="closet"
-                  style={{ height: "82vh", width: "auto", display: "block" }}
+                  style={{ height: CLOSET_IMG_H, width: "auto", display: "block" }}
                   draggable={false}
                 />
-                {/* Garment area â€” loading spinner or actual item image */}
+                {/* Garment area — loading spinner or actual item image */}
                 <div
                   style={{
                     position: "absolute",
@@ -645,8 +667,8 @@ export default function ClosetPage() {
                   : (() => {
                       const overdoneSuggestion = item.sub_type ? overdoneMap[item.sub_type.toLowerCase()] : undefined;
                       return [
-                        { label: "CONS",  items: item.cons ?? [],          color: "#c00", emptyText: item.cons === null ? "analyzingâ€¦" : "no cons" },
-                        { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzingâ€¦" : "none" },
+                        { label: "CONS",  items: item.cons ?? [],          color: "#c00", emptyText: item.cons === null ? "analyzing…" : "no cons" },
+                        { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzing…" : "none" },
                         ...(overdoneSuggestion ? [{ label: "OVERDONE", items: [overdoneSuggestion], color: "#c88800" }] : []),
                       ];
                     })()
@@ -654,8 +676,9 @@ export default function ClosetPage() {
             />
           </div>
 
-          {/* Bottom: brand name + remove â€” fixed height so layout never shifts */}
-          <div style={{ height: "8vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {/* Bottom: brand name + remove — clamped height so it never shifts on tall
+              screens but never gets squeezed below a readable minimum on short ones */}
+          <div style={{ height: BOTTOM_BAR_H, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {item && (
               <>
                 <p style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>

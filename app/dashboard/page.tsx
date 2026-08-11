@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -49,7 +49,13 @@ export default function DashboardPage() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the starting corner positions are applied
+  // BEFORE the browser paints, and the animation loop starts on the very next
+  // frame with no artificial delay - otherwise every piece renders stacked at
+  // its default left:0/top:0 (from the JSX below) and sits there visibly static
+  // until the first tick() call finally moves it, instead of already being in
+  // motion the instant the page appears.
+  useLayoutEffect(() => {
     const W = window.innerWidth;
     const H = window.innerHeight;
 
@@ -73,6 +79,13 @@ export default function DashboardPage() {
       vx: SPEED * signs[i].sx,
       vy: SPEED * signs[i].sy,
     }));
+
+    // Apply the starting positions synchronously, right now, before paint -
+    // this is what actually eliminates the "stacked in the corner" flash.
+    balls.current.forEach((b, i) => {
+      const el = imgRefs.current[i];
+      if (el) { el.style.left = `${b.x}px`; el.style.top = `${b.y}px`; }
+    });
 
     let lastTime = 0;
 
@@ -133,9 +146,11 @@ export default function DashboardPage() {
       rafId.current = requestAnimationFrame(tick);
     }
 
-    // Small delay so images paint and have real dimensions
-    const t = setTimeout(() => { rafId.current = requestAnimationFrame(tick); }, 80);
-    return () => { clearTimeout(t); cancelAnimationFrame(rafId.current); };
+    // No startup delay - tick() already falls back to sane default dimensions
+    // (pw/ph above) for any frame before offsetWidth/offsetHeight are measurable,
+    // and self-corrects on the next frame once they are.
+    rafId.current = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(rafId.current); };
   }, [pieces]);
 
   return (

@@ -1,5 +1,5 @@
 ﻿"use client";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { flushSync } from "react-dom";
 import type { CSSProperties, ChangeEvent } from "react";
 import { computeGapProgress, getFunctionalSlot, gapTotalProgress } from "@/lib/wardrobeAnalysis";
@@ -10,7 +10,7 @@ import type { GarmentForScoring } from "@/lib/scoring";
 
 const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
 
-// Gap description keyword â†’ aesthetics it implies (used by both algorithmic and AI image check)
+// Gap description keyword → aesthetics it implies (used by both algorithmic and AI image check)
 const GAP_AES: [string, string[]][] = [
   ["formal",          ["formal", "business casual"]],
   ["business casual", ["business casual", "smart casual"]],
@@ -50,7 +50,7 @@ const KEYFRAMES_CSS = `
   @keyframes loadbar       { 0%{width:0%} 55%{width:65%} 80%{width:84%} 100%{width:93%} }
 `;
 
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type PageStep  = "input"|"basic_analyzing"|"confirming"|"deep_analyzing"|"results";
 type InputMode = "url"|"image";
@@ -64,6 +64,10 @@ type DeepAttrs = {
   pros:string[]|null; cons:string[]|null;
   color_pairings:string[]|null; color_clashes:string[]|null;
   formality:string|null; pattern:string|null;
+  // /api/preview/deep-analyze's underlying inference always computes these (they're
+  // in VISUAL_FIELDS), the route just doesn't filter them out of the response - so
+  // they're present at runtime even though nothing previously typed/read them here.
+  item_tier?:string|null; novelty_quality?:number|null;
 };
 type OutfitItem = {
   id:string; title:string|null; image:string|null;
@@ -89,7 +93,7 @@ type CardDir = "left"|"right"|"bottom"|"top";
 type CardSlots = {left:CardKey|null; right:CardKey|null; bottom:CardKey|null; top:CardKey|null};
 type SpreadCfg = {containerW:number; containerH:number; stackLeft:number; stackTop:number};
 
-// â”€â”€ Module-level helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Module-level helpers ──────────────────────────────────────────────────────
 
 function normalizeToJpeg(dataUrl: string): Promise<string> {
   if (dataUrl.startsWith("data:image/jpeg") || dataUrl.startsWith("data:image/png")) {
@@ -171,29 +175,36 @@ function vSpreadZoom(N:number): number {
 }
 const DEFAULT_CFG = buildSpreadCfg(3);
 
-// â”€â”€ Score helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Score helpers ─────────────────────────────────────────────────────────────
 
 function sColor(v:number) { return v>=75?"#1d9e52":v>=50?"#c88800":"#c83030"; }
 function outfitCountColor(n:number) { return n>=25?"#1d9e52":n>=10?"#c88800":"#c83030"; }
 function pieceMatchColor(n:number)  { return n>=10?"#1d9e52":n>=4?"#c88800":"#c83030"; }
 // Thresholds scale with total outfits so a 20-outfit wardrobe and an 800-outfit wardrobe
 // are judged by the same ideal ratios, not the same absolute counts.
-// Good: â‰¥30% good = green, 15â€“29% = amber, <15% = red
+// Good: ≥30% good = green, 15–29% = amber, <15% = red
 function goodOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct >= 0.30 ? "#1d9e52" : pct >= 0.15 ? "#c88800" : "#c83030";
 }
-// Mid: â‰¥25% mid = green, 12â€“24% = amber, <12% = red
+// Mid: ≥25% mid = green, 12–24% = amber, <12% = red
 function midOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct >= 0.25 ? "#1d9e52" : pct >= 0.12 ? "#c88800" : "#c83030";
 }
-// Bad: <20% bad = green, 20â€“39% = amber, â‰¥40% = red (inverted â€” fewer is better)
+// Bad: <20% bad = green, 20–39% = amber, ≥40% = red (inverted — fewer is better)
 function badOutfitColor(n:number, total:number) {
   const pct = total > 0 ? n / total : 0;
   return pct < 0.20 ? "#1d9e52" : pct < 0.40 ? "#c88800" : "#c83030";
 }
 function pieceScore(cb:BasicAttrs, deep:DeepAttrs): number {
+  // Same tags.tier/novelty_score shape app/api/garments/route.ts writes to the DB on
+  // save - without this, scorePiece() can't tell a novelty/statement item apart from
+  // a standard one here, so preview could score the exact same item completely
+  // differently than closet/add-item do once it's actually added.
+  const tags = deep.item_tier
+    ? { tier: [deep.item_tier], ...(deep.novelty_quality != null ? { novelty_score: [String(deep.novelty_quality)] } : {}) }
+    : null;
   const g: GarmentForScoring = {
     id: "__preview__",
     title: cb.title,
@@ -210,13 +221,13 @@ function pieceScore(cb:BasicAttrs, deep:DeepAttrs): number {
     cons: deep.cons,
     color_pairings: deep.color_pairings,
     color_clashes: deep.color_clashes,
-    tags: null,
+    tags,
     image: cb.image,
   };
   return scorePiece(g);
 }
 function overallScore(ps:number, od:OutfitCountResult) {
-  // goodRatio: what fraction of outfits are high-quality (score â‰¥75), scaled to 100
+  // goodRatio: what fraction of outfits are high-quality (score ≥75), scaled to 100
   const total = od.outfitCount || 1;
   const goodRatio = Math.min((od.goodCount ?? 0) / total * 100 * 2, 100); // 50%+ good = 100 pts
   return Math.round(ps*0.35 + od.avgScore*0.25 + Math.min(od.outfitCount/25*100,100)*0.15 + od.aestheticFit*0.15 + goodRatio*0.10);
@@ -228,7 +239,7 @@ function compareScore(slot:Slot, max:number) {
   return Math.round(slot.outfitData.avgScore*0.40+on*0.30+slot.outfitData.aestheticFit*0.20+cr*0.10);
 }
 
-// â”€â”€ Misc helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Misc helpers ──────────────────────────────────────────────────────────────
 
 async function blobToDataUrl(blob:Blob): Promise<string> {
   return new Promise((res,rej)=>{
@@ -264,12 +275,23 @@ function getCardItems(key:CardKey, deep:DeepAttrs, outfitItems?:Record<string,Ou
   if (key==="piece_pairings") return Object.values(outfitItems??{}).map(i=>{
     const name=i.title??i.sub_type??i.id;
     const aesthetic=(i.aesthetic_tags??[]).slice(0,2).join(", ");
-    return aesthetic?`${name} â†’ ${aesthetic}`:name;
+    return aesthetic?`${name} → ${aesthetic}`:name;
   }).filter(Boolean) as string[];
   return deep.aesthetic_tags??[];
 }
+// Appends the overdone/variety note (see waImpact/selWaImpact effects) as a plain
+// line in the matching pros or cons card - same list, not a separate section.
+function cardItemsWithOverdone(
+  key:CardKey, deep:DeepAttrs, outfitItems:Record<string,OutfitItem>|undefined,
+  note:{type:"pro"|"con"; text:string}|null,
+): string[] {
+  const base=getCardItems(key,deep,outfitItems);
+  if (note?.type==="pro" && key==="pros") return [...base, note.text];
+  if (note?.type==="con" && key==="cons") return [...base, note.text];
+  return base;
+}
 
-// â”€â”€ Main page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PreviewPage() {
   const [slots,    setSlots]    = useState<Slot[]>(()=>Array.from({length:MAX_COMPARE},emptySlot));
@@ -318,7 +340,7 @@ export default function PreviewPage() {
     const deepRes=await fetch("/api/preview/deep-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:confirmed.title,brand:confirmed.brand,category:confirmed.category,color_primary:confirmed.color_primary,material:confirmed.material,fit:confirmed.fit,image:img})});
     const deepJson=await deepRes.json();
     if (!deepRes.ok||deepJson.error) {
-      const msg=deepRes.status===401?"Session expired â€” please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
+      const msg=deepRes.status===401?"Session expired — please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
       updateSlot(idx,{deepError:msg,analysisStep:null}); return;
     }
     const deep:DeepAttrs=deepJson;
@@ -326,7 +348,7 @@ export default function PreviewPage() {
     const outfitRes=await fetch("/api/preview/outfit-count",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({garment:{title:confirmed.title,brand:confirmed.brand,category:confirmed.category,sub_type:deep.sub_type,material:confirmed.material,color_primary:confirmed.color_primary,formality:deep.formality,aesthetic_tags:deep.aesthetic_tags,pros:deep.pros,cons:deep.cons,color_pairings:deep.color_pairings,color_clashes:deep.color_clashes,image:confirmed.image}})});
     const outfitJson=await outfitRes.json();
     if (!outfitRes.ok||outfitJson.error) {
-      const msg=outfitRes.status===401?"Session expired â€” please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
+      const msg=outfitRes.status===401?"Session expired — please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
       updateSlot(idx,{deepError:msg,analysisStep:null}); return;
     }
     updateSlot(idx,{outfitData:outfitJson as OutfitCountResult,analysisStep:null});
@@ -485,7 +507,7 @@ export default function PreviewPage() {
   return <MultiResult scoredSlots={scoredSlots} onReset={handleReset}/>;
 }
 
-// â”€â”€ InputSlot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── InputSlot ─────────────────────────────────────────────────────────────────
 
 function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
   slot:Slot; onFilePick:(e:ChangeEvent<HTMLInputElement>)=>void;
@@ -520,7 +542,7 @@ function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
             <input ref={inputRef} type="file" accept="image/*" style={{display:"none"}} onChange={onFilePick}/>
             <div onClick={()=>inputRef.current?.click()} style={{border:"1px dashed #ccc",height:80,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",gap:5}}>
               {slot.imageDataUrl?<img src={slot.imageDataUrl} style={{maxHeight:74,maxWidth:"100%",objectFit:"contain"}} alt=""/>
-                :<><span style={{fontSize:18,color:"#ccc"}}>â†‘</span><span style={{fontSize:9,color:"#bbb",letterSpacing:"0.1em"}}>CLICK TO UPLOAD</span></>}
+                :<><span style={{fontSize:18,color:"#ccc"}}>↑</span><span style={{fontSize:9,color:"#bbb",letterSpacing:"0.1em"}}>CLICK TO UPLOAD</span></>}
             </div>
           </>
         )}
@@ -530,7 +552,7 @@ function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
   );
 }
 
-// â”€â”€ SlideCard â€” calendar-style edge-anchored, form-fitting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SlideCard — calendar-style edge-anchored, form-fitting ────────────────────
 
 function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
   cardKey:CardKey; dir:CardDir; items:string[]; exiting:boolean; onHide:()=>void;
@@ -542,7 +564,11 @@ function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
   const [atTop,setAtTop]=useState(true);
   const [atBot,setAtBot]=useState(false);
 
-  useEffect(()=>{
+  // useLayoutEffect (not useEffect) so this is measured and corrected BEFORE the
+  // browser paints - otherwise the fade/arrow can flash into the wrong visibility
+  // for a frame (e.g. showing "more below" on content that already fits) whenever
+  // a card mounts or its items change.
+  useLayoutEffect(()=>{
     const el=scrollRef.current;
     if(!el) return;
     setAtBot(el.scrollHeight<=el.clientHeight+8);
@@ -646,7 +672,7 @@ function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
   );
 }
 
-// â”€â”€ SingleResult â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SingleResult ──────────────────────────────────────────────────────────────
 
 function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   const {confirmedBasic:cb,removedBgUrl,deep,outfitData}=slot;
@@ -666,9 +692,21 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
     return ()=>{clearTimeout(t1);clearTimeout(t2);};
   },[]);
 
-  // Wardrobe fill impact â€” computed from wa_cache in localStorage
+  // Wardrobe fill impact — computed from wa_cache in localStorage.
+  // waImpactReady only flips true once the FINAL result is known (algorithmic-only when
+  // nothing needed an AI image check, or algorithmic+AI merged once that check resolves).
+  // waImpact is never published with a partial/about-to-change result, so any card that
+  // shows it never has its content pop in or change after the user opens it.
   type WImpact = {fillsGaps:string[]; addsAesthetics:string[]; addsColors:string[]; addressesWeaknesses:string[]};
   const [waImpact, setWaImpact] = useState<WImpact|null>(null);
+  const [waImpactReady, setWaImpactReady] = useState(false);
+  // A card the user clicked to open before waImpact was ready — opened automatically
+  // once it settles, so those cards never appear then change.
+  const [pendingCardOpen, setPendingCardOpen] = useState<CardKey|null>(null);
+  // Whether this item piles onto an already-overdone sub-type in the wardrobe, or
+  // instead diversifies a slot that has one. Shown as a plain pro/con line, not a
+  // separate "sections" header, matching how the rest of pros/cons already read.
+  const [overdoneNote, setOverdoneNote] = useState<{type:"pro"|"con"; text:string}|null>(null);
 
   useEffect(()=>{
     if (!deep||!cb) return;
@@ -682,6 +720,8 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
             colors:{missing:string[]};
             aesthetics:{missing:string[]};
             cons:string[];
+            conGapLinks?:Record<string,string>;
+            overdone?:{description:string; count:number; suggestion:string}[];
           }>;
           crossed:CrossedEntry[];
           currentLevel:number;
@@ -704,23 +744,39 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         computeGapProgress(g.description,deep.sub_type??"",cat,funcSlot)>=100
       ).map(g=>g.description);
 
-      // Pattern/title-implied aesthetics â€” use substring matching so "camouflage" still resolves to military
+      // Overdone/variety: does this item pile onto a sub-type the wardrobe already has
+      // too much of, or does it diversify a slot that has that problem?
+      const overdoneEntries=analysis.overdone??[];
+      if (deep.sub_type && overdoneEntries.length) {
+        const subNorm=deep.sub_type.toLowerCase().trim();
+        const matched=overdoneEntries.find(o=>o.description.toLowerCase().trim()===subNorm);
+        if (matched) {
+          setOverdoneNote({type:"con",text:`Overdoes ${matched.description}`});
+        } else if (funcSlot && overdoneEntries.some(o=>getFunctionalSlot(o.description)===funcSlot)) {
+          setOverdoneNote({type:"pro",text:"Increases variety"});
+        } else {
+          setOverdoneNote(null);
+        }
+      } else {
+        setOverdoneNote(null);
+      }
+
+      // Pattern/title-implied aesthetics — use substring matching so "camouflage" still resolves to military
       const patternStr=(deep.pattern??'').toLowerCase();
       const titleStr=(cb.title??'').toLowerCase();
       const sub=(deep.sub_type??'').toLowerCase();
       const patternImplied:string[]=[];
+
       if (patternStr.includes("camo")||titleStr.includes("camo")||titleStr.includes("camouflage")||sub.includes("camo"))
         patternImplied.push("military","gorpcore");
-      if (patternStr.includes("floral")||titleStr.includes("floral"))
-        patternImplied.push("bohemian","cottagecore");
       if (patternStr.includes("plaid")||patternStr.includes("tartan")||titleStr.includes("plaid"))
         patternImplied.push("preppy","ivy league");
       if (patternStr.includes("tie-dye")||patternStr.includes("tie dye")||titleStr.includes("tie dye"))
-        patternImplied.push("bohemian","y2k");
+        patternImplied.push("y2k");
       const allAestheticCandidates = [...new Set([...(deep.aesthetic_tags??[]), ...patternImplied])];
       const baseAesthetics = allAestheticCandidates
         .filter(t=>analysis.aesthetics.missing.some(m=>norm(m)===norm(t)));
-      // Infer additional aesthetics from filled gaps (e.g. "formal pant" â†’ "formal", "business casual")
+      // Infer additional aesthetics from filled gaps (e.g. "formal pant" → "formal", "business casual")
       const algoAesNorms=new Set(baseAesthetics.map(norm));
       const gapInferredAes:string[]=[];
       for(const gap of algorithmic){
@@ -734,12 +790,27 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         ?analysis.colors.missing.filter(m=>sameColorGroup(pColor,m))
         :[];
 
-      // Open weaknesses (cons not yet crossed at this level)
+      // Open weaknesses (cons not yet crossed at this level), matched against this
+      // item using the SAME deterministic algorithm as add-item/page.tsx's con-matching
+      // (sub_type/category substring, linked-gap resolution, or gap-text substring) so
+      // preview and add-item never disagree about whether an item fills a weakness.
       const crossedConKeys=new Set(crossed.filter(e=>e.category==="con"&&e.analysisLevel===level).map(e=>e.key));
-      const openCons=(analysis.cons??[]).filter((_,i)=>!crossedConKeys.has(String(i)));
-
-      // Set immediate result from algorithmic matching
-      setWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:[]});
+      const conGapLinks=analysis.conGapLinks??{};
+      const openCons:string[]=[];
+      const algorithmicWeaknesses:string[]=[];
+      for(let i=0;i<(analysis.cons??[]).length;i++){
+        if(crossedConKeys.has(String(i))) continue;
+        const conText=analysis.cons[i];
+        openCons.push(conText);
+        const con=conText.toLowerCase();
+        const linkedGap=conGapLinks[String(i)];
+        const matches=
+          (!!sub&&con.includes(sub))||
+          (!!cat&&con.includes(cat))||
+          (!!linkedGap&&algorithmic.some(d=>d.toLowerCase()===linkedGap.toLowerCase()))||
+          algorithmic.some(d=>con.includes(d.toLowerCase()));
+        if(matches) algorithmicWeaknesses.push(conText);
+      }
 
       // AI image check: typed groups so GPT has context for each category
       const imgUrl=removedBgUrl??cb.image;
@@ -750,8 +821,14 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
       const unmatchedColors=analysis.colors.missing.filter(m=>
         !addsColors.some(c=>norm(c)===norm(m))
       );
-      const anyUnmatched=unmatchedGaps.length||unmatchedAesthetics.length||unmatchedColors.length||openCons.length;
+      // Only ask the AI about weaknesses the deterministic pass above didn't already resolve.
+      const unmatchedCons=openCons.filter(c=>!algorithmicWeaknesses.includes(c));
+      const anyUnmatched=unmatchedGaps.length||unmatchedAesthetics.length||unmatchedColors.length||unmatchedCons.length;
       if (anyUnmatched&&imgUrl) {
+        // Don't publish waImpact yet — the algorithmic result here is a partial answer that
+        // the AI check below can still add to. Publishing early and updating later is exactly
+        // the "pops in after you're already looking at it" behavior we're avoiding, so wait
+        // for this to settle (success or failure) and publish the FINAL result exactly once.
         fetch("/api/wardrobe/gap-check",{
           method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
@@ -759,11 +836,9 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
             gap_descriptions:unmatchedGaps,
             aesthetic_gaps:unmatchedAesthetics,
             color_gaps:unmatchedColors,
-            weakness_gaps:openCons,
+            weakness_gaps:unmatchedCons,
           }),
         }).then(r=>r.json()).then((res:{gap_fills?:string[];aesthetic_fills?:string[];color_fills?:string[];weakness_fills?:string[]})=>{
-          const hasAny=(res.gap_fills?.length||res.aesthetic_fills?.length||res.color_fills?.length||res.weakness_fills?.length);
-          if (!hasAny) return;
           // Infer additional aesthetics from all gap fills (algorithmic + AI)
           const allGapFills=[...algorithmic,...(res.gap_fills??[])];
           const postAiAes=[...addsAesthetics,...(res.aesthetic_fills??[])];
@@ -773,13 +848,24 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
             for(const[kw,aes]of GAP_AES)if(gl.includes(kw))for(const a of aes)
               if(analysis.aesthetics.missing.includes(a)&&!postAiAesNorms.has(norm(a))){postAiAes.push(a);postAiAesNorms.add(norm(a));}
           }
+          const aiWeaknesses=(res.weakness_fills??[]).filter(w=>!algorithmicWeaknesses.includes(w));
           setWaImpact({
             fillsGaps:allGapFills.slice(0,3),
             addsAesthetics:postAiAes,
             addsColors:[...addsColors,...(res.color_fills??[])],
-            addressesWeaknesses:res.weakness_fills??[],
+            addressesWeaknesses:[...algorithmicWeaknesses,...aiWeaknesses],
           });
-        }).catch(()=>{});
+          setWaImpactReady(true);
+        }).catch(()=>{
+          // AI check failed — publish the algorithmic-only result as final rather than
+          // leaving the UI stuck waiting forever.
+          setWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:algorithmicWeaknesses});
+          setWaImpactReady(true);
+        });
+      } else {
+        // Nothing left for the AI to check — the algorithmic result is already final.
+        setWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:algorithmicWeaknesses});
+        setWaImpactReady(true);
       }
     } catch {}
   },[]);
@@ -789,7 +875,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   const [rightCard,  setRightCard]  = useState<{key:CardKey;exiting:boolean}|null>(null);
   const [bottomCard, setBottomCard] = useState<{key:CardKey;exiting:boolean}|null>(null);
   const [topCard,    setTopCard]    = useState<{key:CardKey;exiting:boolean}|null>(null);
-  // Tracks insertion order oldestâ†’newest for eviction when a 5th card is opened
+  // Tracks insertion order oldest→newest for eviction when a 5th card is opened
   const [openOrder,  setOpenOrder]  = useState<CardKey[]>([]);
 
   function visibleMap(): CardSlots {
@@ -823,21 +909,25 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
     const d=dirOf(key,vm); if (!d) return;
     exitCardInDir(d);
   }
-  function openCard(key:CardKey) {
+  // Cards whose extra sections come from waImpact — must wait for it to be ready
+  // so the card never opens with partial data that then changes underneath the user.
+  const WA_DEPENDENT_KEYS = new Set<CardKey>(["pros","aesthetics","pairings"]);
+
+  function openCardImmediate(key:CardKey) {
     const vm=visibleMap();
     if (Object.values(vm).includes(key)) {
-      // Already open â€” close it and remove from order
+      // Already open — close it and remove from order
       exitCard(key);
       setOpenOrder(prev=>prev.filter(k=>k!==key));
       return;
     }
     const dir=findCardDir(key,vm);
     if (dir!==null) {
-      // Free slot â€” open immediately
+      // Free slot — open immediately
       setterFor(dir)({key,exiting:false});
       setOpenOrder(prev=>[...prev,key]);
     } else {
-      // All 4 slots full â€” evict the oldest card, open new one in that same slot
+      // All 4 slots full — evict the oldest card, open new one in that same slot
       const oldest=openOrder[0];
       if (!oldest) return;
       const evictDir=dirOf(oldest,vm);
@@ -853,15 +943,38 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
       },250);
     }
   }
+  function openCard(key:CardKey) {
+    if (isOpen(key)) { openCardImmediate(key); return; } // closing is always immediate
+    if (WA_DEPENDENT_KEYS.has(key) && !waImpactReady) {
+      // Not ready yet — queue it (clicking again cancels the queued open) instead of
+      // opening now with data that would change under the user a moment later.
+      setPendingCardOpen(prev=>prev===key?null:key);
+      return;
+    }
+    openCardImmediate(key);
+  }
+  // Once waImpact settles, automatically open whatever card the user already asked for.
+  useEffect(()=>{
+    if (waImpactReady && pendingCardOpen) {
+      const key=pendingCardOpen;
+      setPendingCardOpen(null);
+      openCardImmediate(key);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[waImpactReady]);
   function isOpen(key:CardKey) {
     const vm=visibleMap(); return Object.values(vm).includes(key);
   }
 
   const previewItem:OutfitItem={id:"__preview__",title:cb.title,image:imgSrc,sub_type:deep.sub_type,category:cb.category,aesthetic_tags:deep.aesthetic_tags??null};
 
-  // Button label helper
-  function btnLabel(key:CardKey, show:string, hide:string) { return isOpen(key)?hide:show; }
-  function btnColor(key:CardKey, base:string) { return isOpen(key)?"#999":base; }
+  // Button label/color helpers — a queued (not-yet-ready) card reads as "loading" so the
+  // click still feels responsive instead of appearing to do nothing.
+  function btnLabel(key:CardKey, show:string, hide:string) {
+    if (pendingCardOpen===key) return "Loading...";
+    return isOpen(key)?hide:show;
+  }
+  function btnColor(key:CardKey, base:string) { return (isOpen(key)||pendingCardOpen===key)?"#999":base; }
 
   const pieceMatchCount = Object.keys(outfitData.items).length;
 
@@ -871,7 +984,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
 
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingBottom:80}}>
 
-        {/* Title bar + brand â€” fade in after image settles */}
+        {/* Title bar + brand — fade in after image settles */}
         <div style={{
           opacity:contentVisible?1:0,
           transition:"opacity 0.6s ease",
@@ -906,14 +1019,14 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         {cb.brand&&<p style={{...FONT,fontSize:11,fontWeight:700,color:"#111",letterSpacing:"0.15em",margin:0,marginTop:-4,marginBottom:12}}>{cb.brand.toUpperCase()}</p>}
         </div>
 
-        {/* Item image â€” always visible; CSS transform starts at viewport center, transitions to natural position */}
+        {/* Item image — always visible; CSS transform starts at viewport center, transitions to natural position */}
         {imgSrc&&<img src={imgSrc} alt={cb.title} style={{
           height:210,maxWidth:"60%",objectFit:"contain",marginBottom:28,
           transform:imgAtTop?"none":"translateY(calc(50vh - 178px))",
           transition:"transform 0.7s cubic-bezier(0.4,0,0.2,1)",
         }}/>}
 
-        {/* Stats and gallery â€” fade in after image settles */}
+        {/* Stats and gallery — fade in after image settles */}
         <div style={{opacity:contentVisible?1:0,transition:"opacity 0.6s ease",display:"flex",flexDirection:"column",alignItems:"center",width:"100%"}}>
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:24,marginBottom:36,paddingInline:24}}>
             <div style={{display:"flex",gap:56,alignItems:"flex-start",justifyContent:"center",flexWrap:"wrap"}}>
@@ -944,20 +1057,20 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
           c.key==="pairings"   ? [{header:"COLORS FILLED",          items:waImpact.addsColors}]            :
           undefined
         ) : undefined;
-        return <SlideCard key={dir} cardKey={c.key} dir={dir} items={getCardItems(c.key,deep,outfitData.items)} exiting={c.exiting} onHide={()=>exitCard(c.key)} sections={cardSections}/>;
+        return <SlideCard key={dir} cardKey={c.key} dir={dir} items={cardItemsWithOverdone(c.key,deep,outfitData.items,overdoneNote)} exiting={c.exiting} onHide={()=>exitCard(c.key)} sections={cardSections}/>;
       })}
 
     </div>
   );
 }
 
-// â”€â”€ MultiResult â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── MultiResult ───────────────────────────────────────────────────────────────
 
 type RankLabel = "best"|"second"|"worst";
 const RANK_BADGE: Record<RankLabel,{badge:string;color:string}> = {
-  best:   {badge:"â˜…", color:"#1d9e52"},
-  second: {badge:"â€¢", color:"#f0b429"},
-  worst:  {badge:"â€”", color:"#c83030"},
+  best:   {badge:"★", color:"#1d9e52"},
+  second: {badge:"•", color:"#f0b429"},
+  worst:  {badge:"—", color:"#c83030"},
 };
 // Layout constants for the 5-column compare view
 const ITEM_COL_W  = 230;
@@ -997,6 +1110,9 @@ function MultiResult({scoredSlots,onReset}:{
   const [loaderShowing,setLoaderShowing]=useState(n===2);
   const [loaderShowing3,setLoaderShowing3]=useState(n===3);
   const [selWaImpact,setSelWaImpact]=useState<{fillsGaps:string[];addsAesthetics:string[];addsColors:string[];addressesWeaknesses:string[]}|null>(null);
+  const [selWaImpactReady,setSelWaImpactReady]=useState(false);
+  const [pendingCardOpen,setPendingCardOpen]=useState<CardKey|null>(null);
+  const [selOverdoneNote,setSelOverdoneNote]=useState<{type:"pro"|"con"; text:string}|null>(null);
   const [compareEntered,setCompareEntered]=useState(false);
   const [three3Phase,setThree3Phase]=useState<'waiting'|'stacked'|'distributing'|'done'>(n===3?'waiting':'done');
   const [three3Moving,setThree3Moving]=useState(false);
@@ -1077,24 +1193,26 @@ function MultiResult({scoredSlots,onReset}:{
     });
   },[]);
 
-  useEffect(()=>{
+  // useLayoutEffect, measured synchronously right after this render's DOM commit -
+  // no rAF delay needed, and it avoids a frame where the fade/arrow show the wrong
+  // (stale or default) visibility before snapping to the real one.
+  useLayoutEffect(()=>{
     if(aiCmp==="loading")return;
-    requestAnimationFrame(()=>{
-      setPanelsAtBottom(Array.from({length:n},(_,i)=>{
-        const el=panelScrollRefs.current[i];
-        return el?(el.scrollHeight<=el.clientHeight+8):false;
-      }));
-      setPanelsAtTop(Array.from({length:n},(_,i)=>{
-        const el=panelScrollRefs.current[i];
-        return el?el.scrollTop<=8:true;
-      }));
-    });
+    setPanelsAtBottom(Array.from({length:n},(_,i)=>{
+      const el=panelScrollRefs.current[i];
+      return el?(el.scrollHeight<=el.clientHeight+8):false;
+    }));
+    setPanelsAtTop(Array.from({length:n},(_,i)=>{
+      const el=panelScrollRefs.current[i];
+      return el?el.scrollTop<=8:true;
+    }));
   },[aiCmp]);
 
   useEffect(()=>{ prevSelectedIdx.current=selectedIdx; },[selectedIdx]);
 
   useEffect(()=>{
-    if(selectedIdx===null){setSelWaImpact(null);return;}
+    setSelWaImpactReady(false);
+    if(selectedIdx===null){setSelWaImpact(null);setSelOverdoneNote(null);return;}
     let cancelled=false;
     const selSlot=scoredSlots[selectedIdx]?.slot;
     const sCb=selSlot?.confirmedBasic;
@@ -1104,7 +1222,7 @@ function MultiResult({scoredSlots,onReset}:{
     try{
       const raw=localStorage.getItem("wa_cache_v20");
       if(!raw){setSelWaImpact(null);return;}
-      const parsed=JSON.parse(raw) as {backendState:{analysisHistory:Array<{gaps:{description:string}[];colors:{missing:string[]};aesthetics:{missing:string[]};cons:string[]}>;crossed:CrossedEntry[];currentLevel:number}};
+      const parsed=JSON.parse(raw) as {backendState:{analysisHistory:Array<{gaps:{description:string}[];colors:{missing:string[]};aesthetics:{missing:string[]};cons:string[];conGapLinks?:Record<string,string>;overdone?:{description:string;count:number;suggestion:string}[]}>;crossed:CrossedEntry[];currentLevel:number}};
       const level=parsed.backendState?.currentLevel??1;
       const analysis=parsed.backendState?.analysisHistory?.[level-1]??parsed.backendState?.analysisHistory?.[0];
       if(!analysis){setSelWaImpact(null);return;}
@@ -1114,14 +1232,25 @@ function MultiResult({scoredSlots,onReset}:{
       const openGaps=analysis.gaps.filter(g=>gapTotalProgress(crossed,g.description,level)<100);
       const funcSlot=getFunctionalSlot(sDp.sub_type??"");
       const algorithmic=openGaps.filter(g=>computeGapProgress(g.description,sDp.sub_type??"",cat,funcSlot)>=100).map(g=>g.description);
+
+      // Overdone/variety - same logic as the single-item waImpact effect above.
+      const overdoneEntries=analysis.overdone??[];
+      if (sDp.sub_type && overdoneEntries.length) {
+        const subNorm=sDp.sub_type.toLowerCase().trim();
+        const matched=overdoneEntries.find(o=>o.description.toLowerCase().trim()===subNorm);
+        if (matched) setSelOverdoneNote({type:"con",text:`Overdoes ${matched.description}`});
+        else if (funcSlot && overdoneEntries.some(o=>getFunctionalSlot(o.description)===funcSlot)) setSelOverdoneNote({type:"pro",text:"Increases variety"});
+        else setSelOverdoneNote(null);
+      } else {
+        setSelOverdoneNote(null);
+      }
       const patternStr=(sDp.pattern??'').toLowerCase();
       const titleStr=(sCb.title??'').toLowerCase();
       const sub=(sDp.sub_type??'').toLowerCase();
       const patternImplied:string[]=[];
       if(patternStr.includes("camo")||titleStr.includes("camo")||titleStr.includes("camouflage")||sub.includes("camo"))patternImplied.push("military","gorpcore");
-      if(patternStr.includes("floral")||titleStr.includes("floral"))patternImplied.push("bohemian","cottagecore");
       if(patternStr.includes("plaid")||patternStr.includes("tartan")||titleStr.includes("plaid"))patternImplied.push("preppy","ivy league");
-      if(patternStr.includes("tie-dye")||patternStr.includes("tie dye")||titleStr.includes("tie dye"))patternImplied.push("bohemian","y2k");
+      if(patternStr.includes("tie-dye")||patternStr.includes("tie dye")||titleStr.includes("tie dye"))patternImplied.push("y2k");
       const allAestheticCandidates=[...new Set([...(sDp.aesthetic_tags??[]),...patternImplied])];
       const baseAesthetics=allAestheticCandidates.filter(t=>analysis.aesthetics.missing.some(m=>norm(m)===norm(t)));
       const algoAesNorms=new Set(baseAesthetics.map(norm));
@@ -1130,26 +1259,51 @@ function MultiResult({scoredSlots,onReset}:{
       const addsAesthetics=[...baseAesthetics,...gapInferredAes];
       const pColor=sCb.color_primary??null;
       const addsColors=pColor?analysis.colors.missing.filter(m=>sameColorGroup(pColor,m)):[];
+      // Weakness matching mirrors add-item/page.tsx's deterministic con-matching (see the
+      // single-item waImpact effect above for the full rationale).
       const crossedConKeys=new Set(crossed.filter(e=>e.category==="con"&&e.analysisLevel===level).map(e=>e.key));
-      const openCons=(analysis.cons??[]).filter((_,ci)=>!crossedConKeys.has(String(ci)));
+      const conGapLinks=analysis.conGapLinks??{};
+      const openCons:string[]=[];
+      const algorithmicWeaknesses:string[]=[];
+      for(let i=0;i<(analysis.cons??[]).length;i++){
+        if(crossedConKeys.has(String(i))) continue;
+        const conText=analysis.cons[i];
+        openCons.push(conText);
+        const con=conText.toLowerCase();
+        const linkedGap=conGapLinks[String(i)];
+        const matches=
+          (!!sub&&con.includes(sub))||
+          (!!cat&&con.includes(cat))||
+          (!!linkedGap&&algorithmic.some(d=>d.toLowerCase()===linkedGap.toLowerCase()))||
+          algorithmic.some(d=>con.includes(d.toLowerCase()));
+        if(matches) algorithmicWeaknesses.push(conText);
+      }
       const imgUrl=sBg??sCb.image;
       const unmatchedGaps=openGaps.filter(g=>!algorithmic.includes(g.description)).map(g=>g.description);
       const unmatchedAesthetics=analysis.aesthetics.missing.filter(m=>!addsAesthetics.some(a=>norm(a)===norm(m)));
       const unmatchedColors=analysis.colors.missing.filter(m=>!addsColors.some(c=>norm(c)===norm(m)));
-      const anyUnmatched=unmatchedGaps.length||unmatchedAesthetics.length||unmatchedColors.length||openCons.length;
-      setSelWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:[]});
+      const unmatchedCons=openCons.filter(c=>!algorithmicWeaknesses.includes(c));
+      const anyUnmatched=unmatchedGaps.length||unmatchedAesthetics.length||unmatchedColors.length||unmatchedCons.length;
       if(anyUnmatched&&imgUrl){
-        fetch("/api/wardrobe/gap-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sub_type:sDp.sub_type,category:sCb.category,image:imgUrl,gap_descriptions:unmatchedGaps,aesthetic_gaps:unmatchedAesthetics,color_gaps:unmatchedColors,weakness_gaps:openCons})})
+        // Don't publish until this settles — see the single-item waImpact effect above.
+        fetch("/api/wardrobe/gap-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sub_type:sDp.sub_type,category:sCb.category,image:imgUrl,gap_descriptions:unmatchedGaps,aesthetic_gaps:unmatchedAesthetics,color_gaps:unmatchedColors,weakness_gaps:unmatchedCons})})
           .then(r=>r.json()).then((res:{gap_fills?:string[];aesthetic_fills?:string[];color_fills?:string[];weakness_fills?:string[]})=>{
             if(cancelled)return;
-            const hasAny=res.gap_fills?.length||res.aesthetic_fills?.length||res.color_fills?.length||res.weakness_fills?.length;
-            if(!hasAny)return;
             const allGapFills=[...algorithmic,...(res.gap_fills??[])];
             const postAiAes=[...addsAesthetics,...(res.aesthetic_fills??[])];
             const postAiAesNorms=new Set(postAiAes.map(norm));
             for(const gap of allGapFills){const gl=gap.toLowerCase();for(const[kw,aes]of GAP_AES)if(gl.includes(kw))for(const a of aes)if(analysis.aesthetics.missing.includes(a)&&!postAiAesNorms.has(norm(a))){postAiAes.push(a);postAiAesNorms.add(norm(a));}}
-            setSelWaImpact({fillsGaps:allGapFills.slice(0,3),addsAesthetics:postAiAes,addsColors:[...addsColors,...(res.color_fills??[])],addressesWeaknesses:res.weakness_fills??[]});
-          }).catch(()=>{});
+            const aiWeaknesses=(res.weakness_fills??[]).filter(w=>!algorithmicWeaknesses.includes(w));
+            setSelWaImpact({fillsGaps:allGapFills.slice(0,3),addsAesthetics:postAiAes,addsColors:[...addsColors,...(res.color_fills??[])],addressesWeaknesses:[...algorithmicWeaknesses,...aiWeaknesses]});
+            setSelWaImpactReady(true);
+          }).catch(()=>{
+            if(cancelled)return;
+            setSelWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:algorithmicWeaknesses});
+            setSelWaImpactReady(true);
+          });
+      } else {
+        setSelWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:algorithmicWeaknesses});
+        setSelWaImpactReady(true);
       }
     }catch{setSelWaImpact(null);}
     return()=>{cancelled=true;};
@@ -1162,7 +1316,7 @@ function MultiResult({scoredSlots,onReset}:{
     const t=setTimeout(()=>{
       // Frame 1: enable the transition property (transform still at stack offset)
       setThree3Phase('distributing');
-      // Frame 2: change the transform â€” browser now sees it against an active transition
+      // Frame 2: change the transform — browser now sees it against an active transition
       requestAnimationFrame(()=>{
         setThree3Moving(true);
         setTimeout(()=>setThree3Phase('done'),720);
@@ -1198,7 +1352,8 @@ function MultiResult({scoredSlots,onReset}:{
   function dirOf(key:CardKey,vm:CardSlots):CardDir|null{if(vm.left===key)return"left";if(vm.right===key)return"right";if(vm.bottom===key)return"bottom";if(vm.top===key)return"top";return null;}
   function exitCardInDir(dir:CardDir){const s=setterFor(dir);s(p=>p?{...p,exiting:true}:null);setTimeout(()=>s(null),250);}
   function exitCard(key:CardKey){const vm=visibleMap();const d=dirOf(key,vm);if(!d)return;exitCardInDir(d);}
-  function openCard(key:CardKey){
+  const WA_DEPENDENT_KEYS = new Set<CardKey>(["pros","aesthetics","pairings"]);
+  function openCardImmediate(key:CardKey){
     const vm=visibleMap();
     if(Object.values(vm).includes(key)){exitCard(key);setOpenOrder(p=>p.filter(k=>k!==key));return;}
     const dir=findCardDir(key,vm);
@@ -1206,8 +1361,21 @@ function MultiResult({scoredSlots,onReset}:{
     else{const oldest=openOrder[0];if(!oldest)return;const ed=dirOf(oldest,vm);if(!ed)return;const es=setterFor(ed);es(p=>p?{...p,exiting:true}:null);setOpenOrder(p=>[...p.filter(k=>k!==oldest),key]);setTimeout(()=>{es(null);setTimeout(()=>setterFor(ed)({key,exiting:false}),20);},250);}
   }
   function isOpen(key:CardKey){return Object.values(visibleMap()).includes(key);}
-  function btnLabel(key:CardKey,show:string,hide:string){return isOpen(key)?hide:show;}
-  function btnColor(key:CardKey,base:string){return isOpen(key)?"#999":base;}
+  function openCard(key:CardKey){
+    if(isOpen(key)){openCardImmediate(key);return;}
+    if(WA_DEPENDENT_KEYS.has(key)&&!selWaImpactReady){setPendingCardOpen(prev=>prev===key?null:key);return;}
+    openCardImmediate(key);
+  }
+  // Once selWaImpact settles, automatically open whatever card the user already asked for.
+  useEffect(()=>{
+    if(selWaImpactReady&&pendingCardOpen){const key=pendingCardOpen;setPendingCardOpen(null);openCardImmediate(key);}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selWaImpactReady]);
+  function btnLabel(key:CardKey,show:string,hide:string){
+    if(pendingCardOpen===key) return "Loading...";
+    return isOpen(key)?hide:show;
+  }
+  function btnColor(key:CardKey,base:string){return (isOpen(key)||pendingCardOpen===key)?"#999":base;}
 
   const inCompare=selectedIdx===null;
   const CMP_CTR_Y_OFFSET = 41;
@@ -1221,7 +1389,7 @@ function MultiResult({scoredSlots,onReset}:{
     if(selectedIdx===i||transAnim!==null)return;
     closeAllCards();
     if(selectedIdx===null){
-      // Scroll to top and lock scrolling â€” animation always starts from a consistent position.
+      // Scroll to top and lock scrolling — animation always starts from a consistent position.
       window.scrollTo(0,0);
       document.body.style.overflow='hidden';
 
@@ -1234,12 +1402,12 @@ function MultiResult({scoredSlots,onReset}:{
       // For n===3: set display order so selected piece is always at center slot.
       if(n===3) setPieceViewOrder(getInitialArrangement(i));
 
-      // Fade to white, place overlay at compare positions, mount piece view â€” all one commit.
+      // Fade to white, place overlay at compare positions, mount piece view — all one commit.
       setSurAlpha(0);
       setTransAnim({images:getImgs(),fromX,fromY,toX:Array(n).fill(0),toY:0,phase:'setup'});
       flushSync(()=>setSelectedIdx(i));
 
-      // Piece view is now in DOM. Measure REAL pixel positions â€” no approximation.
+      // Piece view is now in DOM. Measure REAL pixel positions — no approximation.
       // getBoundingClientRect() reflects CSS transforms, so n===3 per-piece offsets are included.
       requestAnimationFrame(()=>{
         const destRects=pieceImgRefs.current.slice(0,n).map(el=>el?.getBoundingClientRect()??null);
@@ -1281,7 +1449,7 @@ function MultiResult({scoredSlots,onReset}:{
     const fromX=displayRects.map(r=>r?Math.round(r.left+r.width/2):0);
     const fromY=displayRects[0]?Math.round(displayRects[0].top+displayRects[0].height/2):178;
 
-    // Fade to white, place overlay at piece positions, mount compare view â€” all one commit.
+    // Fade to white, place overlay at piece positions, mount compare view — all one commit.
     setSurAlpha(0);
     setTransAnim({images:getImgs(),fromX,fromY,toX:Array(n).fill(0),toY:0,phase:'setup'});
     flushSync(()=>{setSelectedIdx(null);if(n===3)setPieceViewOrder([0,1,2]);});
@@ -1392,8 +1560,8 @@ function MultiResult({scoredSlots,onReset}:{
   return (
     <div style={{...FONT,minHeight:"100vh",background:"#fff"}}>
       <style suppressHydrationWarning>{KEYFRAMES_CSS}</style>
-      {/* â”€â”€ n===2: unified three-column layout (compare + selected, no branch swap) â”€â”€ */}
-      {/* Compare loading overlay â€” spinner that fades out when AI data arrives */}
+      {/* ── n===2: unified three-column layout (compare + selected, no branch swap) ── */}
+      {/* Compare loading overlay — spinner that fades out when AI data arrives */}
       {n===2&&loaderShowing&&(
         <div style={{position:"fixed",inset:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",...FONT,
           zIndex:100,opacity:aiCmp==="loading"?1:0,transition:aiCmp==="loading"?"none":"opacity 0.4s ease",
@@ -1434,7 +1602,7 @@ function MultiResult({scoredSlots,onReset}:{
           return (
             <div style={{flex:"1 1 0",maxWidth:440,alignSelf:"stretch",position:"relative",display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
               <div style={{height:52,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",paddingInline:18}}>
-                {title&&<p style={{...FONT,fontSize:13,fontWeight:700,textAlign:"center",letterSpacing:"0.05em",margin:0,lineHeight:1.3,wordBreak:"break-word" as const,opacity:panelOpacity,transition:"opacity 0.4s ease"}}>{title}</p>}
+                {title&&<p style={{...FONT,fontSize:13,fontWeight:700,textAlign:"center",letterSpacing:"0.05em",margin:0,lineHeight:1.3,opacity:panelOpacity,transition:"opacity 0.4s ease"}}>{title}</p>}
               </div>
               <div
                 ref={el=>{panelScrollRefs.current[pIdx]=el;}}
@@ -1454,11 +1622,11 @@ function MultiResult({scoredSlots,onReset}:{
                   </div>
                 ))}
               </div>
-              {/* Top fade â€” appears as user scrolls down */}
+              {/* Top fade — appears as user scrolls down */}
               <div style={{position:"absolute",top:52,left:0,right:0,height:80,
                 background:"linear-gradient(to bottom,rgba(255,255,255,1) 0%,rgba(255,255,255,0) 100%)",
                 pointerEvents:"none",opacity:atTop?0:1,transition:"opacity 0.3s ease"}}/>
-              {/* Bottom section â€” gradient hides scrollable content; arrow flips and scrolls */}
+              {/* Bottom section — gradient hides scrollable content; arrow flips and scrolls */}
               <div style={{position:"absolute",bottom:0,left:0,right:0,pointerEvents:"none"}}>
                 <div style={{height:220,width:"100%",background:"linear-gradient(to bottom,rgba(255,255,255,0) 0%,rgba(255,255,255,1) 35%)",
                   opacity:atBot?0:1,transition:"opacity 0.3s ease"}}/>
@@ -1485,7 +1653,7 @@ function MultiResult({scoredSlots,onReset}:{
             {/* === COMPARE MODE: full-viewport 5-column, Reset button overlaid === */}
             {inCompare&&(
               <div style={{display:"flex",justifyContent:"center",height:"100vh",overflow:"hidden" as const,position:"relative" as const}}>
-                {/* Reset button â€” absolute so it overlays the top-right of the panel area */}
+                {/* Reset button — absolute so it overlays the top-right of the panel area */}
                 <div style={{position:"absolute" as const,top:14,right:24,zIndex:2,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                   <button onClick={onReset} style={cardBtnStyle("#c83030")}>Reset</button>
                 </div>
@@ -1537,7 +1705,7 @@ function MultiResult({scoredSlots,onReset}:{
               </div>
             )}
 
-            {/* === SPECIFIC MODE: header â€” normal flow, scrolls with page === */}
+            {/* === SPECIFIC MODE: header — normal flow, scrolls with page === */}
             {!inCompare&&cb&&(
               <div style={{height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",
                 paddingInline:24,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1555,7 +1723,7 @@ function MultiResult({scoredSlots,onReset}:{
               </div>
             )}
 
-            {/* Overlay container â€” always in DOM so its GPU compositing layer is never destroyed mid-animation */}
+            {/* Overlay container — always in DOM so its GPU compositing layer is never destroyed mid-animation */}
             <div style={{position:"fixed" as const,inset:0,pointerEvents:"none" as const,zIndex:999}}>
               {transAnim&&transAnim.images.map((img,idx)=>{
                 const a=transAnim;
@@ -1573,7 +1741,7 @@ function MultiResult({scoredSlots,onReset}:{
               })}
             </div>
 
-            {/* === SPECIFIC MODE: image strip â€” normal flow, scrolls with page === */}
+            {/* === SPECIFIC MODE: image strip — normal flow, scrolls with page === */}
             {!inCompare&&(
               <div style={{width:"100%",display:"flex",justifyContent:"center",overflow:"hidden",
                 paddingBlock:16,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1601,7 +1769,7 @@ function MultiResult({scoredSlots,onReset}:{
               </div>
             )}
 
-            {/* === SPECIFIC MODE: scrollable content â€” follows image strip in normal flow === */}
+            {/* === SPECIFIC MODE: scrollable content — follows image strip in normal flow === */}
             {!inCompare&&selectedIdx!==null&&cb&&deep&&outfitData&&(
               <div style={{paddingBottom:80,display:"flex",flexDirection:"column",alignItems:"center",width:"100%",opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                 <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
@@ -1627,11 +1795,11 @@ function MultiResult({scoredSlots,onReset}:{
         );
       })()}
 
-      {/* â”€â”€ n===1: single-item centered column â”€â”€ */}
+      {/* ── n===1: single-item centered column ── */}
       {n===1&&(
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingBottom:80}}>
 
-        {/* Selected-mode header bar â€” sticky so it doesn't scroll away */}
+        {/* Selected-mode header bar — sticky so it doesn't scroll away */}
         {!inCompare&&cb&&deep&&outfitData&&(
           <div style={{opacity:vis?1:0,transition:"opacity 0.6s ease",width:"100%",display:"flex",flexDirection:"column",alignItems:"center",position:"sticky",top:0,zIndex:10,background:"#fff"}}>
             <div style={{width:"100%",height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",paddingInline:24}}>
@@ -1679,7 +1847,7 @@ function MultiResult({scoredSlots,onReset}:{
                       cursor:imgAtTop?"pointer":"default",gap:8,
                       transition:"transform 0.7s cubic-bezier(0.4,0,0.2,1)",
                       transform:imgAtTop?"none":`translateX(${xOff}px) translateY(calc(50vh - 178px))`}}>
-                    {scb&&<p style={{...FONT,fontSize:10,fontWeight:700,textAlign:"center",width:"100%",lineHeight:1.3,margin:0,wordBreak:"break-word",opacity:vis?1:0,transition:"opacity 0.5s ease"}}>{scb.title}</p>}
+                    {scb&&<p style={{...FONT,fontSize:10,fontWeight:700,textAlign:"center",width:"100%",lineHeight:1.3,margin:0,opacity:vis?1:0,transition:"opacity 0.5s ease"}}>{scb.title}</p>}
                     {sImg&&<img src={sImg} alt="" style={{height:160,maxWidth:"100%",objectFit:"contain",display:"block"}}/>}
                     <p style={{...FONT,fontSize:12,fontWeight:700,letterSpacing:"0.08em",color,margin:0,marginTop:4,opacity:vis?1:0,transition:"opacity 0.5s ease"}}>{badge}</p>
                     {d&&od&&(
@@ -1695,7 +1863,7 @@ function MultiResult({scoredSlots,onReset}:{
           );
         })()}
 
-        {/* Selected-mode item strip â€” sticky below the header */}
+        {/* Selected-mode item strip — sticky below the header */}
         {!inCompare&&(
           <div style={{width:"100%",overflow:"hidden",marginBottom:20,opacity:vis?1:0,transition:"opacity 0.6s ease",position:"sticky",top:52,zIndex:9,background:"#fff"}}>
             <div style={{display:"flex",gap:STRIP_GAP,alignItems:"flex-end",transition:"transform 0.4s cubic-bezier(0.4,0,0.2,1)",transform:stripTranslate}}>
@@ -1741,7 +1909,7 @@ function MultiResult({scoredSlots,onReset}:{
       </div>
       )}
 
-      {/* â”€â”€ n===3: horizontal compare + shared piece view â”€â”€ */}
+      {/* ── n===3: horizontal compare + shared piece view ── */}
       {n===3&&(()=>{
         const slots3=scoredSlots.map(({slot})=>{
           const scb3=slot.confirmedBasic,d=slot.deep,od=slot.outfitData;
@@ -1874,7 +2042,7 @@ function MultiResult({scoredSlots,onReset}:{
         const cmpColor=(i:number)=>getStripInfo(i).color;
         return (
           <div style={{display:"flex",flexDirection:"column",opacity:compareEntered?1:0,transition:"opacity 0.4s ease"}}>
-            {/* â”€â”€ COMPARE MODE â”€â”€ */}
+            {/* ── COMPARE MODE ── */}
             {inCompare&&(
               <div style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",position:"relative"}}>
                 <div style={{position:"absolute",top:14,right:24,zIndex:2,opacity:vis&&three3Phase==='done'?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1896,7 +2064,7 @@ function MultiResult({scoredSlots,onReset}:{
                     </div>
                   ))}
                 </div>
-                {/* Three item+panel columns â€” overflow:visible during entrance so items can cross column boundaries */}
+                {/* Three item+panel columns — overflow:visible during entrance so items can cross column boundaries */}
                 <div style={{flex:1,display:"flex",minHeight:0,overflow:three3Phase==='done'?"hidden":"visible"}}>
                   {scoredSlots.map(({slot:s},i)=>{
                     const sImg=s.removedBgUrl??s.confirmedBasic?.image??s.imageDataUrl;
@@ -1941,7 +2109,7 @@ function MultiResult({scoredSlots,onReset}:{
                 </div>
               </div>
             )}
-            {/* â”€â”€ PIECE VIEW: header â”€â”€ */}
+            {/* ── PIECE VIEW: header ── */}
             {!inCompare&&cb&&(
               <div style={{height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",
                 paddingInline:24,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -1958,7 +2126,7 @@ function MultiResult({scoredSlots,onReset}:{
                 </div>
               </div>
             )}
-            {/* â”€â”€ OVERLAY (fixed, GPU layer always in DOM during animation) â”€â”€ */}
+            {/* ── OVERLAY (fixed, GPU layer always in DOM during animation) ── */}
             <div style={{position:"fixed" as const,inset:0,pointerEvents:"none" as const,zIndex:999}}>
               {transAnim&&transAnim.images.map((img,idx)=>{
                 const a=transAnim;
@@ -1974,7 +2142,7 @@ function MultiResult({scoredSlots,onReset}:{
                 );
               })}
             </div>
-            {/* â”€â”€ PIECE VIEW: image strip â”€â”€ */}
+            {/* ── PIECE VIEW: image strip ── */}
             {!inCompare&&(
               <div style={{width:"100%",display:"flex",justifyContent:"center",overflow:"hidden",
                 paddingBlock:16,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
@@ -2004,7 +2172,7 @@ function MultiResult({scoredSlots,onReset}:{
                 </div>
               </div>
             )}
-            {/* â”€â”€ PIECE VIEW: scrollable content â”€â”€ */}
+            {/* ── PIECE VIEW: scrollable content ── */}
             {!inCompare&&selectedIdx!==null&&cb&&deep&&outfitData&&(
               <div style={{paddingBottom:80,display:"flex",flexDirection:"column",alignItems:"center",width:"100%",opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                 <div style={{display:"flex",justifyContent:"center",marginBottom:24}}>
@@ -2041,7 +2209,7 @@ function MultiResult({scoredSlots,onReset}:{
               c.key==="pairings"   ?[{header:"COLORS FILLED",items:selWaImpact.addsColors}]:
               undefined
             ):undefined;
-            return <SlideCard key={dir} cardKey={c.key} dir={dir} items={getCardItems(c.key,deep,outfitData!.items)} exiting={c.exiting} onHide={()=>exitCard(c.key)} sections={secs}/>;
+            return <SlideCard key={dir} cardKey={c.key} dir={dir} items={cardItemsWithOverdone(c.key,deep,outfitData!.items,selOverdoneNote)} exiting={c.exiting} onHide={()=>exitCard(c.key)} sections={secs}/>;
           })}
         </>
       )}
@@ -2055,7 +2223,7 @@ function MultiResult({scoredSlots,onReset}:{
   );
 }
 
-// â”€â”€ OutfitGallery â€” exact outfits-page animation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── OutfitGallery — exact outfits-page animation ──────────────────────────────
 
 function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
   outfits:{score:number;itemIds:string[]}[];
@@ -2124,8 +2292,17 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
     const cfg=buildSpreadCfg(si.length,spreadZoom(si.length),vSpreadZoom(si.length));
     const galleryTx=cx-vw/2-cfg.containerW/2;
     const galleryTy=cy-(vh/2-OVERLAY_TOP_OFFSET)-cfg.containerH/2;
-    const centerTx=-cfg.containerW/2;
-    const centerTy=-cfg.containerH/2;
+    // Settled/spread position is scaled down to whatever fits the viewport
+    // (globalSafeScaleRef, computed from the largest outfit in this set) instead
+    // of always rendering at full size - otherwise a wide spread (many items, or
+    // the 1.85x zoom used for <3 rows) can render wider than the screen and its
+    // pieces spill past the edges / overlap the fixed score readout above it.
+    // translate() runs in the PARENT's (unscaled) coordinate space and is applied
+    // before scale(), so centering a SCALED box means halving the SCALED size,
+    // not the raw container size.
+    const scale=globalSafeScaleRef.current;
+    const centerTx=-cfg.containerW*scale/2;
+    const centerTy=-cfg.containerH*scale/2;
     activeIdxRef.current=idx; containerWRef.current=cfg.containerW; containerHRef.current=cfg.containerH;
     setSpreadCfg(cfg); setActiveIdx(idx); setDisplayIdx(idx);
     setIsSpread(false); setAnimateItems(false); setBgVisible(false); setPieceZoom(1);
@@ -2135,7 +2312,7 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
     timerRef.current=setTimeout(()=>{
       // Move to centre AND fade bg to white simultaneously
       setContainerTransitionOn(true);
-      setContainerTransform(`translate(${centerTx}px,${centerTy}px) scale(1)`);
+      setContainerTransform(`translate(${centerTx}px,${centerTy}px) scale(${scale})`);
       setBgVisible(true);
       timerRef.current=setTimeout(()=>{
         // Move + bg both done; zoom pieces while stacked
@@ -2233,7 +2410,11 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
       setSpreadCfg(cfg);
       containerWRef.current=cfg.containerW; containerHRef.current=cfg.containerH;
       setContainerTransitionOn(false);
-      setContainerTransform(`translate(${-cfg.containerW/2}px,${-cfg.containerH/2}px) scale(1)`);
+      // Same viewport-safe scale as openOutfit() - each outfit can have a different
+      // item count, but globalSafeScaleRef is sized to the largest outfit in this
+      // set, so it stays valid (and never needs recomputing) across navigation.
+      const navScale=globalSafeScaleRef.current;
+      setContainerTransform(`translate(${-cfg.containerW*navScale/2}px,${-cfg.containerH*navScale/2}px) scale(${navScale})`);
       activeIdxRef.current=newIdx;
       setActiveIdx(newIdx);
       if (newIdx>=shownCount) {
@@ -2343,17 +2524,25 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
             })}
           </div>
           <div style={{position:"fixed",inset:0,zIndex:2003,pointerEvents:"none"}}>
-            {/* Ã— and arrows only appear after spread animation is fully done */}
+            {/* Close + nav arrows are SVG (not text glyphs) so they render identically on
+                every device/platform regardless of font/encoding support. Only appear after
+                the spread animation is fully done. */}
             {(() => { const done = isSpread && !animateItems; return (<>
-              <button onClick={closeOverlay} style={{position:"absolute",top:20,right:22,background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#000",lineHeight:1,padding:4,opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}>Ã—</button>
+              <button onClick={closeOverlay} style={{position:"absolute",top:20,right:22,background:"none",border:"none",cursor:"pointer",lineHeight:1,padding:4,opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none"}}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 1L15 15M15 1L1 15" stroke="#000" strokeWidth="1.5" strokeLinecap="round"/></svg>
+              </button>
               <button
                 onClick={()=>navigateOutfit(displayIdx-1)}
-                style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:displayIdx>0?"pointer":"default",fontSize:32,color:displayIdx>0?"#333":"#ddd",lineHeight:1,padding:"4px 10px",opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}
-              >â€¹</button>
+                style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:displayIdx>0?"pointer":"default",lineHeight:1,padding:"4px 10px",opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none"}}
+              >
+                <svg width="14" height="24" viewBox="0 0 14 24" fill="none"><path d="M11 2L3 12L11 22" stroke={displayIdx>0?"#333":"#ddd"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
               <button
                 onClick={()=>navigateOutfit(displayIdx+1)}
-                style={{position:"absolute",right:18,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:displayIdx<outfits.length-1?"pointer":"default",fontSize:32,color:displayIdx<outfits.length-1?"#333":"#ddd",lineHeight:1,padding:"4px 10px",opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none",...FONT}}
-              >â€º</button>
+                style={{position:"absolute",right:18,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:displayIdx<outfits.length-1?"pointer":"default",lineHeight:1,padding:"4px 10px",opacity:done?1:0,transition:"opacity 0.4s ease",pointerEvents:done?"auto":"none"}}
+              >
+                <svg width="14" height="24" viewBox="0 0 14 24" fill="none"><path d="M3 2L11 12L3 22" stroke={displayIdx<outfits.length-1?"#333":"#ddd"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </button>
             </>); })()}
             <p style={{position:"absolute",top:28,left:"50%",transform:"translateX(-50%)",margin:0,fontSize:22,fontWeight:700,letterSpacing:".06em",color:sc(current?.score??0),opacity:isSpread?1:0,transition:"opacity .3s .1s",...FONT}}>
               {current?.score} / 100
@@ -2365,7 +2554,7 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
   );
 }
 
-// â”€â”€ Shared components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Shared components ─────────────────────────────────────────────────────────
 
 function StatNum({value,label,color,small,big}:{value:string;label:string;color:string;small?:boolean;big?:boolean}) {
   return (
