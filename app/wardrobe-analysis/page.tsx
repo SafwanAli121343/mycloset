@@ -1,5 +1,5 @@
 ﻿"use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import type { WardrobeAnalysis, WABackendState, CrossedEntry } from "@/lib/wardrobeAnalysis";
 import { computeEffectiveLevel, gapTotalProgress, computeGapProgress, getFunctionalSlot, resolveSubTypeFromTitle } from "@/lib/wardrobeAnalysis";
@@ -27,7 +27,7 @@ function scoreColor(s: number) {
 function impactColor(i: string) {
   return i === "high" ? "#c83030" : i === "medium" ? "#c88800" : "#999";
 }
-// Progress 1â€"99 â†’ color spectrum red â†’ orange â†’ yellow â†’ yellow-green
+// Progress 1â€"99 → color spectrum red → orange → yellow → yellow-green
 function gapProgressColor(progress: number): string {
   if (progress >= 75) return "#88aa00";
   if (progress >= 50) return "#b8a000";
@@ -122,7 +122,7 @@ function isConResolved(
 
 function SectionLabel({ label }: { label: string }) {
   return (
-    <p style={{ ...FONT, fontSize: 16, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", margin: "0 0 14px" }}>
+    <p style={{ ...FONT, fontSize: 16, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", textAlign: "center", margin: "0 0 14px" }}>
       {label}
     </p>
   );
@@ -302,45 +302,53 @@ export default function WardrobeAnalysisPage() {
         // Base score: the stable Level 1 GPT score. Never changes on item addition
         // so adding weak items can't regress the score. Score only moves via bumps
         // (crossed gaps/aesthetics/colors/cons) or when crossed items are removed.
+        //
+        // Every resolved gap/color/aesthetic/con has a FIXED point value (costPoints,
+        // or 2/1/2 for colors/aesthetics/cons) that never varies with the current score
+        // or with which level it's being counted in. Total is a straight sum across all
+        // levels, capped once at 100. This is what guarantees removing then re-adding
+        // the same item is exactly symmetric (same points off, same points back on) -
+        // a previous version applied a diminishing-returns multiplier PER LEVEL, in
+        // sequence, so a change to an earlier level's total could shift the multiplier
+        // used for a later level's total even though the later level's own crossings
+        // never changed - producing exactly the kind of inconsistent remove/re-add
+        // delta this replaces.
         const baseScore = bs.analysisHistory[0]?.score ?? displayA.score;
-        let bumpedScore = baseScore;
-
-        function scoreBonus(current: number, pts: number): number {
-          if (pts <= 0) return 0;
-          const factor = current < 70 ? 1.0 : current < 80 ? 0.7 : current < 90 ? 0.45 : 0.2;
-          return Math.max(0, Math.round(pts * factor));
-        }
+        // Calibrated once at Level 1 generation time from an estimate of how much is
+        // genuinely left to find across this wardrobe's whole remaining journey to 100
+        // (see WardrobeAnalysis.pointWeights) - frozen forever after that, same as
+        // baseScore, so remove/re-add stays exactly symmetric. {gap:4,color:1,
+        // aesthetic:1,con:1} is only a fallback for legacy analyses saved before this
+        // calibration existed.
+        const pw = bs.analysisHistory[0]?.pointWeights ?? { gap: 4, color: 1, aesthetic: 1, con: 1 };
+        let totalPts = 0;
 
         for (let L = 1; L <= effLevel; L++) {
           const levelA = bs.analysisHistory[L - 1];
           if (!levelA) break;
           const lc = bs.crossed.filter((e: CrossedEntry) => e.analysisLevel === L);
 
-          // Collect all point contributions for this level BEFORE applying scoreBonus,
-          // so the factor is based on the score at the START of the level (not an
-          // incrementally-inflated running total). This makes the score path-independent:
-          // remove-then-re-add an item always gives the same delta regardless of the
-          // order crossings were appended to bs.crossed.
-          let levelPts = 0;
           for (const g of levelA.gaps) {
             if (gapTotalProgress(bs.crossed, g.description, L) >= 100) {
-              levelPts += g.costPoints > 0 ? g.costPoints : g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2;
+              // Fallback tiers match the cap applied at generation time (see costPoints
+              // in app/api/wardrobe/analysis/route.ts) - only hit for legacy data saved
+              // before that cap existed.
+              totalPts += g.costPoints > 0 ? g.costPoints : g.impact === "high" ? pw.gap : g.impact === "medium" ? Math.ceil(pw.gap / 2) : 1;
             }
           }
           const lcColKeys = new Set(lc.filter((e: CrossedEntry) => e.category === "color").map((e: CrossedEntry) => e.key));
-          levelPts += lcColKeys.size * 2;
+          totalPts += lcColKeys.size * pw.color;
           const lcAesKeys = new Set(lc.filter((e: CrossedEntry) => e.category === "aesthetic").map((e: CrossedEntry) => e.key));
-          levelPts += lcAesKeys.size;
+          totalPts += lcAesKeys.size * pw.aesthetic;
           // Cons: use the shared isConResolved check, one per known con index (never double-
           // counts even if a merge produced multiple crossing rows for the same index).
           let lcConCount = 0;
           levelA.cons.forEach((_, i) => {
             if (isConResolved(bs.crossed, levelA.conGapLinks, i, L)) lcConCount++;
           });
-          levelPts += lcConCount * 2;
-
-          bumpedScore = Math.min(100, bumpedScore + scoreBonus(bumpedScore, levelPts));
+          totalPts += lcConCount * pw.con;
         }
+        const bumpedScore = Math.min(100, baseScore + totalPts);
         // Safety net: strip aesthetics/colors that already appeared in a prior level's missing list,
         // in case the data stored in Supabase predates the API-level dedup filter.
         const priorAesSet = new Set(
@@ -349,16 +357,33 @@ export default function WardrobeAnalysisPage() {
         const priorColSet = new Set(
           bs.analysisHistory.slice(0, effLevel - 1).flatMap(a => a.colors.missing.map(c => c.toLowerCase().trim()))
         );
-        const filteredDisplayA: WardrobeAnalysis = effLevel <= 1 ? displayA : {
-          ...displayA,
-          aesthetics: {
-            ...displayA.aesthetics,
-            missing: displayA.aesthetics.missing.filter(ae => !priorAesSet.has(ae.toLowerCase())),
-          },
-          colors: {
-            ...displayA.colors,
-            missing: displayA.colors.missing.filter(c => !priorColSet.has(c.toLowerCase().trim())),
-          },
+        // Overdone status is re-checked against the CURRENT wardrobe every time this
+        // runs (not the frozen snapshot from whenever this level's analysis was
+        // generated), and kept entirely separate from crossing/leveling/scoring:
+        // an entry disappears the moment its actual sub-type count drops back below
+        // the "overdone" threshold (3+, same threshold used at generation time), and
+        // would reappear if it climbed back up — with no points or level interaction.
+        const liveSubTypeCounts: Record<string, number> = {};
+        for (const g of (sData?.garmentAttrs ?? [])) {
+          if (g.sub_type) liveSubTypeCounts[g.sub_type] = (liveSubTypeCounts[g.sub_type] ?? 0) + 1;
+        }
+        const liveOverdone = displayA.overdone
+          .map(o => ({ ...o, count: liveSubTypeCounts[o.description] ?? 0 }))
+          .filter(o => o.count >= 3);
+
+        const filteredDisplayA: WardrobeAnalysis = {
+          ...(effLevel <= 1 ? displayA : {
+            ...displayA,
+            aesthetics: {
+              ...displayA.aesthetics,
+              missing: displayA.aesthetics.missing.filter(ae => !priorAesSet.has(ae.toLowerCase())),
+            },
+            colors: {
+              ...displayA.colors,
+              missing: displayA.colors.missing.filter(c => !priorColSet.has(c.toLowerCase().trim())),
+            },
+          }),
+          overdone: liveOverdone,
         };
         setAnalysis({ ...filteredDisplayA, score: bumpedScore });
       }
@@ -655,6 +680,15 @@ export default function WardrobeAnalysisPage() {
         };
       });
 
+      // Apply the starting circle positions synchronously, right now, instead of
+      // waiting for the first tick() call - otherwise every piece sits at its
+      // default left:0/top:0 (stacked together) for a visible moment before
+      // jumping out to the circle and starting to move.
+      balls.current.forEach((b, i) => {
+        const el = imgRefs.current[i];
+        if (el) { el.style.left = `${b.x}px`; el.style.top = `${b.y}px`; }
+      });
+
       let lastTime = 0;
       function tick(now: number) {
         const r = rectRef.current;
@@ -690,9 +724,13 @@ export default function WardrobeAnalysisPage() {
       rafId.current = requestAnimationFrame(tick);
     }
 
-    const t = setTimeout(startPhysics, 50);
-    // Only cancel the startup delay â€" the RAF itself must survive phase changes
-    return () => { clearTimeout(t); };
+    // No artificial startup delay - startPhysics() already polls via
+    // requestAnimationFrame until the rect has real layout dimensions, so
+    // calling it immediately is just as safe and starts the animation (and
+    // applies the initial positions above) as early as possible.
+    startPhysics();
+    // Nothing to cancel here - the RAF loop itself must survive phase changes,
+    // and is cancelled separately (on unmount) below.
   }, [phase, pieces]);
 
   // Cancel RAF on unmount only
@@ -878,7 +916,7 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", justifyContent: "center", gap: "10px 16px" }}>
                     {covColors.map(c => (
-                      <p key={c} style={{ ...FONT, fontSize: 15, color: colorHex(c), margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" }}>{c}</p>
+                      <p key={c} style={{ ...FONT, fontSize: 15, color: colorHex(c), margin: 0, textAlign: "center", lineHeight: 1.4 }}>{c}</p>
                     ))}
                   </div>
                 )}
@@ -912,13 +950,13 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", justifyContent: "center", gap: "10px 16px" }}>
                     {covAes.map(({ name, count }) => (
-                      <p key={name} style={{ ...FONT, fontSize: 15, color: "#222", margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word" }}>
+                      <p key={name} style={{ ...FONT, fontSize: 15, color: "#222", margin: 0, textAlign: "center", lineHeight: 1.4 }}>
                         {name}
                         <span style={{ display: "block", fontSize: 10, color: "#bbb" }}>{count}pc</span>
                       </p>
                     ))}
                     {crossedAesthetics.map(a => (
-                      <p key={a} style={{ ...FONT, fontSize: 15, color: "#ccc", margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word", textDecoration: "line-through" }}>{a}</p>
+                      <p key={a} style={{ ...FONT, fontSize: 15, color: "#ccc", margin: 0, textAlign: "center", lineHeight: 1.4, textDecoration: "line-through" }}>{a}</p>
                     ))}
                   </div>
                 )}
@@ -1016,19 +1054,31 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                 <SectionLabel label={colorsLabel()} />
                 {a.colors.missing.length === 0 && crossedColors.length === 0 ? (
                   <p style={{ ...FONT, fontSize: 15, color: "#bbb", margin: 0, textAlign: "center" }}>None</p>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", justifyContent: "center", gap: "10px 16px" }}>
-                    {missColors.map(c => {
-                      const isCrossed = crossedColorSet.has(c);
-                      return (
-                        <p key={c} style={{ ...FONT, fontSize: 15, color: isCrossed ? "#ccc" : colorHex(c), margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word", textDecoration: isCrossed ? "line-through" : "none" }}>{c}</p>
-                      );
-                    })}
-                    {crossedColors.filter(c => !a.colors.missing.includes(c)).map(c => (
-                      <p key={`cx-${c}`} style={{ ...FONT, fontSize: 15, color: "#ccc", margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word", textDecoration: "line-through" }}>{c}</p>
-                    ))}
-                  </div>
-                )}
+                ) : (() => {
+                  const extraCrossed = crossedColors.filter(c => !a.colors.missing.includes(c));
+                  // A fixed 3-column grid mis-centers when only 1-2 cells are actually
+                  // filled (justifyContent centers the whole 3-track structure, not the
+                  // content within it) - fall back to a centered flex row in that case,
+                  // same fix already used above for covered colors/aesthetics.
+                  const total = missColors.length + extraCrossed.length;
+                  const items = [
+                    ...missColors.map(c => ({ key: c, text: c, crossed: crossedColorSet.has(c) })),
+                    ...extraCrossed.map(c => ({ key: `cx-${c}`, text: c, crossed: true })),
+                  ];
+                  const itemStyle = (crossed: boolean, text: string) => ({
+                    ...FONT, fontSize: 15, color: crossed ? "#ccc" : colorHex(text), margin: 0,
+                    textAlign: "center" as const, lineHeight: 1.4, textDecoration: crossed ? "line-through" as const : "none" as const,
+                  });
+                  return total <= 2 ? (
+                    <div style={{ display: "flex", justifyContent: "center", gap: "0 18px" }}>
+                      {items.map(it => <p key={it.key} style={itemStyle(it.crossed, it.text)}>{it.text}</p>)}
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", justifyContent: "center", gap: "10px 16px" }}>
+                      {items.map(it => <p key={it.key} style={itemStyle(it.crossed, it.text)}>{it.text}</p>)}
+                    </div>
+                  );
+                })()}
                 {a.colors.missing.length > COLOR_LIMIT && (
                   <div style={{ marginTop: 10 }}>
                     <ShowMoreBtn showing={showAllMissColor} total={a.colors.missing.length} limit={COLOR_LIMIT} onToggle={() => setShowAllMissColor(v => !v)} />
@@ -1039,19 +1089,28 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                 <SectionLabel label={aesLabel()} />
                 {a.aesthetics.missing.length === 0 && crossedAesthetics.length === 0 ? (
                   <p style={{ ...FONT, fontSize: 15, color: "#bbb", margin: 0, textAlign: "center" }}>None</p>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", justifyContent: "center", gap: "10px 16px" }}>
-                    {missAes.map(name => {
-                      const isCrossed = crossedAesSet.has(name);
-                      return (
-                        <p key={name} style={{ ...FONT, fontSize: 15, color: isCrossed ? "#ccc" : "#222", margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word", textDecoration: isCrossed ? "line-through" : "none" }}>{name}</p>
-                      );
-                    })}
-                    {crossedAesthetics.filter(ae => !a.aesthetics.missing.includes(ae)).map(ae => (
-                      <p key={`cx-${ae}`} style={{ ...FONT, fontSize: 15, color: "#ccc", margin: 0, textAlign: "center", lineHeight: 1.4, wordBreak: "break-word", textDecoration: "line-through" }}>{ae}</p>
-                    ))}
-                  </div>
-                )}
+                ) : (() => {
+                  const extraCrossed = crossedAesthetics.filter(ae => !a.aesthetics.missing.includes(ae));
+                  // Same fixed-3-column-grid mis-centering fix as missing colors above.
+                  const total = missAes.length + extraCrossed.length;
+                  const items = [
+                    ...missAes.map(name => ({ key: name, text: name, crossed: crossedAesSet.has(name) })),
+                    ...extraCrossed.map(ae => ({ key: `cx-${ae}`, text: ae, crossed: true })),
+                  ];
+                  const itemStyle = (crossed: boolean) => ({
+                    ...FONT, fontSize: 15, color: crossed ? "#ccc" : "#222", margin: 0,
+                    textAlign: "center" as const, lineHeight: 1.4, textDecoration: crossed ? "line-through" as const : "none" as const,
+                  });
+                  return total <= 2 ? (
+                    <div style={{ display: "flex", justifyContent: "center", gap: "0 18px" }}>
+                      {items.map(it => <p key={it.key} style={itemStyle(it.crossed)}>{it.text}</p>)}
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, auto)", justifyContent: "center", gap: "10px 16px" }}>
+                      {items.map(it => <p key={it.key} style={itemStyle(it.crossed)}>{it.text}</p>)}
+                    </div>
+                  );
+                })()}
                 {a.aesthetics.missing.length > AES_LIMIT && (
                   <div style={{ marginTop: 10 }}>
                     <ShowMoreBtn showing={showAllMissAes} total={a.aesthetics.missing.length} limit={AES_LIMIT} onToggle={() => setShowAllMissAes(v => !v)} />

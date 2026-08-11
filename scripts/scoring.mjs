@@ -705,15 +705,23 @@ export function scoreWardrobe(items) {
   // ── Color palette cohesion (20 pts) ──
   // How well do the wardrobe colors cross-pair?
   // Use stored color_pairings to check compatibility across items.
+  // Bidirectional: color_pairings is AI-inferred per item and not guaranteed to be
+  // listed symmetrically, so a pair counts as compatible if EITHER item lists the
+  // other's color — checking only nonAcc[i]'s pairings made cohesion depend on
+  // array order rather than the wardrobe's actual palette.
   const nonAcc = items.filter(i => getSlot(i.sub_type) !== "acc");
   let totalPairs = 0, compatPairs = 0;
   for (let i = 0; i < nonAcc.length; i++) {
     const aPairings = new Set(nonAcc[i].color_pairings || []);
+    const aColors   = itemColors(nonAcc[i]);
     for (let j = i + 1; j < nonAcc.length; j++) {
       if (getSlot(nonAcc[i].sub_type) === getSlot(nonAcc[j].sub_type)) continue; // same slot = can't pair
       totalPairs++;
-      const bColors = itemColors(nonAcc[j]);
-      if (bColors.some(bc => aPairings.has(bc))) compatPairs++;
+      const bColors   = itemColors(nonAcc[j]);
+      const bPairings = new Set(nonAcc[j].color_pairings || []);
+      const forwardMatch = bColors.some(bc => aPairings.has(bc));
+      const reverseMatch = aColors.some(ac => bPairings.has(ac));
+      if (forwardMatch || reverseMatch) compatPairs++;
     }
   }
   const cohesionRatio = totalPairs > 0 ? compatPairs / totalPairs : 0.5;

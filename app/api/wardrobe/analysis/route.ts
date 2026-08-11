@@ -118,6 +118,41 @@ async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAn
   const metrics = computeMetrics(resolvedGarments as GarmentForScoring[]);
   const wardrobeSection = buildWardrobePromptSection(resolvedGarments, metrics);
 
+  // Calibrate leveling point values ONCE at Level 1 generation time, from a rough
+  // estimate of how much is genuinely left to find across this wardrobe's whole
+  // remaining journey to 100 (see WardrobeAnalysis.pointWeights for the full
+  // rationale). Only computed for Level 1 - every later level reuses this same
+  // value unchanged (via priorAnalyses[0].pointWeights below), so a wardrobe with
+  // a lot left to discover gets proportionally smaller per-item rewards than a
+  // near-complete one, without ever recomputing from current state (which would
+  // break remove/re-add symmetry). Zero extra AI calls - purely computed from
+  // metrics already produced above.
+  let freshPointWeights: WardrobeAnalysis["pointWeights"];
+  if (priorAnalyses.length === 0) {
+    const totalGapUnits = metrics.functionalSlotsMissing.length;
+    // +4: buffer for GPT's occasional extra creative color suggestion beyond the
+    // fixed 15-color essential list.
+    const totalColorUnits = metrics.missingEssentials.length + 4;
+    const totalAestheticUnits = metrics.absentAesthetics.length;
+    // Cons are open-ended (GPT is instructed to keep finding new, deeper ones every
+    // level) so there's no real bound to compute - a flat modest estimate instead.
+    const totalConUnits = 10;
+    const headroom = Math.max(0, 100 - metrics.score);
+    // Gaps are weighted 3x a single color/aesthetic/con - each one represents a
+    // whole missing functional slot, not a single detail.
+    const weightedTotal = totalGapUnits * 3 + totalColorUnits + totalAestheticUnits + totalConUnits;
+    const unitValue = weightedTotal > 0 ? headroom / weightedTotal : 1;
+    freshPointWeights = {
+      gap:       Math.min(6, Math.max(1, Math.round(unitValue * 3))),
+      color:     Math.min(3, Math.max(1, Math.round(unitValue))),
+      aesthetic: Math.min(3, Math.max(1, Math.round(unitValue))),
+      con:       Math.min(2, Math.max(1, Math.round(unitValue))),
+    };
+  }
+  // Level 1's own weights (once it exists) are the canonical, forever-frozen value
+  // every later level must reuse - never this level's own freshPointWeights.
+  const gapWeight = priorAnalyses[0]?.pointWeights?.gap ?? freshPointWeights?.gap ?? 4;
+
   const coveredAesthetics = Object.entries(metrics.aestheticCounts)
     .sort((a, b) => b[1] - a[1])
     .map(([name, count]) => ({ name, count }));
@@ -159,7 +194,7 @@ async function analyzeWardrobe(garments: RawGarment[], priorAnalyses: WardrobeAn
     priorSection = "\n\n" + lines.join("\n");
   }
 
-  const systemPrompt = `You are a professional menswear stylist and wardrobe analyst. Give HONEST, SPECIFIC, ACTIONABLE analysis grounded in the wardrobe data provided. Every observation must be traceable to the actual items, counts, or colors listed. Be direct and precise.`;
+  const systemPrompt = `You are a professional menswear stylist and wardrobe analyst. Give HONEST, SPECIFIC, ACTIONABLE analysis grounded in the wardrobe data provided. Every observation must be traceable to the actual items, patterns, or colors listed. Be direct and precise.`;
 
   const userPrompt = `${wardrobeSection}${priorSection}
 
@@ -189,7 +224,8 @@ Analyze this wardrobe. Return ONLY valid JSON (no markdown fences). Every bracke
 
 Hard rules — apply identically regardless of what kind of wardrobe this is; none of these are specific to any one wardrobe:
 - pros: 3-6 full-sentence observations about the WARDROBE AS A WHOLE. Analyze its aesthetic direction, color story, category balance, silhouette range, or formality coverage. Write about the collection as a singular entity — do NOT frame pros as what a specific piece does for or adds to the wardrobe.
-- cons: 2-4 full-sentence observations. Every wardrobe below a perfect score has weaknesses — find them. Consider (only where the data actually supports it): over-reliance on one silhouette, limited occasion coverage, weather-specific gaps, formality transition failures, or lack of versatility in a category. Every con must cite a specific count, color, or item from the data below — never a generic claim. Never return [].
+- cons: 2-4 full-sentence observations. Every wardrobe below a perfect score has weaknesses — find them. Consider (only where the data actually supports it): over-reliance on one silhouette, limited occasion coverage, weather-specific gaps, formality transition failures, or lack of versatility in a category. Every con must be grounded in a real, specific pattern from the data below (name the actual color, sub-type, or category involved) — never a generic claim that could apply to any wardrobe. Never return [].
+- Across every text field in this response (cons, gaps' reason, overdone's suggestion, insights): never state a specific count or number of items, and avoid broad size words (a lot, too many, too few, several, many, tons) — describe the underlying pattern or imbalance qualitatively instead (e.g. "heavy reliance on graphic tees for casual tops", not "5 graphic tees" or "too many graphic tees"). The wardrobe can change after this analysis is generated (items added or removed), and this level's analysis is never regenerated when that happens, so a stated count or size claim can silently go stale and become wrong.
 - gaps: 0-4 items ordered high→low impact. ONLY use slot names from "Functional slots MISSING". Never suggest a slot from "Functional slots COVERED". Return [] if there are no meaningful functional gaps. If ALL footwear slots are missing (casual sneaker, boot, dress shoe, casual sandal / slide are ALL in "Functional slots MISSING"), include at least one footwear gap — going shoeless is always the single highest-impact omission possible, for any wardrobe.
 - overdone: 0-4 items. ONLY include sub-types from "High-frequency sub-types (3+)". If that line says "none", return [].
 - missing_aesthetics: 2-3 items. ONLY choose from "Aesthetics completely absent" — never pick from "Aesthetics present".
@@ -255,21 +291,6 @@ Hard rules — apply identically regardless of what kind of wardrobe this is; no
 
   const analysis: WardrobeAnalysis = {
     score:       metrics.score,
-    scoreBreakdown: {
-      // Approximate breakdown from the formula in scoring.ts
-      pieceQuality:        Math.round((metrics.avgPieceScore / 100) * 25),
-      categoryCoverage:    Math.min(
-        ([...metrics.slotCoverage].reduce((acc, s) => {
-          const pts: Record<string, number> = { base:5, bottom:5, foot:4, outer:2, mid:1, vest:1, acc:1, onepiece:2 };
-          return acc + (pts[s] ?? 0);
-        }, 0)),
-        20,
-      ),
-      colorCohesion:       Math.round((1 - metrics.missingEssentials.length / 15) * 20),
-      outfitPotential:     metrics.comboCountEstimate >= 30 ? 15 : metrics.comboCountEstimate >= 10 ? 10 : metrics.comboCountEstimate >= 5 ? 7 : 4,
-      qualityDistribution: Math.max(0, (metrics.heroCount >= 1 ? 5 : 0) + (metrics.workhouseCount >= 2 ? 4 : 0) - (metrics.weakCount > metrics.pieceCount * 0.3 ? 3 : 0)),
-      aestheticDepth:      Math.min(10, Object.keys(metrics.aestheticCounts).length * 1.5),
-    },
     pieceCount:  metrics.pieceCount,
     pros:        (gpt.pros    ?? []).map(stripDash),
     cons:        (gpt.cons    ?? []).map(stripDash),
@@ -290,8 +311,16 @@ Hard rules — apply identically regardless of what kind of wardrobe this is; no
         type:        (g.type as "piece_type" | "specific_piece" | "category") || "piece_type",
         impact:      (g.impact as "high" | "medium" | "low") || "medium",
         reason:      stripDash(g.reason),
-        costPoints:  metrics.slotCostMap[g.description] ||
-                     (g.impact === "high" ? 5 : g.impact === "medium" ? 3 : 2),
+        // Capped at gapWeight (calibrated once at Level 1 - see freshPointWeights
+        // above): slotCostMap is the real scoreWardrobe() marginal-value delta of
+        // filling this slot, which for a major missing category (e.g. no footwear at
+        // all) can be 10-20+ points on its own - way too large a single-item swing for
+        // the leveling score, where a wardrobe may go through many levels before truly
+        // reaching 100. The cap keeps gaps meaningfully worth more than a single color/
+        // aesthetic/con (see the level-score weights in wardrobe-analysis/page.tsx)
+        // without letting one gap dominate the whole level's point budget.
+        costPoints:  Math.min(gapWeight, metrics.slotCostMap[g.description] ||
+                     (g.impact === "high" ? gapWeight : g.impact === "medium" ? Math.ceil(gapWeight / 2) : 1)),
       })),
     // Validate against real data: only keep sub-types that actually appear 3+ times, and use
     // the real count rather than trusting whatever number GPT returned.
@@ -316,6 +345,9 @@ Hard rules — apply identically regardless of what kind of wardrobe this is; no
       }
       return links;
     })(),
+    // Only set on Level 1 (freshPointWeights is undefined for every later level) -
+    // see WardrobeAnalysis.pointWeights for why later levels must never set their own.
+    ...(freshPointWeights ? { pointWeights: freshPointWeights } : {}),
   };
 
   return NextResponse.json(analysis);

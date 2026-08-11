@@ -229,7 +229,7 @@ check("after removing garment's crossed entry, progress = 0", gapTotalProgress(a
 console.log("\n=== Block 4: computeEffectiveLevel ===\n");
 
 const mockAnalysis1: WardrobeAnalysis = {
-  score: 60, scoreBreakdown: { pieceQuality: 15, categoryCoverage: 10, colorCohesion: 10, outfitPotential: 8, qualityDistribution: 8, aestheticDepth: 9 },
+  score: 60,
   pieceCount: 3, pros: ["versatile"], cons: ["lacks formal wear"],
   colors: { have: ["White", "Blue"], missing: ["Black", "Navy"] },
   aesthetics: { covered: [{ name: "streetwear", count: 3 }], missing: ["smart casual"] },

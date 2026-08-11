@@ -23,14 +23,6 @@ export type WardrobeOverdone = {
 
 export type WardrobeAnalysis = {
   score: number;
-  scoreBreakdown: {
-    pieceQuality: number;     // /25
-    categoryCoverage: number; // /20
-    colorCohesion: number;    // /20
-    outfitPotential: number;  // /15
-    qualityDistribution: number; // /10
-    aestheticDepth: number;   // /10
-  };
   pieceCount: number;
   pros: string[];
   cons: string[];
@@ -48,6 +40,13 @@ export type WardrobeAnalysis = {
   insights: string[];
   generatedAt: string;
   conGapLinks: Record<string, string>;
+  // Per-unit leveling point values (gap/color/aesthetic/con), calibrated ONCE at Level 1
+  // generation time from a rough estimate of the wardrobe's whole remaining journey to
+  // 100, and reused unchanged by every later level. Only ever set on analysisHistory[0] -
+  // later levels leave it undefined and callers fall back to analysisHistory[0]'s value.
+  // Frozen (never recomputed from current state) so remove/re-add stays exactly
+  // symmetric - see the scoring loop in app/wardrobe-analysis/page.tsx.
+  pointWeights?: { gap: number; color: number; aesthetic: number; con: number };
 };
 
 export type ItemImpact = {
@@ -80,12 +79,9 @@ const AESTHETIC_ALIASES: Record<string, string> = {
   "old-money": "old money",
   "quiet-luxury": "quiet luxury",
   "business-casual": "business casual",
-  "indie-sleaze": "indie sleaze",
-  "mob-wife": "mob wife",
   "dark-academia": "dark academia",
   "ivy-league": "ivy league",
   // Old short/alternate forms
-  "boho": "bohemian",
   "90s": "90s retro",
   "Y2K": "y2k",
   "avant garde": "avant-garde",

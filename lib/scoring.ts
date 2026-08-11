@@ -1009,6 +1009,30 @@ export function scoreOutfit(
     aestheticPenaltyMult = Math.min(aestheticPenaltyMult, 0.70);
   }
 
+  // Isolated-item penalty: an item that shares ZERO aesthetic-tag overlap with EVERY
+  // other item in the outfit — a general structural check, not tied to any specific
+  // slot pairing like the outer/base or top/bottom checks above. This exists because
+  // the overlapRatio-based penalty (line ~920) is an AVERAGE across all pairs, which
+  // can stay misleadingly moderate when the rest of the outfit is tightly cohesive
+  // with itself and only ONE piece is a genuine outlier: e.g. [tailored blazer(none),
+  // streetwear hoodie, streetwear tee, workwear boots] has 3 cohesive pairs among the
+  // non-blazer items and only 3 zero-overlap pairs involving the blazer, averaging to
+  // a "mild mismatch" overlapRatio even though the blazer itself doesn't belong with
+  // anything else in the outfit at all. Untagged items are skipped (no signal either
+  // way), and this only applies from 3 items up — with 2 items, an isolated item IS
+  // the whole outfit's overlapRatio, already covered by the check above.
+  if (scoringItems.length >= 3) {
+    const isIsolated = scoringItems.some(item => {
+      const itemTags = (item.aesthetic_tags ?? []).map(t => t.toLowerCase());
+      if (itemTags.length === 0) return false;
+      const itemTagSet = new Set(itemTags);
+      return !scoringItems.some(other =>
+        other !== item && (other.aesthetic_tags ?? []).some(t => itemTagSet.has(t.toLowerCase()))
+      );
+    });
+    if (isIsolated) aestheticPenaltyMult = Math.min(aestheticPenaltyMult, 0.60);
+  }
+
   // Quality consistency (8 pts)
   const variance = pieceScores.length > 1
     ? pieceScores.reduce((v, s) => v + Math.pow(s - avgScore, 2), 0) / pieceScores.length
@@ -2206,15 +2230,26 @@ export function scoreWardrobe(items: GarmentForScoring[]): number {
   const categoryCoveragePts = Math.min(coverage, 20);
 
   // Color palette cohesion (20 pts)
+  // Bidirectional pairing check: color_pairings is AI-inferred per item and not
+  // guaranteed to be listed symmetrically on both sides of a pair, so a compatible
+  // pair must count if EITHER item lists the other's color — checking only
+  // nonAcc[i]'s pairings (as before) silently missed pairs recorded only on the
+  // other item, making cohesion depend on array order rather than the wardrobe's
+  // actual palette. Mirrors the bidirectional fix already applied to scoreOutfit's
+  // clash check for the same underlying reason.
   const nonAcc = items.filter(i => getSlot(i.sub_type) !== "acc");
   let totalPairsW = 0, compatPairsW = 0;
   for (let i = 0; i < nonAcc.length; i++) {
     const aPairings = new Set(nonAcc[i].color_pairings || []);
+    const aColors   = itemColors(nonAcc[i]);
     for (let j = i + 1; j < nonAcc.length; j++) {
       if (getSlot(nonAcc[i].sub_type) === getSlot(nonAcc[j].sub_type)) continue;
       totalPairsW++;
-      const bColors = itemColors(nonAcc[j]);
-      if (bColors.some(bc => aPairings.has(bc))) compatPairsW++;
+      const bColors   = itemColors(nonAcc[j]);
+      const bPairings = new Set(nonAcc[j].color_pairings || []);
+      const forwardMatch = bColors.some(bc => aPairings.has(bc));
+      const reverseMatch = aColors.some(ac => bPairings.has(ac));
+      if (forwardMatch || reverseMatch) compatPairsW++;
     }
   }
   const cohesionRatio = totalPairsW > 0 ? compatPairsW / totalPairsW : 0.5;

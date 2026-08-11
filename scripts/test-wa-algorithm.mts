@@ -218,14 +218,6 @@ Hard rules:
 
   const analysis: WardrobeAnalysis = {
     score:       metrics.score,
-    scoreBreakdown: {
-      pieceQuality:        Math.round((metrics.avgPieceScore/100)*25),
-      categoryCoverage:    Math.min(([...metrics.slotCoverage].reduce((acc,s)=>{const pts:Record<string,number>={base:5,bottom:5,foot:4,outer:2,mid:1,vest:1,acc:1,onepiece:2};return acc+(pts[s]??0);},0)),20),
-      colorCohesion:       Math.round((1-metrics.missingEssentials.length/15)*20),
-      outfitPotential:     metrics.comboCountEstimate>=30?15:metrics.comboCountEstimate>=10?10:metrics.comboCountEstimate>=5?7:4,
-      qualityDistribution: Math.max(0,(metrics.heroCount>=1?5:0)+(metrics.workhouseCount>=2?4:0)-(metrics.weakCount>metrics.pieceCount*0.3?3:0)),
-      aestheticDepth:      Math.min(10,Object.keys(metrics.aestheticCounts).length*1.5),
-    },
     pieceCount:  metrics.pieceCount,
     pros:        (gpt.pros   ??[]).map(stripDash),
     cons:        (gpt.cons   ??[]).map(stripDash),

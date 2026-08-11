@@ -67,7 +67,6 @@ function synth(o: Partial<RawGarment> & { id: string; sub_type: string; category
 function synthAnalysis(o: Partial<WardrobeAnalysis> & { gaps?: WardrobeGap[] }): WardrobeAnalysis {
   return {
     score:40, pieceCount:3, pros:[], cons:[], overdone:[], insights:[],
-    scoreBreakdown:{ pieceQuality:10, categoryCoverage:8, colorCohesion:8, outfitPotential:7, qualityDistribution:4, aestheticDepth:3 },
     colors:{ have:["black","white"], missing:[] },
     aesthetics:{ covered:[], missing:[] },
     subTypeFrequency:{}, conGapLinks:{},
@@ -185,14 +184,6 @@ async function runAnalysis(garments: RawGarment[]): Promise<WardrobeAnalysis> {
 
   return {
     score:metrics.score, pieceCount:metrics.pieceCount,
-    scoreBreakdown:{
-      pieceQuality:Math.round((metrics.avgPieceScore/100)*25),
-      categoryCoverage:Math.min([...metrics.slotCoverage].reduce((a,s)=>a+({base:5,bottom:5,foot:4,outer:2,mid:1,vest:1,acc:1,onepiece:2}[s]??0),0),20),
-      colorCohesion:Math.round((1-metrics.missingEssentials.length/15)*20),
-      outfitPotential:metrics.comboCountEstimate>=30?15:metrics.comboCountEstimate>=10?10:7,
-      qualityDistribution:Math.max(0,(metrics.heroCount>=1?5:0)+(metrics.workhouseCount>=2?4:0)-(metrics.weakCount>metrics.pieceCount*0.3?3:0)),
-      aestheticDepth:Math.min(10,Object.keys(metrics.aestheticCounts).length*1.5),
-    },
     pros:(gpt.pros??[]).map(stripDash), cons:(gpt.cons??[]).map(stripDash),
     colors:{ have:metrics.allColors, missing:gpt.missing_colors?.length?gpt.missing_colors:metrics.missingEssentials.slice(0,6) },
     aesthetics:{ covered:covAes, missing:missingAesthetics },
