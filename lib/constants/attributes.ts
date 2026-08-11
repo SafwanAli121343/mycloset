@@ -74,17 +74,23 @@ export const MATERIAL_KEYWORDS: { keyword: string; value: string }[] = [
 // Both per-item tagging and wardrobe gap analysis read from this list —
 // a gap can never reference an aesthetic that items cannot be tagged with.
 // Must also stay in sync with BRAND_AESTHETICS values.
+// Kept to aesthetics that are both gender-neutral and genuinely shoppable - a niche
+// aesthetic is fine (e.g. gorpcore: real, accessible brands like Arc'teryx/The North
+// Face at mainstream outdoor retailers) but ephemeral internet-trend-of-the-moment
+// aesthetics with no stable, findable look (indie sleaze, mob wife) and aesthetics
+// with no real menswear equivalent (cottagecore, bohemian - both overwhelmingly
+// women's-coded in mainstream usage) are excluded.
 export const KNOWN_AESTHETICS = [
   // Foundation
   "streetwear", "minimalist", "old money", "preppy", "techwear",
   "workwear", "athleisure", "formal", "business casual", "vintage",
   // Edge / subculture
   "grunge", "punk", "goth", "skate", "normcore",
-  "gorpcore", "indie sleaze", "western", "bohemian", "y2k",
-  "90s retro", "hip-hop", "mob wife", "surf",
+  "gorpcore", "western", "y2k",
+  "90s retro", "hip-hop", "surf",
   // Elevated / niche
   "quiet luxury", "avant-garde", "maximalist", "dark academia",
-  "cottagecore", "coastal", "military", "ivy league", "retro",
+  "coastal", "military", "ivy league", "retro",
 ];
 
 // Alias kept so existing imports of AESTHETIC_TAGS continue to work.

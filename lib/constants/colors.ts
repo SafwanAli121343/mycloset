@@ -4,10 +4,14 @@ export const COLOR_GROUPS: string[][] = [
   // Muted yellow-greens — camo/camouflage is predominantly olive/army green in tone.
   // Generic "green" is included because owning a green item means olive is not a meaningful gap.
   ["olive", "moss", "army green", "military green", "dark olive", "olive green", "khaki green", "camo", "camouflage", "woodland camo", "desert camo", "green"],
-  // Sage / dusty greens (lighter, greyer) — grey-toned enough to stay separate from generic green
-  ["sage", "sage green", "dusty sage", "celadon", "mint green"],
+  // Sage / dusty greens (lighter, greyer) — grey-toned enough to stay separate from generic green.
+  // Seafoam is the same pale, slightly-blue-leaning green family as mint/celadon.
+  ["sage", "sage green", "dusty sage", "celadon", "mint green", "mint", "seafoam"],
   // Dark greens
   ["forest green", "hunter green", "dark green", "bottle green"],
+  // Bright/saturated greens — distinctly more vivid than muted olive or dusty sage,
+  // same muted-vs-vivid split already used for burgundy/rust and blush/pink below.
+  ["lime", "kelly green", "emerald"],
   // Burgundy family
   ["burgundy", "wine", "maroon", "oxblood", "merlot", "claret", "bordeaux", "crimson"],
   // Navy family
@@ -18,22 +22,45 @@ export const COLOR_GROUPS: string[][] = [
   ["charcoal", "dark grey", "dark gray", "anthracite", "graphite"],
   // Mid grey
   ["grey", "gray", "slate gray", "slate grey", "heather gray", "heather grey", "medium gray"],
+  // Light grey / silver — noticeably lighter than mid grey/charcoal, and silver/platinum
+  // are the metallic equivalent of the same light-neutral-grey tone.
+  ["light gray", "light grey", "ash gray", "ash grey", "silver", "platinum"],
   // Brown family
   ["brown", "chocolate", "chestnut", "walnut", "mocha", "espresso", "mahogany", "cognac", "tobacco"],
   // Rust / terracotta
   ["rust", "brick red", "terracotta", "burnt sienna", "burnt orange", "clay"],
-  // Mustard / gold
-  ["mustard", "gold", "golden", "amber", "ochre", "honey"],
+  // Mustard / gold — caramel is the same warm amber-brown tone, just applied to a
+  // richer/darker shade than camel/tan (already covered in warm neutrals above).
+  ["mustard", "gold", "golden", "amber", "ochre", "honey", "caramel"],
   // Cobalt / deep blue
   ["cobalt", "royal blue", "sapphire", "deep blue", "electric blue"],
-  // Blush / rose
+  // Muted mid blue — desaturated, neither as dark as navy nor as vivid as cobalt.
+  ["steel blue", "denim blue"],
+  // Pastel / light blue
+  ["sky blue", "baby blue", "powder blue"],
+  // Blush / rose (muted, pastel pink family - kept separate from vivid pink below,
+  // same convention as burgundy/wine being its own muted group apart from rust and
+  // plain red)
   ["blush", "dusty rose", "rose", "mauve", "pink beige", "petal"],
-  // Teal family
-  ["teal", "dark teal", "teal blue", "petrol blue"],
+  // Vivid pink family - magenta/fuchsia/hot pink are saturated shades of pink, not a
+  // different hue, so owning one meaningfully covers a "pink" gap the same way owning
+  // any cream/ivory/off-white covers the warm-neutral spectrum above.
+  ["pink", "hot pink", "magenta", "fuchsia"],
+  // Coral / peach — warm, light orange-pink tones, interchangeable for gap-filling.
+  ["coral", "salmon", "peach", "apricot"],
+  // Teal family — turquoise is the same family at a brighter/more saturated shade.
+  ["teal", "dark teal", "teal blue", "petrol blue", "turquoise"],
   // Taupe / greige
   ["taupe", "greige", "stone", "mushroom", "warm gray", "warm grey"],
-  // Purple family
+  // Purple family (deep/saturated)
   ["purple", "violet", "plum", "eggplant", "deep purple", "grape"],
+  // Pastel purple — distinctly lighter than the deep purple family above; periwinkle
+  // is the pale blue-violet edge of the same pastel family.
+  ["lavender", "lilac", "periwinkle"],
+  // Safety synonyms for the two most common essential colors, so a slightly different
+  // GPT phrasing ("Jet Black", "Optic White") still registers as covering the gap.
+  ["black", "jet black", "true black", "onyx"],
+  ["white", "true white", "pure white", "optic white"],
 ];
 
 // Normalizes formatting variance (hyphens/underscores/slashes, extra whitespace, case) so

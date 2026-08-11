@@ -99,19 +99,19 @@ export async function GET(req: NextRequest) {
   }).join("\n");
 
   const prompt =
-    `You are a fashion stylist. Suggest 2–4 items from the wardrobe list that pair well with the FOCUS item.\n\n` +
+    `You are a fashion stylist. Suggest items from the wardrobe list that pair well with the FOCUS item.\n\n` +
     `FOCUS ITEM (slot: ${targetSlot}):\n${targetLine}\n\n` +
     `WARDROBE CANDIDATES:\n${candidateLines}\n\n` +
-    `Rules:\n` +
-    `• Neutral colors (black, white, grey, navy, beige, tan, olive) pair with almost anything — never say they clash\n` +
-    `• A bold/graphic piece pairs best with neutrals so it remains the focal point\n` +
-    `• Match formality: graphic tee stays casual, dress shirt stays smart-casual or up\n` +
-    `• Classic combos always work: black + any neutral, white + anything, navy + grey, olive + tan\n` +
-    `• Be generous with suggestions — if it's a reasonable real-world combination, include it\n` +
+    `A pairing must work on COLOR AND AESTHETIC/STYLE together — color compatibility alone is never enough on its own:\n` +
+    `• Neutral colors (black, white, grey, navy, beige, tan, olive) rarely clash on COLOR grounds, but a color match does not override an aesthetic or formality mismatch. A neutral-colored item styled for a completely different register (e.g. a tailored quiet-luxury piece vs. a loud skate/grunge piece, or technical gorpcore vs. business formal) is still a bad pairing even when the colors are both neutral.\n` +
+    `• Weigh the aesthetic tags on both items. Favor pairings that share at least one aesthetic tag, or are a well-established real-world cross-aesthetic combination (e.g. a plain tee under a tailored jacket) — not just "nothing technically clashes."\n` +
+    `• Match formality: a graphic tee stays casual, a dress shirt stays smart-casual or up. A real formality gap (formal piece + purely athletic piece) excludes the pairing even if the colors work.\n` +
+    `• A bold/graphic piece pairs best with neutrals so it remains the focal point.\n` +
+    `• Be selective, not generous. Only include a pairing a knowledgeable stylist would confidently put together and actually recommend — not every combination that merely fails to clash. It is correct and expected for some items (an aesthetic outlier relative to the rest of the wardrobe, or a very specific/formal piece) to have few or even zero strong pairings — do not pad the list to hit a target count.\n` +
     `• Format: "Item description from the list → style label" (e.g. "Carhartt WIP jeans | pants | color: indigo blue → workwear casual")\n` +
     `• Use the EXACT text from the wardrobe list for the item description\n` +
     `• Style label: 1–3 words (streetwear, casual, smart-casual, workwear, preppy, athleisure, minimalist, etc.)\n\n` +
-    `Return ONLY JSON: {"pairings": ["item text → style", ...]}`;
+    `Return ONLY JSON: {"pairings": ["item text → style", ...]} — 0 to 6 items, however many genuinely earn a place, not a fixed count.`;
 
   let pairings: string[] = [];
   try {
