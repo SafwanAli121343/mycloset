@@ -11,7 +11,8 @@ import { createClient } from "@supabase/supabase-js";
 import type { GarmentForScoring } from "@/lib/scoring";
 import { generateAndRankAllOutfits, type RankedOutfit } from "@/lib/wardrobeOutfitGen";
 import { generateMonthPlan, REPEAT_WINDOW } from "@/lib/monthOutfitPlan";
-import { weatherCodeToCondition, type DayWeather } from "@/lib/weatherOutfitFilter";
+import { type DayWeather } from "@/lib/weatherOutfitFilter";
+import { fetchMonthWeather, seasonalFallbackTemp, tempLabel } from "@/lib/weatherData";
 import { analyzeOutfit, deriveOutfitAesthetic } from "@/lib/outfitInference";
 
 export const maxDuration = 120;
@@ -20,103 +21,6 @@ const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-// ── Weather helpers ───────────────────────────────────────────────────────────
-
-function seasonalFallbackTemp(month: number): number {
-  // Average °F by month (generic northern-hemisphere temperate city baseline)
-  return [0, 38, 40, 48, 57, 65, 74, 80, 80, 72, 62, 52, 42][month] ?? 62;
-}
-
-interface OpenMeteoDaily {
-  time?: string[];
-  temperature_2m_mean?: (number | null)[];
-  weathercode?: (number | null)[];
-  windspeed_10m_max?: (number | null)[];
-}
-
-async function fetchOpenMeteo(
-  url: string,
-): Promise<OpenMeteoDaily | null> {
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return null;
-    const d = await r.json() as { daily?: OpenMeteoDaily };
-    return d?.daily ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchWeatherForMonth(
-  lat: number,
-  lon: number,
-  year: number,
-  month: number,
-  allDates: string[],
-): Promise<Map<string, DayWeather>> {
-  const pad  = (n: number) => String(n).padStart(2, "0");
-  const vars = "temperature_2m_mean,weathercode,windspeed_10m_max";
-  const result = new Map<string, DayWeather>();
-
-  // Try forecast API first (covers up to 16 days into the future)
-  const forecastDaily = await fetchOpenMeteo(
-    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&daily=${vars}&temperature_unit=fahrenheit&forecast_days=16&timezone=auto`,
-  );
-  if (forecastDaily) {
-    const { time = [], temperature_2m_mean = [], weathercode = [], windspeed_10m_max = [] } = forecastDaily;
-    for (let i = 0; i < time.length; i++) {
-      const date = time[i];
-      if (!allDates.includes(date)) continue;
-      const tempF  = temperature_2m_mean[i] != null ? Math.round(temperature_2m_mean[i]!) : null;
-      const code   = weathercode[i] ?? 0;
-      const wind   = windspeed_10m_max[i] ?? 0;
-      if (tempF != null) {
-        result.set(date, { date, tempF, condition: weatherCodeToCondition(code, wind * 0.621) });
-      }
-    }
-  }
-
-  // Fill gaps with historical archive (last year as proxy)
-  const uncovered = allDates.filter((d) => !result.has(d));
-  if (uncovered.length > 0) {
-    const days = new Date(year, month, 0).getDate();
-    const ly   = year - 1;
-    const archiveDaily = await fetchOpenMeteo(
-      `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
-      `&start_date=${ly}-${pad(month)}-01&end_date=${ly}-${pad(month)}-${pad(days)}` +
-      `&daily=${vars}&temperature_unit=fahrenheit`,
-    );
-    if (archiveDaily) {
-      const { time = [], temperature_2m_mean = [], weathercode = [], windspeed_10m_max = [] } = archiveDaily;
-      for (let i = 0; i < time.length; i++) {
-        const archiveDate  = time[i]; // last year's date
-        const dayStr       = archiveDate.slice(5); // "MM-DD"
-        const thisYearDate = `${year}-${dayStr}`;
-        if (!allDates.includes(thisYearDate) || result.has(thisYearDate)) continue;
-        const tempF = temperature_2m_mean[i] != null ? Math.round(temperature_2m_mean[i]!) : null;
-        const code  = weathercode[i] ?? 0;
-        const wind  = windspeed_10m_max[i] ?? 0;
-        if (tempF != null) {
-          result.set(thisYearDate, { date: thisYearDate, tempF, condition: weatherCodeToCondition(code, wind * 0.621) });
-        }
-      }
-    }
-  }
-
-  return result;
-}
-
-function tempLabel(tempF: number): string {
-  if (tempF < 32)  return "freezing";
-  if (tempF < 46)  return "very cold";
-  if (tempF < 55)  return "cold";
-  if (tempF < 63)  return "cool";
-  if (tempF < 72)  return "mild";
-  if (tempF < 82)  return "warm";
-  return "hot";
-}
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
@@ -173,7 +77,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch weather for all target dates
   const weatherMap = lat != null && lon != null
-    ? await fetchWeatherForMonth(lat, lon, year, month, targetDates)
+    ? await fetchMonthWeather(lat, lon, year, month, targetDates)
     : new Map<string, DayWeather>();
 
   // Build DayWeather array for target dates, falling back to seasonal temp if no data

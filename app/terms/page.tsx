@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Terms of Service — MYCLOSET",
@@ -71,6 +72,10 @@ export default function TermsPage() {
             </section>
           ))}
         </div>
+
+        <p className="text-xs text-gray-400 mt-14" style={FONT}>
+          See also our <Link href="/privacy" className="underline font-bold text-black">Privacy Policy</Link>.
+        </p>
       </div>
     </main>
   );

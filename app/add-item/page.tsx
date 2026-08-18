@@ -422,24 +422,31 @@ export default function AddItemPage() {
     setAdding(true);
 
     let finalImage = imagePreview || undefined;
-    if (imageFile) {
-      const fd = new FormData();
-      fd.append("file", imageFile);
-      const up = await fetch("/api/garments/upload-image", { method: "POST", body: fd });
-      if (up.ok) finalImage = (await up.json()).url;
-    }
+    let res: Response;
+    try {
+      if (imageFile) {
+        const fd = new FormData();
+        fd.append("file", imageFile);
+        const up = await fetch("/api/garments/upload-image", { method: "POST", body: fd });
+        if (up.ok) finalImage = (await up.json()).url;
+      }
 
-    const res = await fetch("/api/garments", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        manual: true,
-        title: title.trim(), brand: brand.trim() || undefined,
-        color_primary: color.trim() || undefined, material: material.trim() || undefined,
-        price: price.trim() || undefined, fit: fit.trim() || undefined,
-        image: finalImage, category, user_id: user.id,
-        link: tab === "url" ? urlInput : undefined,
-      }),
-    });
+      res = await fetch("/api/garments", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manual: true,
+          title: title.trim(), brand: brand.trim() || undefined,
+          color_primary: color.trim() || undefined, material: material.trim() || undefined,
+          price: price.trim() || undefined, fit: fit.trim() || undefined,
+          image: finalImage, category, user_id: user.id,
+          link: tab === "url" ? urlInput : undefined,
+        }),
+      });
+    } catch {
+      showNotice("err", "Couldn't reach the server — check your connection and try again.");
+      setAdding(false);
+      return;
+    }
 
     if (!res.ok) { showNotice("err", "Something went wrong. Please try again."); setAdding(false); return; }
     const saved = await res.json() as {
@@ -824,7 +831,7 @@ export default function AddItemPage() {
                 onClick={() => setTutorialSlide(s => s - 1)}
                 style={{ background: "none", border: "none", cursor: tutorialSlide > 0 ? "pointer" : "default", fontSize: 10, color: "#888", letterSpacing: "0.1em", textTransform: "uppercase", padding: 0, visibility: tutorialSlide > 0 ? "visible" : "hidden", ...FONT }}
               >
-                â† BACK
+                {"< BACK"}
               </button>
               <button
                 onClick={isLast ? closeTutorial : () => setTutorialSlide(s => s + 1)}

@@ -20,6 +20,7 @@ import { inferGarmentAttributes, inferGarmentAttributesTextOnly } from "@/lib/ai
 import { searchVisualMatches, type VisualMatch } from "@/lib/lensSearch";
 import { detectLogoAndText, type LogoTextResult } from "@/lib/visionDetection";
 import { lookupAttributesFromUrl } from "@/lib/productLookup";
+import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 import { getSessionFromCookies } from "@/lib/auth/session";
 import { createClient } from "@supabase/supabase-js";
 import { removeBackground } from "@imgly/background-removal-node";
@@ -141,13 +142,17 @@ async function uploadBase64ToStorage(dataUri: string, userId: string): Promise<s
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user_id = session.userId;
+
   const body = await request.json();
-  const { title, price, source, link, image, user_id, category, manual, brand: manualBrand, color_primary: manualColor } = body;
+  const { title, price, source, link, image, category, manual, brand: manualBrand, color_primary: manualColor } = body;
 
   // Manual add — save immediately, then infer scoring fields in the background
   if (manual) {
-    if (!title || !category || !user_id) {
-      return NextResponse.json({ error: "title, category and user_id required for manual add" }, { status: 400 });
+    if (!title || !category) {
+      return NextResponse.json({ error: "title and category required for manual add" }, { status: 400 });
     }
     const resolvedImageManual = image?.startsWith("data:")
       ? await uploadBase64ToStorage(image, user_id).catch(() => image)
@@ -567,6 +572,8 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
   // Once done, the garment row's image is updated to the clean Supabase Storage URL.
   after(async () => {
     try {
+      // data: URIs are self-contained (no network fetch happens), so only guard real URLs.
+      if (!image.startsWith("data:")) await assertSafeUrl(image);
       const srcRes = await fetch(image, { headers: { "User-Agent": "Mozilla/5.0" } });
       const srcBuf = Buffer.from(await srcRes.arrayBuffer());
 
@@ -640,16 +647,24 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
 }
 
 export async function DELETE(request: NextRequest) {
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const id = request.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "No ID provided" }, { status: 400 });
 
-  // Capture owner before deletion (cascade may drop rows before we can query)
+  // Capture owner before deletion (cascade may drop rows before we can query) and verify
+  // the requester actually owns this garment — without this check any authenticated user
+  // could delete any other user's garment by guessing/observing its id.
   const { data: garmentMeta } = await adminClient
     .from("garments")
     .select("user_id")
     .eq("id", id)
     .single();
   const ownerId = garmentMeta?.user_id as string | undefined;
+  if (!ownerId || ownerId !== session.userId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   // Find calendar outfits containing this garment before deletion
   // (cascade might drop outfit_items rows first, so we query now)

@@ -26,5 +26,8 @@ export async function POST(req: NextRequest) {
   const token = await createSession({ userId: user.id, email: user.email });
   await setSessionCookie(token);
 
-  return NextResponse.json({ id: user.id, email: user.email });
+  // token is only consumed by the native app (stored via expo-secure-store, sent back as a
+  // Bearer header — see lib/auth/session.ts); the web client relies on the httpOnly cookie
+  // above and ignores this field entirely.
+  return NextResponse.json({ id: user.id, email: user.email, token });
 }

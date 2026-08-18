@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 import sharp from "sharp";
 import { removeBackground } from "@imgly/background-removal-node";
 
@@ -47,6 +48,7 @@ export async function POST() {
 
   for (const g of garments ?? []) {
     try {
+      if (!g.image!.startsWith("data:")) await assertSafeUrl(g.image!);
       const res = await fetch(g.image!, { headers: { "User-Agent": "Mozilla/5.0" } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const srcBuf = Buffer.from(await res.arrayBuffer());

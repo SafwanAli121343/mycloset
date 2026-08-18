@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getSlot } from "@/lib/outfitRules";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
 
 const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
 const B = 142;
@@ -44,6 +45,7 @@ type Garment = {
 
 type ScoreResult = {
   score: number; valid: boolean; reason: string | null; pros: string[]; cons: string[];
+  serverError?: boolean;
 };
 
 type PanelState = "hidden" | "visible" | "exiting";
@@ -106,12 +108,45 @@ function isOuterCapableTop(g: Garment): boolean {
   );
 }
 
+// ── Mobile bucketing ──────────────────────────────────────────────────────────
+// Mirrors the same category/sub_type grouping the desktop grid uses (see the "Slot
+// categorization" loop below) as a pure per-item function, so the mobile picker can filter
+// available items by the same buckets without duplicating desktop's slot state.
+
+type Bucket = "head" | "outer" | "mid" | "top" | "bottom" | "shoes" | "accessory";
+
+const BUCKET_LABEL: Record<Bucket, string> = {
+  head: "Head", outer: "Outerwear", mid: "Mid Layer", top: "Top",
+  bottom: "Bottom", shoes: "Shoes", accessory: "Accessories",
+};
+const BUCKET_ORDER: Bucket[] = ["head", "outer", "top", "mid", "bottom", "shoes", "accessory"];
+
+function bucketOf(g: Garment): Bucket {
+  if (g.category === "footwear")  return "shoes";
+  if (g.category === "bottom")    return "bottom";
+  if (g.category === "outerwear") return "outer";
+  // Checked before category === "accessory" — hats commonly get that category from the AI
+  // tagger, which would otherwise claim them before this hat-specific check ever runs, and this
+  // is the function canAddToOutfit uses to validate drops, so that made the Hat slot reject
+  // (or silently misfile) every hat drag.
+  const sub = (g.sub_type ?? "").toLowerCase();
+  if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") ||
+      sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) return "head";
+  if (g.category === "accessory") return "accessory";
+  if (sub.includes("hoodie") || sub.includes("sweatshirt") || sub.includes("zip-up") ||
+      sub.includes("zip up") || sub.includes("sweater") || sub.includes("pullover") ||
+      sub.includes("crewneck") || sub.includes("fleece") || sub.includes("cardigan")) return "mid";
+  return "top";
+}
+
 // ── Builder page ──────────────────────────────────────────────────────────────
 
 export default function BuilderPage() {
+  const isMobile = useIsMobile();
   const [allGarments, setAllGarments] = useState<Garment[]>([]);
   const [outfit,      setOutfit]      = useState<Garment[]>([]);
   const [loading,     setLoading]     = useState(true);
+  const [loadError,   setLoadError]   = useState(false);
   const [cat,         setCat]         = useState<typeof CATS[number]>("all");
   const [dragId,      setDragId]      = useState<string | null>(null);
   const [dragOver,    setDragOver]    = useState<string | null>(null);
@@ -122,6 +157,7 @@ export default function BuilderPage() {
   const [consState,   setConsState]   = useState<PanelState>("hidden");
   const [invVisible,  setInvVisible]  = useState(true);
   const [showInvBtn,  setShowInvBtn]  = useState(false);
+  const [pickerBucket, setPickerBucket] = useState<Bucket | null>(null);
 
   const invRef      = useRef<HTMLDivElement>(null);
   const fadeTRef    = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -132,9 +168,12 @@ export default function BuilderPage() {
 
   useEffect(() => {
     fetch("/api/garments")
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((data: Garment[]) => { setAllGarments(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch(() => { setLoadError(true); setLoading(false); });
   }, []);
 
   // Auto-fade error results after a delay
@@ -212,6 +251,16 @@ export default function BuilderPage() {
     setResult(null);
   }
 
+  // Mobile tap-to-add — same validity rule desktop's drag-and-drop uses (canAddToOutfit),
+  // just triggered by a tap instead of a drop. Native HTML drag-and-drop doesn't work
+  // reliably on touch devices, so mobile needs its own add path rather than reusing drag state.
+  function mobileAddItem(g: Garment) {
+    if (!canAddToOutfit(outfit, g)) return;
+    setOutfit(prev => [...prev, g]);
+    setResult(null);
+    setPickerBucket(null);
+  }
+
   async function handleScore() {
     if (!canScore || scoring) return;
     setScoring(true);
@@ -219,16 +268,22 @@ export default function BuilderPage() {
     setProsState("hidden");
     setConsState("hidden");
     try {
-      const res  = await fetch("/api/scoring/outfit", {
+      const res = await fetch("/api/scoring/outfit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ garmentIds: outfit.map(g => g.id) }),
       });
+      if (!res.ok) {
+        setResult({ score: 0, valid: false, reason: null, pros: [], cons: [], serverError: true });
+        return;
+      }
       const data = await res.json() as { score: number; valid: boolean; reason: string | null };
       const pros = [...new Set(outfit.flatMap(g => parseProp(g.pros)))].slice(0, 4);
       const cons = [...new Set(outfit.flatMap(g => parseProp(g.cons)))].slice(0, 4);
       setResult({ score: data.score, valid: data.valid, reason: data.reason, pros, cons });
-    } catch { /* silent */ }
+    } catch {
+      setResult({ score: 0, valid: false, reason: null, pros: [], cons: [], serverError: true });
+    }
     finally { setScoring(false); }
   }
 
@@ -241,13 +296,18 @@ export default function BuilderPage() {
   for (const g of outfit) {
     if (g.category === "footwear")  { shoes.push(g);  continue; }
     if (g.category === "bottom")    { bots.push(g);   continue; }
-    if (g.category === "accessory") { accs.push(g);   continue; }
     if (g.category === "outerwear") { outers.push(g); continue; }
+    // sub_type-based hat detection runs BEFORE the category === "accessory" fallback below —
+    // hats commonly get category "accessory" from the AI tagger (a reasonable classification on
+    // its own), which used to make them get grabbed by that check first and land in the generic
+    // ACCESSORIES slot instead of ever reaching this hat check, so the dedicated Hat slot could
+    // never actually hold one.
     const sub = (g.sub_type ?? "").toLowerCase();
     if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") ||
         sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) {
       heads.push(g); continue;
     }
+    if (g.category === "accessory") { accs.push(g); continue; }
     if (sub.includes("hoodie") || sub.includes("sweatshirt") || sub.includes("zip-up") ||
         sub.includes("zip up") || sub.includes("sweater") || sub.includes("pullover") ||
         sub.includes("crewneck") || sub.includes("fleece") || sub.includes("cardigan")) {
@@ -415,11 +475,18 @@ export default function BuilderPage() {
     );
   }
 
+  const INV_TIP_HALF_W = 87; // half of InvTip's fixed 174px width
   const invTipIn  = (e: React.MouseEvent<HTMLDivElement>) => {
     const tip  = e.currentTarget.querySelector<HTMLElement>("[data-tip]");
     if (!tip) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    tip.style.left    = `${rect.left + rect.width / 2}px`;
+    // The tooltip is horizontally centered on whatever `left` is set to (translateX(-50%)), so
+    // centering it on items near either edge of the inventory grid ran it off the viewport and
+    // clipped it. Clamping keeps the tooltip fully on-screen; it just stops tracking dead-center
+    // over items that are within half the tooltip's width of an edge.
+    const center = rect.left + rect.width / 2;
+    const clamped = Math.min(Math.max(center, INV_TIP_HALF_W), window.innerWidth - INV_TIP_HALF_W);
+    tip.style.left    = `${clamped}px`;
     tip.style.top     = `${rect.top}px`;
     tip.style.display = "block";
   };
@@ -455,6 +522,225 @@ export default function BuilderPage() {
     );
   }
 
+  // ── Mobile page ──────────────────────────────────────────────────────────
+  // The desktop grid is a fixed 5×142px layout (710px+ wide) with native HTML5 drag-and-drop,
+  // neither of which works on a phone — the grid can't fit and touch browsers largely ignore
+  // the drag-and-drop API. Rather than shrink the same grid into something unreadable, mobile
+  // restructures around the same underlying slots as a vertical list of category rows (tap a
+  // filled item to remove it, tap + to open a full-screen picker), grouped by the same
+  // bucketOf() categories the desktop grid visually encodes through column position.
+
+  if (isMobile) {
+    const pickerItems = pickerBucket ? editAvail.filter(g => bucketOf(g) === pickerBucket) : [];
+    const smallBtn: CSSProperties = {
+      background: "none", border: "none", padding: 0, cursor: "pointer",
+      fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", ...FONT,
+    };
+
+    return (
+      <main style={{ minHeight: "100dvh", background: "#fff", ...FONT, display: "flex", flexDirection: "column" }}>
+        <style suppressHydrationWarning>{WAVE_CSS}</style>
+
+        <div style={{ padding: "20px 20px 4px", textAlign: "center", flexShrink: 0 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.16em", color: "#111", margin: 0 }}>BUILD OUTFIT</p>
+        </div>
+
+        {/* Score result */}
+        {result && (
+          <div style={{ padding: "12px 20px 0", flexShrink: 0 }}>
+            {isEligible ? (
+              <div style={{ textAlign: "center" }}>
+                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "0.02em", color: scoreColor }}>
+                  {result.score} / 100
+                </span>
+                <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 8 }}>
+                  <button onClick={togglePros} style={{ ...smallBtn, color: prosState === "visible" ? "#1d9e52" : "#aaa" }}>
+                    {prosState === "visible" ? "HIDE PROS" : "SHOW PROS"}
+                  </button>
+                  <button onClick={toggleCons} style={{ ...smallBtn, color: consState === "visible" ? "#c83030" : "#aaa" }}>
+                    {consState === "visible" ? "HIDE CONS" : "SHOW CONS"}
+                  </button>
+                  <button
+                    onClick={() => { setResult(null); setProsState("hidden"); setConsState("hidden"); }}
+                    style={{ ...smallBtn, color: "#c83030" }}
+                  >
+                    CLEAR
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: "10px 16px", background: "#fff5f5", border: "1px solid #fca5a5", textAlign: "center" }}>
+                <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c00", margin: "0 0 4px", ...FONT }}>
+                  {result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}
+                </p>
+                <p style={{ fontSize: 11, color: "#888", lineHeight: 1.6, margin: 0, ...FONT }}>
+                  {result.serverError
+                    ? "Couldn't score that outfit — try again."
+                    : !result.valid
+                    ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
+                    : "This outfit scored below the ideal threshold — try a different combination."}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Slot rows — one per category, filled items as tap-to-remove chips + a tap-to-add tile */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
+          {BUCKET_ORDER.map(bucket => {
+            const items = outfit.filter(g => bucketOf(g) === bucket);
+            return (
+              <div key={bucket} style={{ marginBottom: 20 }}>
+                <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#999", margin: "0 0 8px", ...FONT }}>
+                  {BUCKET_LABEL[bucket]}
+                </p>
+                <div style={{ display: "flex", gap: 8, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 2 }}>
+                  {items.map(g => (
+                    <div
+                      key={g.id}
+                      onClick={() => removeFromOutfit(g.id)}
+                      style={{
+                        width: 84, height: 84, flexShrink: 0, position: "relative",
+                        background: "#f3f3f3", border: "1px solid #d8d8d8",
+                        display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                      }}
+                    >
+                      {g.image
+                        ? <img src={g.image} alt="" draggable={false} style={{ width: 68, height: 68, objectFit: "contain" }} />
+                        : <span style={{ fontSize: 8, color: "#999", textAlign: "center", padding: 4, ...FONT }}>{g.title}</span>}
+                      <span style={{
+                        position: "absolute", top: 3, right: 4, fontSize: 11, color: "#c83030",
+                        fontWeight: 700, lineHeight: 1,
+                      }}>
+                        ✕
+                      </span>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => setPickerBucket(bucket)}
+                    style={{
+                      width: 84, height: 84, flexShrink: 0, border: "1px dashed #bbb", background: "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 22, color: "#bbb", cursor: "pointer", ...FONT,
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bottom action bar */}
+        <div style={{
+          position: "sticky", bottom: 0, background: "#fff", borderTop: "1px solid #ebebeb",
+          padding: "14px 20px calc(14px + var(--safe-bottom))",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 28, flexShrink: 0,
+        }}>
+          <button
+            onClick={handleScore}
+            disabled={!canScore || scoring}
+            style={{
+              background: "none", border: "none", padding: 0, cursor: !canScore ? "default" : "pointer",
+              fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase",
+              color: !canScore ? "#ccc" : "#111", ...FONT,
+            }}
+          >
+            {scoring ? "SCORING…" : "SCORE"}
+          </button>
+          {outfit.length > 0 && !result && (
+            <button
+              onClick={() => { setOutfit([]); setProsState("hidden"); setConsState("hidden"); }}
+              style={{ ...smallBtn, color: "#c83030" }}
+            >
+              CLEAR ALL
+            </button>
+          )}
+        </div>
+
+        {/* Picker — full-screen so there's room to actually see items, unlike a narrow sheet */}
+        {pickerBucket && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column" }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "calc(18px + var(--safe-top)) 20px 16px", borderBottom: "1px solid #ebebeb", flexShrink: 0,
+            }}>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#111", margin: 0, ...FONT }}>
+                ADD {BUCKET_LABEL[pickerBucket].toUpperCase()}
+              </p>
+              <button onClick={() => setPickerBucket(null)} style={{ ...smallBtn, color: "#999", fontSize: 10 }}>
+                CLOSE
+              </button>
+            </div>
+            <div style={{
+              flex: 1, overflowY: "auto", padding: 16,
+              display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, alignContent: "start",
+            }}>
+              {pickerItems.length === 0 && (
+                <p style={{ gridColumn: "1 / -1", textAlign: "center", color: "#bbb", fontSize: 11, letterSpacing: "0.04em", padding: "60px 0", ...FONT }}>
+                  No {BUCKET_LABEL[pickerBucket].toLowerCase()} items in your wardrobe.
+                </p>
+              )}
+              {pickerItems.map(g => {
+                const valid = canAddToOutfit(outfit, g);
+                return (
+                  <button
+                    key={g.id}
+                    onClick={() => valid && mobileAddItem(g)}
+                    disabled={!valid}
+                    style={{
+                      aspectRatio: "1 / 1", background: "#f3f3f3", border: "1px solid #d8d8d8",
+                      opacity: valid ? 1 : 0.35, display: "flex", alignItems: "center", justifyContent: "center",
+                      padding: 6, cursor: valid ? "pointer" : "default",
+                    }}
+                  >
+                    {g.image
+                      ? <img src={g.image} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                      : <span style={{ fontSize: 9, color: "#999", textAlign: "center", ...FONT }}>{g.title}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Pros / cons — full-width bottom sheets rather than desktop's edge-sliver panels */}
+        {(prosState !== "hidden" || consState !== "hidden") && result && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 2100, background: "rgba(0,0,0,0.25)" }}
+            onClick={() => { if (prosState === "visible") togglePros(); if (consState === "visible") toggleCons(); }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                position: "absolute", left: 0, right: 0, bottom: 0,
+                background: "#fff", padding: "24px 24px calc(28px + var(--safe-bottom))",
+                maxHeight: "60vh", overflowY: "auto", textAlign: "center", ...FONT,
+              }}
+            >
+              {prosState !== "hidden" && (
+                <>
+                  <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", color: "#1d9e52", textTransform: "uppercase", marginBottom: 16 }}>PROS</p>
+                  {result.pros.length > 0
+                    ? result.pros.map((p, i) => <p key={i} style={{ fontSize: 12, color: "#333", lineHeight: 1.65, margin: "0 0 10px" }}>{p}</p>)
+                    : <p style={{ fontSize: 12, color: "#ccc" }}>None</p>}
+                </>
+              )}
+              {consState !== "hidden" && (
+                <>
+                  <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", color: "#c83030", textTransform: "uppercase", marginBottom: 16 }}>CONS</p>
+                  {result.cons.length > 0
+                    ? result.cons.map((c, i) => <p key={i} style={{ fontSize: 12, color: "#333", lineHeight: 1.65, margin: "0 0 10px" }}>{c}</p>)
+                    : <p style={{ fontSize: 12, color: "#ccc" }}>None</p>}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+    );
+  }
+
   // ── Page ──────────────────────────────────────────────────────────────────
 
   return (
@@ -463,9 +749,9 @@ export default function BuilderPage() {
 
       {/* ── Left: score button + slot grid ── */}
       <div style={{
-        flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+        flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center",
         padding: "24px 24px",
-        overflowY: "auto", scrollbarWidth: "none",
+        overflowY: "auto", overflowX: "auto", scrollbarWidth: "none",
       }}>
 
         {/* Score button row — SCORE + CLEAR grouped, midpoint centered above hat col */}
@@ -582,12 +868,14 @@ export default function BuilderPage() {
               }}>
                 <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em",
                   textTransform: "uppercase", color: "#c00", margin: "0 0 4px" }}>
-                  ACCESS DENIED
+                  {result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}
                 </p>
                 <p style={{ fontSize: 11, color: "#888", lineHeight: 1.6, margin: 0, whiteSpace: "nowrap" }}>
-                  {!result.valid
+                  {result.serverError
+                    ? "Couldn't score that outfit — try again."
+                    : !result.valid
                     ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
-                    : "You do not have access to analyzing that given outfit."
+                    : "This outfit scored below the ideal threshold — try a different combination."
                   }
                 </p>
               </div>
@@ -605,11 +893,20 @@ export default function BuilderPage() {
             justifyContent: "center",
           }}>
             {S(heads[0], "Hat",                                3, 1, undefined, "right")}
-            {S(col1G,    "Outer Layer",                        1, 2)}
+            {/* col1 (leftmost) and col5 (rightmost) get an explicit direction — left to their
+               default "above" (horizontally centered on the box) runs the fixed-width tooltip
+               off the edge of the viewport on whichever side has little to no room, clipping it. */}
+            {/* col1/col5 only render at all once a second layering top (tops[1]/tops[2]) exists
+               to push leftG/rightG out there — col1G/col5G are only ever populated in that same
+               case (see their definitions above). Without this guard, the common case of a
+               single outer layer + a base top rendered col1 as an EMPTY "Outer Layer" placeholder
+               sitting right beside col2, which was already showing that same real, filled "Outer
+               Layer" item — two boxes with the same label, one real and one a confusing dupe. */}
+            {tops[1] && S(col1G, "Outer Layer", 1, 2, undefined, "right")}
             {S(col2G,    col2Role,                             2, 2)}
             {S(tops[0],  tops[0] ? "Base Layer" : "Top Layer", 3, 2)}
             {S(col4G,    col4Role,                             4, 2)}
-            {S(col5G,    "Mid Layer",                          5, 2)}
+            {tops[2] && S(col5G, "Mid Layer", 5, 2, undefined, "left")}
             {S(bots[0],  "Pants",                              3, 3, undefined, "left")}
             {S(shoes[0], "Shoes",                              3, 4, undefined, "right")}
           </div>
@@ -739,6 +1036,14 @@ export default function BuilderPage() {
             onDragLeave={dragFromOutfit ? (() => setDragOver(null)) : undefined}
             onDrop={dragFromOutfit && dragSource ? (() => removeFromOutfit(dragSource.id)) : undefined}
           >
+            {loadError && editAvail.length === 0 && (
+              <p style={{
+                gridColumn: "1 / -1", textAlign: "center", fontSize: 11, color: "#c00",
+                letterSpacing: "0.06em", padding: "40px 0", ...FONT,
+              }}>
+                Couldn't load your wardrobe — refresh to try again.
+              </p>
+            )}
             {editAvail.map(g => (
               <div
                 key={g.id}
@@ -781,7 +1086,7 @@ export default function BuilderPage() {
       {prosState !== "hidden" && result && (
         <div style={{ position: "fixed", left: 0, top: "50%", transform: "translateY(-50%)", zIndex: 1100 }}>
           <div key={prosState} style={{
-            width: "min(260px, 22vw)", background: "#fff",
+            width: "min(260px, 85vw)", background: "#fff",
             boxShadow: "4px 0 20px rgba(0,0,0,0.10)",
             overflowY: "auto", scrollbarWidth: "none" as const,
             maxHeight: "70vh", padding: "28px 22px",
@@ -838,7 +1143,7 @@ export default function BuilderPage() {
             pointerEvents: "auto",
           }}>
             <div key={consState} style={{
-              width: "min(260px, 22vw)", background: "#fff",
+              width: "min(260px, 85vw)", background: "#fff",
               boxShadow: "-4px 0 20px rgba(0,0,0,0.10)",
               overflowY: "auto", scrollbarWidth: "none" as const,
               maxHeight: "70vh", padding: "28px 22px",

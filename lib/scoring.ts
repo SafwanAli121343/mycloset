@@ -788,7 +788,7 @@ function colorCompatibilityFallback(items: GarmentForScoring[]): number {
 // Weather-appropriateness penalty (0–25) — applied when tempF is provided
 // ---------------------------------------------------------------------------
 
-function weatherPenalty(items: GarmentForScoring[], tempF: number): number {
+export function weatherPenalty(items: GarmentForScoring[], tempF: number): number {
   const slots = new Set(items.map(i => getSlot(i.sub_type)).filter(Boolean));
   const hasOuter = slots.has("outer");
   const hasMid   = slots.has("mid");

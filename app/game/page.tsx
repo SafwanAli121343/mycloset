@@ -77,6 +77,13 @@ export default function GamePage() {
       });
       const data = await res.json();
 
+      if (!res.ok) {
+        setFinalScore(null);
+        setScoreFactor("Could not calculate score — try again.");
+        setGameState("done");
+        return;
+      }
+
       if (!data.valid) {
         // Invalid outfit — did not count
         setFinalScore(null);
@@ -334,7 +341,7 @@ export default function GamePage() {
           </div>
         </div>
 
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           {/* Left: Your Closet */}
           <div className="flex-1 border border-black flex flex-col" style={{ minWidth: 0 }}>
             <div className="border-b border-black px-3 py-2">
@@ -387,7 +394,7 @@ export default function GamePage() {
           </div>
 
           {/* Right: Your Outfit */}
-          <div className="w-44 sm:w-56 border border-black flex flex-col flex-shrink-0">
+          <div className="w-full sm:w-56 border border-black flex flex-col flex-shrink-0">
             <div className="border-b border-black px-3 py-2">
               <p className="text-xs uppercase font-bold tracking-widest" style={FONT}>
                 YOUR OUTFIT

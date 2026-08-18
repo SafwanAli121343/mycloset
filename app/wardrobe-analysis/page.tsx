@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import type { WardrobeAnalysis, WABackendState, CrossedEntry } from "@/lib/wardrobeAnalysis";
 import { computeEffectiveLevel, gapTotalProgress, computeGapProgress, getFunctionalSlot, resolveSubTypeFromTitle } from "@/lib/wardrobeAnalysis";
 import { sameColorGroup } from "@/lib/constants/colors";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
 
 const FONT = { fontFamily: "Arial, sans-serif" };
 const LOADING_IMG = "/loading-tee.png";
@@ -144,14 +145,25 @@ function ShowMoreBtn({ showing, total, limit, onToggle }: { showing: boolean; to
 }
 // â"€â"€ Scroll column wrapper (same pattern as preview comparison panels) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function ScrollCol({ atTop, atBot, scrollRef, onScroll, children }: {
+function ScrollCol({ atTop, atBot, scrollRef, onScroll, children, mobile }: {
   atTop: boolean;
   atBot: boolean;
   scrollRef: (el: HTMLDivElement | null) => void;
   onScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   children: React.ReactNode;
+  mobile?: boolean;
 }) {
   const innerRef = useRef<HTMLDivElement>(null);
+
+  // Mobile: the three columns stack into one page-scrolled column instead of sitting
+  // side by side, so there's no more need for (or room for) each column to scroll
+  // independently within a fixed viewport height — render children directly, letting the
+  // page itself scroll. The 160px horizontal padding below is also desktop-only sizing
+  // (it's breathing room around ~460px-wide columns); at full mobile width it would eat
+  // nearly all the screen, so mobile uses simple, much smaller padding instead.
+  if (mobile) {
+    return <div style={{ padding: "8px 20px 32px", textAlign: "center" }}>{children}</div>;
+  }
 
   return (
     <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
@@ -163,7 +175,7 @@ function ScrollCol({ atTop, atBot, scrollRef, onScroll, children }: {
         {children}
       </div>
 
-      {/* Top fade â€" appears after user scrolls down */}
+      {/* Top fade — appears after user scrolls down */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, height: 70,
         background: "linear-gradient(to bottom, rgba(255,255,255,1) 0%, rgba(255,255,255,0) 100%)",
@@ -208,6 +220,7 @@ function ScrollCol({ atTop, atBot, scrollRef, onScroll, children }: {
 
 export default function WardrobeAnalysisPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [phase, setPhase]               = useState<Phase>("loading");
   const [displayScore, setDisplayScore] = useState(0);
   const [analysis, setAnalysis]         = useState<WardrobeAnalysis | null>(null);
@@ -789,7 +802,7 @@ CREATE POLICY "Service role manages wardrobe analysis state"
           {sql}
         </pre>
         <button onClick={() => router.push("/dashboard")} style={{ ...FONT, marginTop: 28, border: "1px solid #000", padding: "8px 16px", fontSize: 11, background: "none", cursor: "pointer", letterSpacing: ".08em", textTransform: "uppercase" }}>
-          â† BACK
+          {"< BACK"}
         </button>
       </main>
     );
@@ -804,7 +817,7 @@ CREATE POLICY "Service role manages wardrobe analysis state"
           {error ?? "No wardrobe found"}
         </p>
         <button onClick={() => router.push("/dashboard")} style={{ ...FONT, marginTop: 20, border: "1px solid #000", padding: "8px 16px", fontSize: 11, background: "none", cursor: "pointer", letterSpacing: ".08em", textTransform: "uppercase" }}>
-          â† BACK
+          {"< BACK"}
         </button>
       </main>
     );
@@ -882,17 +895,24 @@ CREATE POLICY "Service role manages wardrobe analysis state"
       </div>
 
 
-      {/* Body â€" centered max-width container */}
+      {/* Body — centered max-width container. Mobile: three side-by-side columns (each with
+          160px of horizontal padding baked in for the desktop reading width) have nowhere
+          near enough room on a ~375px phone — they'd squeeze to near-zero and clip. Mobile
+          stacks them into one normally-scrolled page instead (see the `mobile` prop on
+          ScrollCol above), so the fixed viewport-height + internal-scroll setup below is
+          desktop-only; mobile just lets the page grow and scroll naturally. */}
       <div style={{
         display: "flex",
         justifyContent: "center",
-        height: `calc(100vh - ${HEADER_H}px)`,
-        marginTop: HEADER_H,
+        ...(isMobile
+          ? { marginTop: HEADER_H }
+          : { height: `calc(100vh - ${HEADER_H}px)`, marginTop: HEADER_H }),
       }}>
-        <div style={{ display: "flex", width: "100%", minWidth: 0 }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", width: "100%", minWidth: 0 }}>
 
-          {/* â"€â"€ LEFT column â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
+          {/* ── LEFT column ── */}
           <ScrollCol
+            mobile={isMobile}
             atTop={colAtTop[0]}
             atBot={colAtBot[0]}
             scrollRef={el => { colScrollRefs.current[0] = el; }}
@@ -975,22 +995,22 @@ CREATE POLICY "Service role manages wardrobe analysis state"
             )}
           </ScrollCol>
 
-          {/* â"€â"€ CENTER column â€" bouncing rectangle â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
+          {/* ── CENTER column — bouncing rectangle ── */}
           <div style={{
-            width: "clamp(300px, 36vw, 460px)",
+            width: isMobile ? "100%" : "clamp(300px, 36vw, 460px)",
             flexShrink: 0,
             display: "flex",
             flexDirection: "column",
             justifyContent: "flex-start",
             alignItems: "stretch",
-            padding: "0 12px",
-            paddingTop: "clamp(16px, 4vh, 48px)",
+            padding: isMobile ? "0 24px" : "0 12px",
+            paddingTop: isMobile ? 16 : "clamp(16px, 4vh, 48px)",
           }}>
             <div
               ref={rectRef}
               style={{
                 width: "100%",
-                height: "clamp(340px, 52vh, 500px)",
+                height: isMobile ? "clamp(240px, 42vh, 380px)" : "clamp(340px, 52vh, 500px)",
                 border: "1px solid #111",
                 position: "relative",
                 overflow: "hidden",
@@ -1032,8 +1052,9 @@ CREATE POLICY "Service role manages wardrobe analysis state"
 
           </div>
 
-          {/* â"€â"€ RIGHT column â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
+          {/* ── RIGHT column ── */}
           <ScrollCol
+            mobile={isMobile}
             atTop={colAtTop[1]}
             atBot={colAtBot[1]}
             scrollRef={el => { colScrollRefs.current[1] = el; }}
@@ -1132,7 +1153,7 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                         <div key={i} style={{ marginBottom: 18 }}>
                           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 8 }}>
                             {isInProgress && (
-                              <span style={{ fontSize: 10, color: descColor, lineHeight: 1, marginBottom: 1, flexShrink: 0 }}>â—</span>
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", background: descColor, flexShrink: 0 }} />
                             )}
                             <p style={{ ...FONT, fontSize: 17, fontWeight: 600, color: descColor, margin: "0 0 4px", lineHeight: 1.4 }}>
                               {gap.description.charAt(0).toUpperCase() + gap.description.slice(1)}

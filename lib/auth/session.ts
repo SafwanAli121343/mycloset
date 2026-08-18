@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { NextRequest } from "next/server";
 
 const COOKIE_NAME = "mycloset_session";
@@ -44,11 +44,21 @@ export async function clearSessionCookie() {
   store.delete(COOKIE_NAME);
 }
 
+// Web (browser) auth uses the httpOnly cookie set by setSessionCookie. The native app has no
+// browser cookie jar to rely on — it stores the JWT itself (expo-secure-store) after login and
+// sends it as `Authorization: Bearer <token>` instead. Checking the cookie first preserves the
+// web app's exact existing behavior unchanged; the Bearer fallback is purely additive and only
+// engages for clients that don't send the cookie at all.
 export async function getSessionFromCookies(): Promise<SessionPayload | null> {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
-  if (!token) return null;
-  return verifySession(token);
+  if (token) return verifySession(token);
+
+  const hdrs = await headers();
+  const auth = hdrs.get("authorization");
+  if (auth?.startsWith("Bearer ")) return verifySession(auth.slice(7));
+
+  return null;
 }
 
 // For use in middleware (Edge Runtime) — reads from request directly

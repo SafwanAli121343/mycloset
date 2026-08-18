@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSessionFromCookies } from "@/lib/auth/session";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -7,10 +8,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
-  const { userId, imageDataUrl, productUrl } = await req.json();
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = session.userId;
 
-  if (!userId || (!imageDataUrl && !productUrl)) {
-    return NextResponse.json({ error: "userId and (imageDataUrl or productUrl) required" }, { status: 400 });
+  const { imageDataUrl, productUrl } = await req.json();
+
+  if (!imageDataUrl && !productUrl) {
+    return NextResponse.json({ error: "imageDataUrl or productUrl required" }, { status: 400 });
   }
 
   const { data: garments, error } = await supabase

@@ -258,9 +258,9 @@ export default function GeneratePage() {
         <div style={{
           display:             "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
-          columnGap:           20,
+          columnGap:           "clamp(10px, 4vw, 20px)",
           rowGap:              160,
-          padding:             "40px 28px 72px",
+          padding:             "40px clamp(12px, 5vw, 28px) 72px",
         }}>
           {outfits.map((outfit, idx) => {
             const si    = sortItems(outfit.items);
@@ -278,7 +278,7 @@ export default function GeneratePage() {
                   style={{
                     position:   "relative",
                     width:      "100%",
-                    height:     S_H,
+                    height:     "min(130px, 30vw)",
                     background: "#fff",
                     cursor:     "pointer",
                     opacity:    phase !== "gallery" && activeIdx === idx ? 0 : 1,

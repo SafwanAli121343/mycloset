@@ -117,15 +117,46 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+:root {
+  /* Available to any component that needs to clear a device notch/home-indicator/gesture
+     bar explicitly (e.g. a floating action button pinned to the bottom edge). Most screens
+     don't need these directly — the Capacitor iOS shell insets content natively
+     (contentInset: "always" in capacitor.config.ts) — but they're here for the cases that do. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  /* Must match TAB_BAR_H in components/MobileTabBar.tsx — pages use this to keep their own
+     bottom-anchored content (sticky action bars, footer buttons) from sitting underneath the
+     persistent mobile tab bar. */
+  --tab-bar-h: 60px;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    /* Mobile-shell feel: no rubber-band background flash past the content edge, no
+       long-press text-selection callout/blue highlight on tappable UI — both read as
+       "web page in a browser" rather than "app" on a touch device. */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
   }
   html {
     @apply font-sans;
     scrollbar-gutter: stable;
   }
+}
+
+/* iOS Safari/WKWebView auto-zooms the whole page when a focused text input's computed
+   font-size is under 16px — every input across this site uses much smaller sizes (9-12px)
+   to match the design, so without this every tap into a field on mobile triggered an
+   unwanted zoom that then clipped/misaligned the layout. 16px is the iOS-specific threshold
+   to disable that behavior; !important is necessary because inline styles (used throughout
+   the app) otherwise win over this rule's specificity. Desktop/Android are unaffected either
+   way — this quirk is iOS-only — so no need to scope this to a mobile media query. */
+input, textarea, select {
+  font-size: 16px !important;
 }

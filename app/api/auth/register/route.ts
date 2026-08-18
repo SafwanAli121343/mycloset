@@ -27,5 +27,6 @@ export async function POST(req: NextRequest) {
   const token = await createSession({ userId: user.id, email: user.email });
   await setSessionCookie(token);
 
-  return NextResponse.json({ id: user.id, email: user.email }, { status: 201 });
+  // token is only consumed by the native app — see comment in app/api/auth/login/route.ts.
+  return NextResponse.json({ id: user.id, email: user.email, token }, { status: 201 });
 }

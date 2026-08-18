@@ -1,4 +1,13 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+// Service-role client: garment rows are per-user data behind app-level session checks in
+// app/api/garments/route.ts (POST/DELETE/PATCH), not Supabase Auth — RLS policies keyed on
+// auth.uid() can never match here, so this table is locked to service-role-only access
+// (see supabase/lock_tables_to_service_role.sql) and the anon key can no longer read/write it.
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export type Garment = {
   id: string;

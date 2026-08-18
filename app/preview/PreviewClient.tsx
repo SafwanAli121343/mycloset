@@ -318,9 +318,15 @@ export default function PreviewPage() {
     if (slot.inputMode==="url") body.productUrl=slot.url;
     else if (slot.imageDataUrl) body.imageDataUrl=slot.imageDataUrl;
     else { updateSlot(idx,{basicError:"No input."}); return; }
-    const res=await fetch("/api/garments/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const json=await res.json();
-    if (!res.ok||json.error) { updateSlot(idx,{basicError:json.error??"Could not identify item."}); return; }
+    let json:BasicAttrs & { error?: string };
+    try {
+      const res=await fetch("/api/garments/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      json=await res.json();
+      if (!res.ok||json.error) { updateSlot(idx,{basicError:json.error??"Could not identify item."}); return; }
+    } catch {
+      updateSlot(idx,{basicError:"Couldn't reach the server — check your connection and try again."});
+      return;
+    }
     const basic:BasicAttrs=json;
     const imgSrc=basic.image??slot.imageDataUrl;
     let removedBgUrl:string|null=null;
@@ -337,21 +343,25 @@ export default function PreviewPage() {
     updateSlot(idx,{analysisStep:"deep",deepError:null});
     const img=confirmed.image??imageDataUrl;
     if (!img) { updateSlot(idx,{deepError:"No image.",analysisStep:null}); return; }
-    const deepRes=await fetch("/api/preview/deep-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:confirmed.title,brand:confirmed.brand,category:confirmed.category,color_primary:confirmed.color_primary,material:confirmed.material,fit:confirmed.fit,image:img})});
-    const deepJson=await deepRes.json();
-    if (!deepRes.ok||deepJson.error) {
-      const msg=deepRes.status===401?"Session expired — please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
-      updateSlot(idx,{deepError:msg,analysisStep:null}); return;
+    try {
+      const deepRes=await fetch("/api/preview/deep-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:confirmed.title,brand:confirmed.brand,category:confirmed.category,color_primary:confirmed.color_primary,material:confirmed.material,fit:confirmed.fit,image:img})});
+      const deepJson=await deepRes.json();
+      if (!deepRes.ok||deepJson.error) {
+        const msg=deepRes.status===401?"Session expired — please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
+        updateSlot(idx,{deepError:msg,analysisStep:null}); return;
+      }
+      const deep:DeepAttrs=deepJson;
+      updateSlot(idx,{deep,analysisStep:"outfits"});
+      const outfitRes=await fetch("/api/preview/outfit-count",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({garment:{title:confirmed.title,brand:confirmed.brand,category:confirmed.category,sub_type:deep.sub_type,material:confirmed.material,color_primary:confirmed.color_primary,formality:deep.formality,aesthetic_tags:deep.aesthetic_tags,pros:deep.pros,cons:deep.cons,color_pairings:deep.color_pairings,color_clashes:deep.color_clashes,image:confirmed.image}})});
+      const outfitJson=await outfitRes.json();
+      if (!outfitRes.ok||outfitJson.error) {
+        const msg=outfitRes.status===401?"Session expired — please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
+        updateSlot(idx,{deepError:msg,analysisStep:null}); return;
+      }
+      updateSlot(idx,{outfitData:outfitJson as OutfitCountResult,analysisStep:null});
+    } catch {
+      updateSlot(idx,{deepError:"Couldn't reach the server — check your connection and try again.",analysisStep:null});
     }
-    const deep:DeepAttrs=deepJson;
-    updateSlot(idx,{deep,analysisStep:"outfits"});
-    const outfitRes=await fetch("/api/preview/outfit-count",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({garment:{title:confirmed.title,brand:confirmed.brand,category:confirmed.category,sub_type:deep.sub_type,material:confirmed.material,color_primary:confirmed.color_primary,formality:deep.formality,aesthetic_tags:deep.aesthetic_tags,pros:deep.pros,cons:deep.cons,color_pairings:deep.color_pairings,color_clashes:deep.color_clashes,image:confirmed.image}})});
-    const outfitJson=await outfitRes.json();
-    if (!outfitRes.ok||outfitJson.error) {
-      const msg=outfitRes.status===401?"Session expired — please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
-      updateSlot(idx,{deepError:msg,analysisStep:null}); return;
-    }
-    updateSlot(idx,{outfitData:outfitJson as OutfitCountResult,analysisStep:null});
   }
 
   const filledSlots=slots.map((s,i)=>({s,i})).filter(({s})=>hasInput(s));
@@ -601,7 +611,7 @@ function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
     <div style={posStyle}>
       <div key={exiting?"out":"in"} style={{
         position:"relative",
-        width:isVertical?"min(240px,24vw)":"min(320px,70vw)",
+        width:isVertical?"min(240px,85vw)":"min(320px,70vw)",
         background:"#fff",
         boxShadow:shadow,
         maxHeight:isVertical?"78vh":"44vh",
@@ -1072,9 +1082,12 @@ const RANK_BADGE: Record<RankLabel,{badge:string;color:string}> = {
   second: {badge:"•", color:"#f0b429"},
   worst:  {badge:"—", color:"#c83030"},
 };
-// Layout constants for the 5-column compare view
-const ITEM_COL_W  = 230;
-const SCORE_COL_W = 230;
+// Layout constants for the 5-column compare view. Responsive via CSS min() rather than a
+// fixed 230px — three 230px-wide flexShrink:0 columns (690px+) would force horizontal
+// overflow well past any phone width; capping each at 30vw keeps all three visible and
+// side-by-side (the comparison only makes sense seen together) down to phone widths.
+const ITEM_COL_W  = "min(230px, 30vw)";
+const SCORE_COL_W = "min(230px, 30vw)";
 
 function MultiResult({scoredSlots,onReset}:{
   scoredSlots:{slot:Slot;cScore:number}[]; onReset:()=>void;
@@ -1508,7 +1521,7 @@ function MultiResult({scoredSlots,onReset}:{
       {label:"Aesthetic fit",a:od0.aestheticFit,b:od1.aestheticFit,cFn:sColor,suffix:"%"},
       {label:"Piece matches",a:pm0,b:pm1,cFn:pieceMatchColor},
     ] as {label:string;a:number;b:number;cFn:(v:number)=>string;suffix?:string}[];
-    function betterThan(myPS:number,myOD:typeof od0,myPM:number,myD:typeof d0,thPS:number,thOD:typeof od1,thPM:number,thD:typeof d1):string[]{
+    function betterThan(myPS:number,myOD:NonNullable<typeof od0>,myPM:number,myD:NonNullable<typeof d0>,thPS:number,thOD:NonNullable<typeof od1>,thPM:number,thD:NonNullable<typeof d1>):string[]{
       const pts:string[]=[];
       if(myOD.outfitCount>thOD.outfitCount) pts.push(`More outfit combinations (${myOD.outfitCount} vs ${thOD.outfitCount})`);
       if(myOD.avgScore>thOD.avgScore) pts.push(`Higher outfit quality (${myOD.avgScore} vs ${thOD.avgScore})`);
@@ -1519,7 +1532,7 @@ function MultiResult({scoredSlots,onReset}:{
       (myD.pros??[]).filter(p=>!thPros.has(p)).forEach(p=>pts.push(p));
       return pts;
     }
-    function worseThan(myPS:number,myOD:typeof od0,myPM:number,myD:typeof d0,thPS:number,thOD:typeof od1,thPM:number,thD:typeof d1):string[]{
+    function worseThan(myPS:number,myOD:NonNullable<typeof od0>,myPM:number,myD:NonNullable<typeof d0>,thPS:number,thOD:NonNullable<typeof od1>,thPM:number,thD:NonNullable<typeof d1>):string[]{
       const pts:string[]=[];
       if(myOD.outfitCount<thOD.outfitCount) pts.push(`Fewer outfit combinations (${myOD.outfitCount} vs ${thOD.outfitCount})`);
       if(myOD.avgScore<thOD.avgScore) pts.push(`Lower outfit quality (${myOD.avgScore} vs ${thOD.avgScore})`);
@@ -2441,18 +2454,18 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
 
   return (
     <div style={{width:"100%",paddingTop:20}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",columnGap:compact?12:COL_GAP,rowGap:compact?36:64,padding:`0 ${compact?8:28}px`}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",columnGap:compact?12:"clamp(8px, 3vw, 28px)",rowGap:compact?36:64,padding:compact?"0 8px":"0 clamp(8px, 3vw, 28px)"}}>
         {shown.map((outfit,idx)=>{
           const sorted=buildItems(outfit);
           const scoreC=sc(outfit.score);
           return (
             <div key={idx} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
-              <div style={{width:"100%",height:compact?120:SPREAD_H,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <div style={{width:"100%",height:compact?120:"min(190px, 41vw)",display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <div
                   ref={el=>{if(el)stackRefs.current.set(idx,el as HTMLElement);else stackRefs.current.delete(idx);}}
                   onClick={()=>galleryPhase==="gallery"&&!compact&&openOutfit(idx)}
                   style={{
-                    position:"relative",width:compact?80:SPREAD_W,height:compact?120:SPREAD_H,
+                    position:"relative",width:compact?80:"min(120px, 26vw)",height:compact?120:"min(190px, 41vw)",
                     cursor:compact?"default":"pointer",
                     opacity:galleryPhase!=="gallery"&&activeIdx===idx?0:1,
                     transition:"none",

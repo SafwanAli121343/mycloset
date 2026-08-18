@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSessionFromCookies } from "@/lib/auth/session";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(request: NextRequest) {
-    const body = await request.json();
-    const { userId } = body;
-
-    if (!userId) {
-        return NextResponse.json({ error: "Missing userId "}, { status: 400 });
-    }
+    const session = await getSessionFromCookies();
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userId = session.userId;
 
     const { data: garments, error } = await supabase
         .from("garments")

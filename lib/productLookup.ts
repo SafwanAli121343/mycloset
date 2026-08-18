@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -55,6 +56,7 @@ function shouldSkipBrandExtraction(domain: string): boolean {
 // SEO purposes and always reflects the site's official name.
 async function extractBrandFromHtml(link: string): Promise<string | null> {
   try {
+    await assertSafeUrl(link);
     const res = await fetch(link, {
       headers: {
         "User-Agent":
@@ -153,6 +155,7 @@ async function tryShopifyVariantImage(url: string): Promise<string | null> {
     if (!variantId || !handleMatch) return null;
 
     const apiUrl = `${parsed.origin}/products/${handleMatch[1]}.json`;
+    await assertSafeUrl(apiUrl);
     const res = await fetch(apiUrl, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return null;
 
@@ -217,6 +220,7 @@ export async function scrapeProductPage(url: string): Promise<ScrapedProduct> {
 
   const htmlPromise: Promise<HtmlResult> = (async () => {
     try {
+      await assertSafeUrl(url);
       const res = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(7000) });
       if (!res.ok) return { imageUrl: null, title: null, brand: null, price: null, allImages: [] };
       const html = await res.text();

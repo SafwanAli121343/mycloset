@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSessionFromCookies } from "@/lib/auth/session";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -11,10 +12,14 @@ const adminClient = createClient(
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
-  const { userId, itemAId, itemBId, itemAUrl, itemBUrl } = await req.json();
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = session.userId;
 
-  if (!userId || (!(itemAId || itemAUrl)) || (!(itemBId || itemBUrl))) {
-    return NextResponse.json({ error: "userId and two items required" }, { status: 400 });
+  const { itemAId, itemBId, itemAUrl, itemBUrl } = await req.json();
+
+  if ((!(itemAId || itemAUrl)) || (!(itemBId || itemBUrl))) {
+    return NextResponse.json({ error: "two items required" }, { status: 400 });
   }
 
   const { data: garments } = await adminClient

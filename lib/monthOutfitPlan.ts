@@ -16,7 +16,7 @@
 
 import { generateAndRankAllOutfits, type RankedOutfit } from "./wardrobeOutfitGen";
 import { getViableConfigs, CONFIG_COMPLEXITY, type DayWeather } from "./weatherOutfitFilter";
-import type { GarmentForScoring } from "./scoring";
+import { weatherPenalty, type GarmentForScoring } from "./scoring";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -200,7 +200,13 @@ export function generateMonthPlan(
     let bestFinal   = -Infinity;
 
     for (const outfit of candidates) {
-      const normalizedStyle = outfit.score / maxStyle;
+      // getViableConfigs already filters by layer-tier (e.g. no heavy-outer configs on a hot
+      // day), but two outfits in the same tier can still differ in weather-appropriateness —
+      // shorts vs. jeans, sandals vs. boots — which weatherPenalty catches at the item level.
+      // Reuses scoreOutfit's exact penalty function so calendar picks and manual builder
+      // scoring never disagree about what counts as weather-inappropriate.
+      const weatherPen      = weatherPenalty(outfit.items, weather.tempF) / 100;
+      const normalizedStyle = Math.max(0, outfit.score / maxStyle - weatherPen);
       const tier            = CONFIG_COMPLEXITY[outfit.configName] ?? 1;
       const normalizedTier  = maxTier > 1 ? (tier - 1) / (maxTier - 1) : 0;
       const novelty         = outfitNovelty(outfit, lastSeenDay, dayIdx);

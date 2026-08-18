@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSlot } from "@/lib/outfitRules";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import { getCurrentLocation } from "@/lib/native/geolocation";
 import type { CSSProperties, ReactNode } from "react";
 
 const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
@@ -280,6 +282,56 @@ function DayCell({
   );
 }
 
+// A 7-column grid full of 28x36 garment thumbnails per cell (DayCell above) simply has
+// nowhere to put those thumbnails at phone width — each cell would be ~45-50px wide, smaller
+// than one thumbnail. Rather than shrink everything into unreadable mush, the mobile grid
+// drops the thumbnails and shows only what actually fits meaningfully at that size: the date,
+// today's ring, and a status dot (has an outfit / needs attention / empty) — full outfit
+// imagery lives one tap away in the day-detail view, which has the room to show it properly.
+function MobileDayCell({
+  day, current, isToday, outfit, onClick, skeletal,
+}: {
+  day: number; current: boolean; isToday: boolean;
+  outfit?: OutfitDay; onClick: () => void; skeletal?: boolean;
+}) {
+  const broken = outfit && outfit.garments.length === 0;
+  const hasOutfit = !!outfit && !broken;
+  return (
+    <div
+      onClick={current ? onClick : undefined}
+      style={{
+        aspectRatio: "1 / 1",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 4, cursor: current ? "pointer" : "default", opacity: current ? 1 : 0.25,
+        background: "#fff", position: "relative",
+      }}
+    >
+      <span style={{
+        fontSize: 13, fontWeight: isToday ? 700 : 400, color: isToday ? "#fff" : "#333",
+        ...FONT,
+        ...(isToday ? {
+          background: "#111", borderRadius: "50%", width: 24, height: 24,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        } : {}),
+      }}>
+        {day}
+      </span>
+      {!skeletal && current && (
+        <div style={{
+          width: 5, height: 5, borderRadius: "50%",
+          background: broken ? "#e08000" : hasOutfit ? "#1d9e52" : "transparent",
+        }} />
+      )}
+      {skeletal && current && (
+        <div style={{
+          width: 5, height: 5, borderRadius: "50%", background: "#d0d0d0",
+          animation: "waveDot 0.9s ease-in-out infinite",
+        }} />
+      )}
+    </div>
+  );
+}
+
 // ── Day Detail Modal ──────────────────────────────────────────────────────────
 
 function DayDetailModal({
@@ -416,7 +468,7 @@ function DayDetailModal({
       {!editMode && prosState !== "hidden" && (
         <div style={{ position: "fixed", left: 0, top: "50%", transform: "translateY(-50%)", zIndex: 1001 }}>
           <div key={prosState === "exiting" ? "pros-out" : "pros-in"} style={{
-            width: "min(280px, 28vw)", background: "#fff",
+            width: "min(280px, 85vw)", background: "#fff",
             boxShadow: "4px 0 24px rgba(0,0,0,0.12)",
             overflowY: "auto", scrollbarWidth: "none" as const,
             maxHeight: "80vh", padding: "32px 24px",
@@ -648,13 +700,17 @@ function DayDetailModal({
           for (const g of (editMode ? editGarments : outfit.garments)) {
             if (g.category === "footwear")  { shoes.push(g);  continue; }
             if (g.category === "bottom")    { bots.push(g);   continue; }
-            if (g.category === "accessory") { accs.push(g);   continue; }
             if (g.category === "outerwear") { outers.push(g); continue; }
+            // sub_type-based hat detection runs BEFORE the category === "accessory" fallback —
+            // hats commonly get category "accessory" from the AI tagger, which used to make them
+            // get grabbed by that check first and never reach this one, so a hat could never
+            // actually land in the dedicated Hat slot.
             const sub = (g.sub_type ?? "").toLowerCase();
             if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") ||
                 sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) {
               heads.push(g); continue;
             }
+            if (g.category === "accessory") { accs.push(g); continue; }
             if (sub.includes("hoodie") || sub.includes("sweatshirt") || sub.includes("zip-up") ||
                 sub.includes("zip up") || sub.includes("sweater") || sub.includes("pullover") ||
                 sub.includes("crewneck") || sub.includes("fleece") || sub.includes("cardigan")) {
@@ -933,7 +989,7 @@ function DayDetailModal({
       {!editMode && consState !== "hidden" && (
         <div style={{ position: "fixed", right: 0, top: "50%", transform: "translateY(-50%)", zIndex: 1001 }}>
           <div key={consState === "exiting" ? "cons-out" : "cons-in"} style={{
-            width: "min(280px, 28vw)", background: "#fff",
+            width: "min(280px, 85vw)", background: "#fff",
             boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
             overflowY: "auto", scrollbarWidth: "none" as const,
             maxHeight: "80vh", padding: "32px 24px",
@@ -1067,9 +1123,11 @@ function dndSlotRole(g: Garment): string {
   if (g.category === "footwear")  return "SHOES";
   if (g.category === "bottom")    return "PANTS";
   if (g.category === "outerwear") return "OUTERWEAR";
-  if (g.category === "accessory") return "ACCESSORY";
+  // Checked before category === "accessory" — hats commonly get that category from the AI
+  // tagger, which would otherwise claim them before this hat-specific check ever runs.
   const sub = (g.sub_type ?? "").toLowerCase();
   if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") || sub.includes("beret") || sub.includes("bucket")) return "HAT";
+  if (g.category === "accessory") return "ACCESSORY";
   if (sub.includes("hoodie") || sub.includes("sweatshirt") || sub.includes("sweater") || sub.includes("crewneck") || sub.includes("pullover") || sub.includes("cardigan") || sub.includes("fleece")) return "MID LAYER";
   if (sub.includes("flannel") || sub.includes("oxford") || sub.includes("chambray") || sub.includes("button-up") || sub.includes("button up") || sub.includes("button-down") || sub.includes("linen shirt") || sub.includes("camp collar")) return "OUTER LAYER";
   return "BASE LAYER";
@@ -1235,17 +1293,31 @@ function cacheSave(cache: Record<string, OutfitMap>) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-async function callGenerate(year: number, month: number, lat?: number, lon?: number) {
+type GenerateResult = { ok: true } | { ok: false; message: string };
+
+async function callGenerate(year: number, month: number, lat?: number, lon?: number, overwrite?: boolean): Promise<GenerateResult> {
   const body: Record<string, unknown> = { year, month };
   if (lat !== undefined) body.lat = lat;
   if (lon !== undefined) body.lon = lon;
-  return fetch("/api/outfits/generate", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  }).catch(console.error);
+  if (overwrite !== undefined) body.overwrite = overwrite;
+  try {
+    const res = await fetch("/api/outfits/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return { ok: true };
+    const data = await res.json().catch(() => ({}));
+    if (data.code === "INSUFFICIENT_WARDROBE") {
+      return { ok: false, message: "Add a few more items to your wardrobe (at least one top, bottom, and pair of shoes) to generate outfits." };
+    }
+    return { ok: false, message: typeof data.error === "string" ? data.error : "Couldn't generate outfits — try again." };
+  } catch {
+    return { ok: false, message: "Couldn't reach the server — check your connection and try again." };
+  }
 }
 
 export default function OutfitsPage() {
+  const isMobile = useIsMobile();
   const today = new Date();
 
   // Starts empty — hydrated from localStorage in useEffect below (useRef initializer
@@ -1263,6 +1335,8 @@ export default function OutfitsPage() {
   const [generating,    setGenerating]    = useState(false);
   const [generateMsg,   setGenerateMsg]   = useState("");
   const [initializing,  setInitializing]  = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [regenConfirm,  setRegenConfirm]  = useState(false);
 
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [buildDate,  setBuildDate]  = useState<string | null>(null);
@@ -1270,6 +1344,11 @@ export default function OutfitsPage() {
   const [weather,      setWeather]      = useState<Record<string, DayWeather>>({});
   const [geoResolved,  setGeoResolved]  = useState(false);
   const [userLoc,      setUserLoc]      = useState<{ lat: number; lon: number } | null>(null);
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  const [showLocInput,  setShowLocInput]  = useState(false);
+  const [locQuery,      setLocQuery]      = useState("");
+  const [locResults,    setLocResults]    = useState<{ lat: number; lon: number; label: string }[]>([]);
+  const [locBusy,       setLocBusy]       = useState(false);
 
   const autoGenRef          = useRef(false);     // only auto-generate once per session
   const locReady            = useRef(false);     // true once geoloc resolved (success or denied)
@@ -1284,12 +1363,14 @@ export default function OutfitsPage() {
   const [pendingGenerating, setPendingGenerating] = useState(false);
 
   // Geolocation — use cached coords immediately so weather fires once with real location.
-  // Fresh geolocation runs in background and updates cache for next visit.
+  // Fresh geolocation runs in background and updates cache for next visit. getCurrentLocation()
+  // uses the native Capacitor plugin inside the app shell (proper native permission dialog)
+  // and falls back to the standard web API in a regular browser — same either way from here.
   useEffect(() => {
+    let settled = false;
     const resolve = (loc: { lat: number; lon: number } | null) => {
       if (loc) setUserLoc(loc);
-      locReady.current = true;
-      setGeoResolved(true);
+      if (!settled) { settled = true; locReady.current = true; setGeoResolved(true); }
     };
 
     const cached = localStorage.getItem("mycloset_userloc");
@@ -1298,25 +1379,19 @@ export default function OutfitsPage() {
         resolve(JSON.parse(cached) as { lat: number; lon: number });
       } catch { resolve(null); }
       // Still refresh coords in background (don't setGeoResolved again — already done)
-      navigator.geolocation.getCurrentPosition(pos => {
-        const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        setUserLoc(loc);
-        localStorage.setItem("mycloset_userloc", JSON.stringify(loc));
-      }, () => {});
+      getCurrentLocation().then(loc => {
+        if (loc) { setUserLoc(loc); localStorage.setItem("mycloset_userloc", JSON.stringify(loc)); }
+      });
       return;
     }
 
     // No cache: wait for geolocation (or timeout) before fetching weather
     const t = setTimeout(() => resolve(null), 2000);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        clearTimeout(t);
-        const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-        localStorage.setItem("mycloset_userloc", JSON.stringify(loc));
-        resolve(loc);
-      },
-      () => { clearTimeout(t); resolve(null); }
-    );
+    getCurrentLocation().then(loc => {
+      clearTimeout(t);
+      if (loc) localStorage.setItem("mycloset_userloc", JSON.stringify(loc));
+      resolve(loc);
+    });
     return () => clearTimeout(t);
   }, []);
 
@@ -1330,6 +1405,40 @@ export default function OutfitsPage() {
       .then((data: Record<string, DayWeather>) => setWeather(data))
       .catch(() => {});
   }, [year, month, userLoc, geoResolved]);
+
+  // Resolve a human-readable place name for whatever coordinates are actually in use, so the
+  // user can see (and sanity-check) what location their weather-based outfit picks come from.
+  useEffect(() => {
+    if (!userLoc) { setLocationLabel(null); return; }
+    let cancelled = false;
+    fetch(`/api/geocode?lat=${userLoc.lat}&lon=${userLoc.lon}`)
+      .then(r => r.ok ? r.json() : { label: null })
+      .then((data: { label: string | null }) => { if (!cancelled) setLocationLabel(data.label); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [userLoc]);
+
+  async function searchLocation(q: string) {
+    setLocQuery(q);
+    if (q.trim().length < 2) { setLocResults([]); return; }
+    setLocBusy(true);
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q.trim())}`);
+      const data = res.ok ? await res.json() : { results: [] };
+      setLocResults(data.results ?? []);
+    } finally {
+      setLocBusy(false);
+    }
+  }
+
+  function chooseLocation(loc: { lat: number; lon: number; label: string }) {
+    setUserLoc({ lat: loc.lat, lon: loc.lon });
+    setLocationLabel(loc.label);
+    localStorage.setItem("mycloset_userloc", JSON.stringify({ lat: loc.lat, lon: loc.lon }));
+    setShowLocInput(false);
+    setLocQuery("");
+    setLocResults([]);
+  }
 
   const loadOutfits = useCallback(async (y: number, m: number) => {
     const key = `${y}-${m}`;
@@ -1425,11 +1534,13 @@ export default function OutfitsPage() {
       const lon = userLoc?.lon;
 
       try {
-        await Promise.all([
+        const results = await Promise.all([
           callGenerate(year,       month,    lat, lon),
           callGenerate(m1.year, m1.month, lat, lon),
           callGenerate(m2.year, m2.month, lat, lon),
         ]);
+        const firstFailure = results.find((r): r is { ok: false; message: string } => !r.ok);
+        if (firstFailure) setGenerateError(firstFailure.message);
       } finally {
         // Always mark setup done — prevents the reset+regen loop on navigation return.
         // If some months failed the user can regenerate them manually.
@@ -1474,13 +1585,9 @@ export default function OutfitsPage() {
       // Silent auto-generate: show skeleton bars in day cells rather than an overlay.
       (async () => {
         setAutoGenerating(true);
-        const body: Record<string, unknown> = { year, month, overwrite: false };
-        if (userLoc) { body.lat = userLoc.lat; body.lon = userLoc.lon; }
         try {
-          await fetch("/api/outfits/generate", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
+          const result = await callGenerate(year, month, userLoc?.lat, userLoc?.lon);
+          if (!result.ok) { setGenerateError(result.message); return; }
           delete monthCacheRef.current[`${year}-${month}`];
           cacheSave(monthCacheRef.current);
           await loadOutfits(year, month);
@@ -1546,13 +1653,9 @@ export default function OutfitsPage() {
   async function handleGenerate(overwriteAll = false) {
     setGenerating(true);
     setGenerateMsg(overwriteAll ? "Regenerating all outfits…" : "Styling your month…");
-    const body: Record<string, unknown> = { year, month, overwrite: overwriteAll || hasBrokenOutfits };
-    if (userLoc) { body.lat = userLoc.lat; body.lon = userLoc.lon; }
     try {
-      await fetch("/api/outfits/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const result = await callGenerate(year, month, userLoc?.lat, userLoc?.lon, overwriteAll || hasBrokenOutfits);
+      if (!result.ok) { setGenerateError(result.message); return; }
       delete monthCacheRef.current[`${year}-${month}`];
       cacheSave(monthCacheRef.current);
       await loadOutfits(year, month);
@@ -1570,12 +1673,8 @@ export default function OutfitsPage() {
     setPendingNav(null);
     setPendingGenerating(true);
     try {
-      const body: Record<string, unknown> = { year: pY, month: pM };
-      if (userLoc) { body.lat = userLoc.lat; body.lon = userLoc.lon; }
-      await fetch("/api/outfits/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const result = await callGenerate(pY, pM, userLoc?.lat, userLoc?.lon);
+      if (!result.ok) { setGenerateError(result.message); return; }
       const data = await fetch(`/api/outfits?year=${pY}&month=${pM}`).then(r => r.ok ? r.json() : {});
       monthCacheRef.current[`${pY}-${pM}`] = data as OutfitMap;
       cacheSave(monthCacheRef.current);
@@ -1595,6 +1694,14 @@ export default function OutfitsPage() {
   const blankDays       = monthDates.filter(d => !outfits[d]).length;
   const hasBrokenOutfits = monthDates.some(d => outfits[d] && outfits[d].garments.length === 0);
   const needsGeneration = blankDays > 0 || hasBrokenOutfits;
+  const hasCustomizedDay = monthDates.some(d => outfits[d]?.customized);
+
+  function onRegenClick() {
+    // A full-month regen (nothing left blank/broken) deletes and replaces every day,
+    // including ones the user hand-edited via the builder — confirm first when that's at risk.
+    if (!needsGeneration && hasCustomizedDay) { setRegenConfirm(true); return; }
+    handleGenerate(needsGeneration ? false : true);
+  }
 
   // Precompute prev/next for the day detail modal navigation (stable, computed from current outfits)
   const validDatesForNav = Object.keys(outfits)
@@ -1643,6 +1750,62 @@ export default function OutfitsPage() {
     }}>
       <style suppressHydrationWarning>{WAVE_CSS}</style>
       {generating && <GeneratingOverlay message={generateMsg} />}
+
+      {/* Generate-failure banner — dismissible, sits above the calendar rather than
+          blocking it, since generation failures shouldn't lock the user out of the page. */}
+      {generateError && (
+        <div style={{
+          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 2100,
+          background: "#111", color: "#fff", padding: "12px 20px", maxWidth: 380,
+          display: "flex", alignItems: "center", gap: 14, ...FONT,
+        }}>
+          <p style={{ fontSize: 10, letterSpacing: "0.04em", lineHeight: 1.5, margin: 0 }}>{generateError}</p>
+          <button
+            onClick={() => setGenerateError(null)}
+            style={{ background: "none", border: "none", color: "#999", cursor: "pointer", fontSize: 13, flexShrink: 0, ...FONT }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* REGEN-on-customized-month confirmation — a full regen deletes every day this
+          month, including manually-edited ones, so confirm before wiping them out. */}
+      {regenConfirm && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 2000,
+          background: "rgba(255,255,255,0.88)", backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          ...FONT,
+        }}>
+          <div style={{
+            background: "#fff", border: "1px solid #e8e8e8",
+            padding: "36px 40px", maxWidth: 340, textAlign: "center",
+            display: "flex", flexDirection: "column", gap: 18,
+          }}>
+            <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", color: "#111", margin: 0 }}>
+              REGENERATE {MONTHS[month - 1]}?
+            </p>
+            <p style={{ fontSize: 11, letterSpacing: "0.06em", color: "#666", margin: 0, lineHeight: 1.6 }}>
+              This month has outfits you customized by hand. Regenerating will replace every day, including your edits. This can't be undone.
+            </p>
+            <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+              <button
+                onClick={() => { setRegenConfirm(false); handleGenerate(true); }}
+                style={{ background: "#111", color: "#fff", border: "none", cursor: "pointer", padding: "10px 24px", fontSize: 9, letterSpacing: "0.18em", ...FONT }}
+              >
+                REPLACE ALL
+              </button>
+              <button
+                onClick={() => setRegenConfirm(false)}
+                style={{ background: "none", color: "#aaa", border: "1px solid #e0e0e0", cursor: "pointer", padding: "10px 24px", fontSize: 9, letterSpacing: "0.18em", ...FONT }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Future month confirmation — intercepts navigation BEFORE the month changes,
           so current calendar stays visible behind the modal. */}
@@ -1700,14 +1863,72 @@ export default function OutfitsPage() {
       </div>
 
       {/* Sub-header: REGEN only — consistent across all months, no flicker */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14, flexShrink: 0, minHeight: 22 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 6, flexShrink: 0, minHeight: 22 }}>
         {!generating && (
           <button
-            onClick={() => handleGenerate(needsGeneration ? false : true)}
+            onClick={onRegenClick}
             style={{ background: "none", border: "none", cursor: "pointer", fontSize: 9, letterSpacing: "0.14em", color: "#c8a800", ...FONT }}
           >
             REGEN
           </button>
+        )}
+      </div>
+
+      {/* Location indicator — shows what place the weather-based outfit picks are based on,
+          with a manual fallback for when browser geolocation was denied/unavailable. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14, flexShrink: 0, minHeight: 16, position: "relative" }}>
+        {userLoc ? (
+          <button
+            onClick={() => setShowLocInput(v => !v)}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 8, letterSpacing: "0.08em", color: "#bbb", ...FONT }}
+          >
+            WEATHER NEAR {locationLabel ? locationLabel.toUpperCase() : "…"}
+          </button>
+        ) : geoResolved ? (
+          <button
+            onClick={() => setShowLocInput(v => !v)}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 8, letterSpacing: "0.08em", color: "#c8a800", ...FONT }}
+          >
+            LOCATION UNAVAILABLE — SET MANUALLY
+          </button>
+        ) : null}
+
+        {showLocInput && (
+          <div style={{
+            position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
+            zIndex: 1500, background: "#fff", border: "1px solid #e0e0e0",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.08)", padding: 12, width: 220,
+          }}>
+            <input
+              autoFocus
+              value={locQuery}
+              onChange={e => searchLocation(e.target.value)}
+              placeholder="Enter a city…"
+              style={{
+                width: "100%", boxSizing: "border-box", border: "1px solid #ddd", padding: "7px 9px",
+                fontSize: 11, letterSpacing: "0.02em", outline: "none", ...FONT,
+              }}
+            />
+            {locBusy && <p style={{ fontSize: 9, color: "#bbb", margin: "8px 0 0" }}>Searching…</p>}
+            {!locBusy && locResults.length > 0 && (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
+                {locResults.map((r, i) => (
+                  <button
+                    key={i}
+                    onClick={() => chooseLocation(r)}
+                    style={{
+                      background: "none", border: "none", textAlign: "left", cursor: "pointer",
+                      fontSize: 10, letterSpacing: "0.02em", color: "#333", padding: "5px 4px", ...FONT,
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "#f6f6f6"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "none"; }}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -1720,11 +1941,13 @@ export default function OutfitsPage() {
         ))}
       </div>
 
-      {/* Calendar grid */}
+      {/* Calendar grid — mobile trades per-day thumbnails for a compact numbers+dot grid
+          (see MobileDayCell); the full outfit is one tap away in the day-detail view. */}
       <div
         style={{
-          flex: 1, minHeight: 0,
-          display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gridTemplateRows: "repeat(6, 1fr)",
+          flex: isMobile ? "0 0 auto" : 1, minHeight: 0,
+          display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+          gridTemplateRows: isMobile ? undefined : "repeat(6, 1fr)",
           gap: 1, background: "#ebebeb",
         }}
       >
@@ -1733,15 +1956,15 @@ export default function OutfitsPage() {
           const isToday =
             cell.current && cell.day === today.getDate() &&
             month === today.getMonth() + 1 && year === today.getFullYear();
-          return (
-            <DayCell
-              key={i} day={cell.day} current={cell.current} isToday={isToday}
-              outfit={cell.current && !loading && !autoGenerating ? outfits[ds] : undefined}
-              weather={cell.current ? weather[ds] : undefined}
-              onClick={() => cell.current && !loading && !autoGenerating && handleDayClick(ds)}
-              skeletal={(loading || autoGenerating) && cell.current}
-            />
-          );
+          const commonProps = {
+            day: cell.day, current: cell.current, isToday,
+            outfit: cell.current && !loading && !autoGenerating ? outfits[ds] : undefined,
+            onClick: () => cell.current && !loading && !autoGenerating && handleDayClick(ds),
+            skeletal: (loading || autoGenerating) && cell.current,
+          };
+          return isMobile
+            ? <MobileDayCell key={i} {...commonProps} />
+            : <DayCell key={i} {...commonProps} weather={cell.current ? weather[ds] : undefined} />;
         })}
       </div>
 

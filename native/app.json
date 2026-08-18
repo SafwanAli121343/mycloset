@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "mycloset",
+    "slug": "mycloset",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mycloset.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "mycloset uses your camera to photograph clothing items you add to your wardrobe.",
+        "NSPhotoLibraryUsageDescription": "mycloset lets you choose existing photos of clothing items to add to your wardrobe.",
+        "NSLocationWhenInUseUsageDescription": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions."
+      }
+    },
+    "android": {
+      "package": "com.mycloset.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#111111",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "mycloset lets you choose existing photos of clothing items to add to your wardrobe.",
+          "cameraPermission": "mycloset uses your camera to photograph clothing items you add to your wardrobe."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions."
+        }
+      ]
+    ]
+  }
+}

@@ -1,5 +1,16 @@
 ﻿"use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import { MobileScrollFade } from "@/components/MobileScrollFade";
+import { TAB_BAR_H } from "@/components/MobileTabBar";
+
+function scoreColor(score: number | null | undefined): string {
+  if (score == null) return "#ccc";
+  if (score >= 75) return "#1d9e52";
+  if (score >= 50) return "#c88800";
+  return "#c83030";
+}
 
 const LOADING_IMG = "/loading-tee.png";
 
@@ -202,8 +213,9 @@ const CLOSET_IMG_H = `min(82vh, calc(100vh - ${BOTTOM_BAR_H} - 24px))`;
 const CLOSET_IMG_H_EMPTY = "min(82vh, calc(100vh - 60px))";
 
 
-function Arrow({ dir, onClick, disabled }: { dir: "left" | "right"; onClick: () => void; disabled?: boolean }) {
-  const points = dir === "left" ? "20,0 0,14 20,28" : "0,0 20,14 0,28";
+function Arrow({ dir, onClick, disabled, small }: { dir: "left" | "right"; onClick: () => void; disabled?: boolean; small?: boolean }) {
+  const w = small ? 12 : 20, h = small ? 17 : 28;
+  const points = dir === "left" ? `${w},0 0,${h / 2} ${w},${h}` : `0,0 ${w},${h / 2} 0,${h}`;
   return (
     <button
       onClick={onClick}
@@ -211,11 +223,11 @@ function Arrow({ dir, onClick, disabled }: { dir: "left" | "right"; onClick: () 
       style={{
         background: "none", border: "none",
         cursor: disabled ? "default" : "pointer",
-        padding: "0 20px", flexShrink: 0,
+        padding: small ? "0 10px" : "0 20px", flexShrink: 0,
         opacity: disabled ? 0.2 : 1,
       }}
     >
-      <svg width="20" height="28" viewBox="0 0 20 28">
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
         <polygon points={points} fill="#111" />
       </svg>
     </button>
@@ -325,12 +337,16 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
 }
 
 export default function ClosetPage() {
+  const router = useRouter();
+  const isMobile = useIsMobile();
   const [garments, setGarments] = useState<Garment[]>([]);
   const [index, setIndex]       = useState(0);
   const [phase, setPhase]       = useState<Phase>("idle");
   const [dir, setDir]           = useState<"left" | "right">("right");
   const [animKey, setAnimKey]   = useState(0);
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [freshPairings, setFreshPairings] = useState<Record<string, string[] | null>>({});
   const [editItem, setEditItem] = useState<EditState | null>(null);
   const [scores, setScores]     = useState<Record<string, number>>({});
@@ -355,10 +371,15 @@ export default function ClosetPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/garments").then(r => r.json()),
+      fetch("/api/garments").then(r => {
+        if (r.status === 401) { router.push("/sign-in"); return null; }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
       fetch("/api/scoring").then(r => r.ok ? r.json() : null).catch(() => null),
       fetch("/api/wardrobe/state").then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([data, scoringData, waState]) => {
+      if (data === null) return; // redirecting to sign-in
       if (scoringData?.pieces) {
         const map: Record<string, number> = {};
         for (const p of scoringData.pieces) map[p.id] = p.score;
@@ -396,8 +417,8 @@ export default function ClosetPage() {
         }
       }
       setFreshPairings(seed);
-    });
-  }, []);
+    }).catch(() => { setLoadError(true); setLoading(false); });
+  }, [router]);
 
   // Poll for analysis data on garments that were just added (pros === null means analysis pending)
   useEffect(() => {
@@ -453,7 +474,17 @@ export default function ClosetPage() {
   async function removeItem() {
     if (!garments[index]) return;
     const id = garments[index].id;
-    const res  = await fetch(`/api/garments?id=${id}`, { method: "DELETE" });
+    let res: Response;
+    try {
+      res = await fetch(`/api/garments?id=${id}`, { method: "DELETE" });
+    } catch {
+      setRemoveError("Couldn't reach the server — check your connection and try again.");
+      return;
+    }
+    if (!res.ok) {
+      setRemoveError("Couldn't remove that item — try again.");
+      return;
+    }
     const data = await res.json().catch(() => ({}) as Record<string, unknown>);
 
     // Silently regenerate any calendar months whose outfits included the removed garment.
@@ -566,8 +597,39 @@ export default function ClosetPage() {
     >
       <style suppressHydrationWarning>{ANIMATIONS}</style>
 
+      {removeError && (
+        <div style={{
+          position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 2100,
+          background: "#111", color: "#fff", padding: "12px 20px", maxWidth: 380,
+          display: "flex", alignItems: "center", gap: 14, ...FONT,
+        }}>
+          <p style={{ fontSize: 10, letterSpacing: "0.04em", lineHeight: 1.5, margin: 0 }}>{removeError}</p>
+          <button
+            onClick={() => setRemoveError(null)}
+            style={{ background: "none", border: "none", color: "#999", cursor: "pointer", fontSize: 13, flexShrink: 0, ...FONT }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Load-failure state — distinct from the legitimately-empty-wardrobe state below */}
+      {loadError && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <p style={{ color: "#c00", fontSize: 14, letterSpacing: "0.08em" }}>
+            COULDN&apos;T LOAD YOUR CLOSET
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{ marginTop: 10, background: "none", border: "1px solid #ccc", padding: "8px 18px", cursor: "pointer", fontSize: 11, letterSpacing: "0.08em", ...FONT }}
+          >
+            RETRY
+          </button>
+        </div>
+      )}
+
       {/* Empty state — only shown after load confirms no garments */}
-      {showEmpty && (
+      {!loadError && showEmpty && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <img
             src="/closet.png"
@@ -584,7 +646,85 @@ export default function ClosetPage() {
       {/* Main layout — rendered only after data is fully loaded */}
       {!showEmpty && (
         <>
-          {/* Full-width row: [PROS/PAIRS flex:1] [Arrow] [Closet] [Arrow] [CONS/AVOID flex:1] */}
+          {/* Mobile: the desktop row below needs ~2x a phone's width (two flex:1 text
+              columns plus a fixed-height-driven closet illustration all side by side) — at
+              375px the side panels would get squeezed to near-zero and clip. Mobile instead
+              stacks a smaller illustration + nav arrows on top, with every info section
+              (score/pros/pairs/colors/cons/avoid/overdone) as one scrollable list below it,
+              so the same information is all still reachable, just vertically instead of in
+              two side columns that no longer fit. */}
+          {isMobile && item && (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, width: "100%" }}>
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 0 0" }}>
+                <Arrow dir="left" onClick={() => navigate("left")} disabled={garments.length < 2} small />
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <img src="/closet.png" alt="closet" style={{ height: "26vh", width: "auto", display: "block" }} draggable={false} />
+                  <div style={{
+                    position: "absolute", top: "21%", left: "29%", right: "29%", bottom: "26%",
+                    overflow: "hidden", clipPath: "inset(0)",
+                    display: "flex", justifyContent: "center", alignItems: "center",
+                  }}>
+                    <div key={animKey} style={{
+                      width: "100%", display: "flex", justifyContent: "center", alignItems: "center",
+                      animation: phase === "out" ? outAnim : phase === "in" ? inAnim : "none",
+                    }}>
+                      {item.image ? (
+                        <img src={item.image} alt={item.title} draggable={false}
+                          style={{ display: "block", maxHeight: "8vh", maxWidth: "100%", height: "auto", width: "auto", objectFit: "contain" }} />
+                      ) : (
+                        <div style={{ height: "8vh", width: 50, background: "#eee" }} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <Arrow dir="right" onClick={() => navigate("right")} disabled={garments.length < 2} small />
+              </div>
+
+              {/* Title + score up top, right under the image — the two things worth seeing
+                  at a glance before scrolling for detail. Score is just the colored number
+                  (no "SCORE" label) matching how scores read everywhere else in the app. */}
+              <div style={{ flexShrink: 0, textAlign: "center", padding: "6px 20px 10px" }}>
+                <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
+                  {item.brand ?? item.title}
+                </p>
+                <p style={{
+                  fontSize: 22, fontWeight: 700, margin: "2px 0 0",
+                  color: scoreColor(scores[item.id]),
+                }}>
+                  {scores[item.id] != null ? scores[item.id] : "—"}
+                </p>
+              </div>
+
+              <MobileScrollFade padding={`4px 24px calc(20px + ${TAB_BAR_H}px + var(--safe-bottom))`}>
+                {([
+                  { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
+                  { label: "PAIRS WITH", items: pairingsForItem, color: "#555", emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet — add more items" },
+                  { label: "COLORS", items: item.color_pairings ?? [], color: "#555" },
+                  { label: "CONS", items: item.cons ?? [], color: "#c00", emptyText: item.cons === null ? "analyzing…" : "no cons" },
+                  { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzing…" : "none" },
+                  ...(item.sub_type && overdoneMap[item.sub_type.toLowerCase()]
+                    ? [{ label: "OVERDONE", items: [overdoneMap[item.sub_type.toLowerCase()]], color: "#c88800" }]
+                    : []),
+                ] as PanelSection[]).map(section => (
+                  <div key={section.label} style={{ marginBottom: 18, textAlign: "center" }}>
+                    <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", color: "#bbb", textTransform: "uppercase", margin: "0 0 6px" }}>
+                      {section.label}
+                    </p>
+                    {section.items.length > 0 ? (
+                      section.items.map((t, i) => (
+                        <p key={i} style={{ fontSize: 12, color: section.color, lineHeight: 1.6, margin: "0 0 4px" }}>{t}</p>
+                      ))
+                    ) : (
+                      <p style={{ fontSize: 12, color: "#ccc", margin: 0 }}>{section.emptyText ?? "none"}</p>
+                    )}
+                  </div>
+                ))}
+              </MobileScrollFade>
+            </div>
+          )}
+
+          {/* Desktop: full-width row [PROS/PAIRS flex:1] [Arrow] [Closet] [Arrow] [CONS/AVOID flex:1] */}
+          {!isMobile && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", width: "100%", minHeight: 0, overflow: "hidden" }}>
             <SidePanel
               side="left"
@@ -675,6 +815,7 @@ export default function ClosetPage() {
               }
             />
           </div>
+          )}
 
           {/* Bottom: brand name + remove — clamped height so it never shifts on tall
               screens but never gets squeezed below a readable minimum on short ones */}

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { checkAdminPin } from "@/lib/auth/adminPin";
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,7 +8,7 @@ const sb = createClient(
 );
 
 function auth(req: NextRequest) {
-  return req.headers.get("x-admin-pin") === process.env.ADMIN_PIN;
+  return checkAdminPin(req.headers.get("x-admin-pin"));
 }
 
 // GET /api/admin/tag?brand=Nike&offset=0
