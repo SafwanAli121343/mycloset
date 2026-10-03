@@ -508,13 +508,12 @@ AVOID — these are widely regarded as misses:
      IS compatible with colored bottoms (olive jeans, rust chinos) — the neutral base is the
      anchor. And analogous colors (adjacent on wheel: olive + rust, navy + teal) work fine.
      Specific clash to avoid: a tee with blue accent + blue-wash jeans = muddy, not tonal.
-  ✗ T-shirt as underlayer under a structured button-up (Oxford shirt, dress shirt, silk shirt,
-     printed shirt) — reads as undershirt, not intentional layering. Block this combo entirely.
-  ✗ T-shirt as underlayer under a casual overshirt (flannel, chambray, camp collar, work shirt,
-     western, bowling, linen shirt, denim shirt) UNLESS the tee color passes this rule:
+  ✓ T-shirt as underlayer under an overshirt or button-up (flannel, chambray, camp collar, work
+     shirt, western, bowling, linen shirt, denim shirt, Oxford, dress shirt, button-up) — worn
+     open over the tee — is a valid look, provided the tee color passes this rule:
        ALLOWED underlayer tee colors: white, off-white, cream, ivory, light grey, heather grey,
-         beige, ecru, oatmeal — these are always safe under any casual overshirt color.
-       ALLOWED dark tee (black, charcoal, navy, dark grey) under a casual overshirt ONLY IF
+         beige, ecru, oatmeal — these are always safe under any overshirt color.
+       ALLOWED dark tee (black, charcoal, navy, dark grey) under an overshirt ONLY IF
          the overshirt is also dark (black, charcoal, dark grey, dark navy, dark burgundy,
          dark olive, dark brown) — no harsh contrast band at the neckline.
        FORBIDDEN: dark tee (black, navy, charcoal) under a light or medium or colorful

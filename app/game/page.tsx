@@ -1,4 +1,5 @@
 "use client";
+import { ProGate } from "@/components/ProGate";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
@@ -31,7 +32,7 @@ function getSlotLabel(sub_type: string | null): string | null {
   return null;
 }
 
-export default function GamePage() {
+function GamePageInner() {
   const router = useRouter();
   const [gameState, setGameState] = useState<GameState>("loading");
   const [allPieces, setAllPieces] = useState<Piece[]>([]);
@@ -161,7 +162,7 @@ export default function GamePage() {
 
   if (gameState === "loading") {
     return (
-      <main className="min-h-screen bg-white flex items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex items-center justify-center center-lift" style={FONT}>
         <p className="text-xs uppercase tracking-widest text-gray-400">LOADING...</p>
       </main>
     );
@@ -169,7 +170,7 @@ export default function GamePage() {
 
   if (gameState === "error") {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
         <p className="text-xs uppercase tracking-widest text-gray-400 mb-6">FAILED TO LOAD</p>
         <button
           onClick={() => router.push("/dashboard")}
@@ -184,7 +185,7 @@ export default function GamePage() {
 
   if (gameState === "idle") {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
         <div className="max-w-sm w-full px-4 text-center">
           <button
             onClick={() => router.push("/dashboard")}
@@ -449,4 +450,9 @@ export default function GamePage() {
       </div>
     </main>
   );
+}
+
+// Scores/AI are Pro-only — see components/ProGate.tsx.
+export default function GamePage() {
+  return <ProGate feature="The outfit game"><GamePageInner /></ProGate>;
 }

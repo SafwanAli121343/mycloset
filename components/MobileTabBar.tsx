@@ -25,7 +25,7 @@ export default function MobileTabBar() {
   if (!isMobile || !SHOWN_ON.has(pathname)) return null;
 
   return (
-    <nav style={{
+    <nav data-nav data-tutorial="navbar" style={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9998,
       height: `calc(${TAB_BAR_H}px + var(--safe-bottom))`,
       paddingBottom: "var(--safe-bottom)",

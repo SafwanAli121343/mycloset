@@ -17,22 +17,30 @@ const TABS: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }
   { key: "Builder", label: "Build", icon: "construct-outline" },
   { key: "Preview", label: "Preview", icon: "eye-outline" },
   { key: "Wardrobe", label: "Wardrobe", icon: "sparkles-outline" },
+  { key: "Upgrade", label: "Upgrade", icon: "logo-usd" },
   { key: "Settings", label: "Settings", icon: "settings-outline" },
 ];
 
-// Exported so screens with their own bottom-anchored content (Builder's score/inventory
-// controls, etc.) can reserve exactly enough space for the bar instead of guessing at a
-// padding value — mirrors the website's own TAB_BAR_H export (components/MobileTabBar.tsx).
 export const BAR_CONTENT_H = 64;
+// Gap between the pill's bottom edge and the safe-area bottom edge — gives the floating look.
+// Screens that reserve space for the bar should add this to their BAR_CONTENT_H + insets.bottom.
+export const BAR_BOTTOM_GAP = 12;
 
 export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | undefined; onNavigate: (tab: TabKey) => void }) {
   const insets = useSafeAreaInsets();
   const { signOut } = useAuth();
   const { visible } = useNavBarVisibility();
-  const translateY = useRef(new Animated.Value(0)).current;
-  const totalH = BAR_CONTENT_H + insets.bottom;
+  const totalH = BAR_CONTENT_H + insets.bottom + BAR_BOTTOM_GAP;
+  // Starts at whichever position actually matches `visible` on this component's first mount
+  // (rather than always literally 0) — this mounts for the first time at the exact moment the
+  // user enters the app, so if `visible` had already flipped false by then, a hardcoded-visible
+  // starting value would paint one full frame at the wrong (visible) position before the effect
+  // below caught up and animated it away — a real, findable one-frame flash-then-hide.
+  const translateY = useRef(new Animated.Value(visible ? 0 : totalH + 20)).current;
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
     Animated.timing(translateY, {
       toValue: visible ? 0 : totalH + 20,
       duration: 180,
@@ -42,7 +50,7 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
 
   return (
     <Animated.View
-      style={[styles.bar, { paddingBottom: insets.bottom, transform: [{ translateY }] }]}
+      style={[styles.bar, { bottom: insets.bottom + BAR_BOTTOM_GAP, transform: [{ translateY }] }]}
       pointerEvents={visible ? "auto" : "none"}
     >
       <ScrollView
@@ -72,16 +80,19 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
 
 const styles = StyleSheet.create({
   bar: {
-    position: "absolute", left: 0, right: 0, bottom: 0,
+    position: "absolute", left: 16, right: 16,
+    height: BAR_CONTENT_H,
     backgroundColor: colors.bg,
-    borderTopWidth: 1, borderTopColor: colors.border,
-    paddingTop: 6, minHeight: BAR_CONTENT_H,
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: BAR_CONTENT_H / 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: "hidden",
   },
-  row: { flexGrow: 1, alignItems: "center", paddingHorizontal: spacing.md },
-  item: { width: 78, alignItems: "center", justifyContent: "center", gap: 4 },
-  // Matches the website's own bottom tab bar exactly (components/MobileTabBar.tsx): Arial/
-  // Helvetica, uppercase, 0.06em letter-spacing, weight only bumping to 700 when active — sized
-  // up a bit from the site's own 8.5px/20px-icon numbers since this bar carries more items
-  // (9 vs the site's 5) in a horizontally-scrolling row rather than a fixed one-screen-wide row.
+  row: { flexGrow: 1, alignItems: "center", paddingHorizontal: spacing.sm },
+  item: { width: 72, alignItems: "center", justifyContent: "center", gap: 4 },
   label: { fontFamily, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase" },
 });

@@ -1,13 +1,14 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useIsFocused } from "@react-navigation/native";
-import { apiJson, ApiError } from "../lib/api";
+import { useIsFocused, useFocusEffect } from "@react-navigation/native";
+import { Image } from "expo-image";
+import { apiJson, apiJsonCached, ApiError, invalidateCache } from "../lib/api";
+import { getCached } from "../lib/dataCache";
 import { FocusScrollList, type FocusItem } from "../components/FocusScrollList";
 import { BouncingPieces } from "../components/BouncingPieces";
-import { BAR_CONTENT_H } from "../components/BottomNavBar";
-import { LoadingDots } from "../components/LoadingDots";
 import { ScreenCenter } from "../components/ScreenCenter";
+import { ReadyGate } from "../components/ReadyGate";
 import { chunk3 } from "../lib/chunk";
 import {
   gapTotalProgress, computeGapProgress, computeEffectiveLevel, isConResolved,
@@ -16,6 +17,16 @@ import {
 } from "../lib/wardrobeAnalysis";
 import { sameColorGroup } from "../lib/colorGroups";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
+import { useEntitlements } from "../lib/billing/Entitlements";
+import { LockedScreen } from "../components/LockedFeature";
+import { useTutorialDemo } from "../lib/tutorial";
+import { sampleWardrobeReport, SAMPLE_IMAGES } from "../lib/tutorialSamples";
+import { TextButton } from "../components/TextButton";
+import { AnalysisOverlay } from "../components/AnalysisOverlay";
+import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
+import {
+  fetchJobs, startJob, waitForJob, ackJobs, jobFailureMessage, startErrorMessage, WARDROBE_STAGES, type JobsStatus,
+} from "../lib/analysisJobs";
 
 type GarmentAttr = { id: string; sub_type: string | null; category: string | null; color_primary: string | null; aesthetic_tags: string[] | null };
 const GAP_COLOR: Record<"high" | "medium" | "low", string> = { high: colors.bad, medium: colors.mid, low: colors.textMuted };
@@ -44,6 +55,7 @@ const BOX_W = SCREEN_W - spacing.lg * 2;
 export default function WardrobeScreen() {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
+  const { hasAI, ready: entitlementsReady, refresh: refreshEntitlements } = useEntitlements();
   const [analysis, setAnalysis] = useState<WardrobeAnalysis | null>(null);
   const [level, setLevel] = useState<number | null>(null);
   const [crossedGaps, setCrossedGaps] = useState<string[]>([]);
@@ -53,24 +65,47 @@ export default function WardrobeScreen() {
   const [ghostCons, setGhostCons] = useState<string[]>([]);
   const [gapProgress, setGapProgress] = useState<Record<string, number>>({});
   const [pieceImages, setPieceImages] = useState<string[]>([]);
+  // Always starts true, unlike other screens' cache-skip: `analysis` below is a derived object
+  // that's never itself cached (it's rebuilt via applyState/fetchFreshAnalysis even when the
+  // underlying /api/wardrobe/state fetch is cache-warm), so starting loading=false on a warm
+  // cache left a window where analysis was still null — flashing "No wardrobe analysis
+  // available yet" + RETRY before the near-instant cached fetch resolved.
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tableMissing, setTableMissing] = useState(false);
+  const retryCount = useRef(0);
+  // Only Pro may ask the server for a NEW analysis level. A free user viewing a report they
+  // bought sees it as it stands; the next level comes from another purchase ("Perform analysis?").
+  const allowFreshRef = useRef(hasAI);
+  allowFreshRef.current = hasAI;
+  // Free tier: purchased Full Wardrobe Analyses and the report's status (lib/analysisJobs.ts).
+  const [wjobs, setWjobs] = useState<JobsStatus | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const { status, showStatus } = useStatusMessage();
+  const demo = useTutorialDemo();
+  const sampleReport = useMemo(() => sampleWardrobeReport() as WardrobeAnalysis, []);
+  const sampleImages = useMemo(() => Object.values(SAMPLE_IMAGES), []);
+  const unmounted = useRef(false);
+  useEffect(() => () => { unmounted.current = true; }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    if (!getCached("/api/wardrobe/state")) setLoading(true);
     setError(false);
     setTableMissing(false);
+    let willRetry = false;
     try {
       // Both reads are independent — fire the state fetch immediately and only await it once
       // sData is needed below, instead of the two round trips stacking one after the other.
-      const statePromise = apiJson<WABackendState | null>("/api/wardrobe/state").then(
+      const statePromise = apiJsonCached<WABackendState | null>("/api/wardrobe/state").then(
         s => ({ ok: true as const, state: s }),
         (e: unknown) => ({ ok: false as const, error: e }),
       );
-      const sData = await apiJson<{
+      // skipOutfits=1 — this screen never reads topOutfits, only pieceCount/pieces/garmentAttrs,
+      // and generating topOutfits is a combinatorial search over the whole wardrobe (the
+      // expensive part of this route) — see ClosetScreen's SCORING_PATH for the full reasoning.
+      const sData = await apiJsonCached<{
         pieceCount: number; pieces: { id: string; image: string | null }[]; garmentAttrs: GarmentAttr[];
-      }>("/api/scoring").catch(() => null);
+      }>("/api/scoring?skipOutfits=1").catch(() => null);
       setPieceImages((sData?.pieces ?? []).map(p => p.image).filter((u): u is string => !!u));
       const attrs = sData?.garmentAttrs ?? [];
 
@@ -170,21 +205,24 @@ export default function WardrobeScreen() {
           (displayA.colors.missing.length === 0 || displayA.colors.missing.every(c => atL.some(e => e.category === "color" && e.key === c))) &&
           (displayA.aesthetics.missing.length === 0 || displayA.aesthetics.missing.every(ae => atL.some(e => e.category === "aesthetic" && e.key === ae)));
 
-        if (allCrossed) {
+        if (allCrossed && allowFreshRef.current) {
           const freshA = await fetchFreshAnalysis(state.analysisHistory, state.crossed);
           const hasContent = freshA.gaps.length > 0 || freshA.colors.missing.length > 0 || freshA.aesthetics.missing.length > 0 || freshA.cons.length > 0;
           if (!hasContent) {
             const sentinelState: WABackendState = { analysisHistory: [...state.analysisHistory, freshA], crossed: state.crossed, currentLevel: state.currentLevel };
-            apiJson("/api/wardrobe/state", { method: "PUT", body: JSON.stringify(sentinelState) }).catch(() => {});
+            apiJson("/api/wardrobe/state", { method: "PUT", body: JSON.stringify(sentinelState) }).then(() => invalidateCache("/api/wardrobe/state")).catch(() => {});
             applyState(sentinelState, effLevel, displayA);
           } else {
             const newState: WABackendState = { analysisHistory: [...state.analysisHistory, freshA], crossed: state.crossed, currentLevel: state.currentLevel + 1 };
-            apiJson("/api/wardrobe/state", { method: "PUT", body: JSON.stringify(newState) }).catch(() => {});
+            apiJson("/api/wardrobe/state", { method: "PUT", body: JSON.stringify(newState) }).then(() => invalidateCache("/api/wardrobe/state")).catch(() => {});
             applyState(newState, state.currentLevel + 1, freshA);
           }
         } else {
           applyState(state, effLevel, displayA);
         }
+      } else if (!allowFreshRef.current) {
+        // Free tier with no visible report: nothing to show (the prompt/lock screen handles it).
+        setAnalysis(null);
       } else {
         // Recovery path: no backend state yet. Deterministically auto-cross colors/aesthetics/
         // gaps/cons the current wardrobe already resolves, exactly like the website's rebuild
@@ -235,49 +273,191 @@ export default function WardrobeScreen() {
           newState = { analysisHistory: [freshA], crossed: autoCrossed, currentLevel: 1 };
           applyState(newState, 1, freshA);
         }
-        apiJson("/api/wardrobe/state", { method: "PUT", body: JSON.stringify(newState) }).catch(() => {});
+        apiJson("/api/wardrobe/state", { method: "PUT", body: JSON.stringify(newState) }).then(() => invalidateCache("/api/wardrobe/state")).catch(() => {});
       }
     } catch (e) {
-      setError(true);
       if (!(e instanceof ApiError)) console.error(e);
+      // Retry up to 3 times with increasing delays — server cold-starts can take several seconds.
+      if (retryCount.current < 3) {
+        const delay = [1500, 3000, 5000][retryCount.current] ?? 5000;
+        retryCount.current += 1;
+        willRetry = true;
+        setTimeout(load, delay);
+        return;
+      }
+      setError(true);
     } finally {
-      setLoading(false);
+      if (!willRetry) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const canViewReport = hasAI || wjobs?.wardrobe.report === "purchased";
+  useEffect(() => {
+    if (entitlementsReady && canViewReport) load();
+  }, [load, entitlementsReady, canViewReport]);
 
-  if (loading) return <ScreenCenter><LoadingDots /></ScreenCenter>;
+  // A purchased analysis finished: load the new report and its piece images while the loading
+  // screen is still up, so the whole report appears at once when it lifts.
+  const revealReport = useCallback(async () => {
+    invalidateCache("/api/wardrobe/state");
+    invalidateCache("/api/scoring");
+    const s = await fetchJobs().catch(() => null);
+    if (s && !unmounted.current) setWjobs(s);
+    const sData = await apiJsonCached<{ pieces: { image: string | null }[] }>("/api/scoring?skipOutfits=1").catch(() => null);
+    await Promise.all((sData?.pieces ?? []).map(p => p.image ? Image.prefetch(p.image, "memory-disk").catch(() => {}) : null));
+    await load();
+  }, [load]);
 
-  if (tableMissing) {
-    return (
+  const followingRef = useRef<string | null>(null);
+  const followJob = useCallback(async (jobId: string) => {
+    // One watcher per job — revisiting the tab while it runs must not start a second one.
+    if (followingRef.current === jobId) return;
+    followingRef.current = jobId;
+    setAnalyzing(true);
+    const job = await waitForJob(jobId, () => unmounted.current);
+    if (unmounted.current) return;
+    if (job.status === "done") await revealReport();
+    else if (job.status === "failed") {
+      showStatus(jobFailureMessage(job), "bad");
+      fetchJobs().then(s => { if (!unmounted.current) setWjobs(s); }).catch(() => {});
+    }
+    ackJobs([jobId]);
+    followingRef.current = null;
+    refreshEntitlements();
+    if (!unmounted.current) setAnalyzing(false);
+  }, [revealReport, showStatus, refreshEntitlements]);
+
+  // Free tier: re-checked on every visit — credits, the report's status, and any analysis that
+  // was running (or finished/failed) while the app was closed.
+  useFocusEffect(useCallback(() => {
+    if (!entitlementsReady || hasAI) return;
+    let cancelled = false;
+    fetchJobs().then(async s => {
+      if (cancelled) return;
+      setWjobs(s);
+      const mine = s.jobs.filter(j => j.kind === "wardrobe");
+      const running = mine.find(j => j.status === "running");
+      if (running && !analyzing) followJob(running.id);
+      const finished = mine.filter(j => j.status !== "running");
+      if (finished.some(j => j.status === "done")) await revealReport();
+      const failed = finished.find(j => j.status === "failed");
+      if (failed) showStatus(jobFailureMessage(failed), "bad");
+      ackJobs(finished.map(j => j.id));
+    }).catch(() => {
+      // Offline/failed: show the locked view (with no purchases) rather than loading forever —
+      // same fallback as the website. Re-checked on the next visit.
+      if (!cancelled) setWjobs(prev => prev ?? { jobs: [], credits: { item: 0, wardrobe: 0, itemBalance: 0, wardrobeBalance: 0 }, wardrobe: { enoughPieces: false, report: "none", canAdvance: false } });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entitlementsReady, hasAI]));
+
+  async function performAnalysis() {
+    if (analyzing) return;
+    setAnalyzing(true);
+    try {
+      const job = await startJob("wardrobe");
+      await followJob(job.id);
+    } catch (e) {
+      setAnalyzing(false);
+      showStatus(startErrorMessage(e), "bad");
+      fetchJobs().then(setWjobs).catch(() => {});
+    }
+  }
+
+  // Every return below keeps the loading overlay in the same place, so it stays up (rather than
+  // remounting) while the screen underneath switches from the prompt to the finished report.
+  const wrap = (node: React.ReactNode) => (
+    <>
+      {node}
+      <AnalysisOverlay visible={analyzing} stages={WARDROBE_STAGES} />
+    </>
+  );
+  const credits = wjobs?.credits.wardrobe ?? 0;
+  const promptText = `You have ${credits} wardrobe ${credits === 1 ? "analysis" : "analyses"} available. Perform analysis?`;
+
+  // Entirely AI-dependent (wardrobe analysis, gap crossing, leveling) — locked wholesale rather
+  // than partially degraded, since there's no non-AI subset of this screen that means anything.
+  // Wrapped in ReadyGate (components/ReadyGate.tsx). Waits for entitlements first — checking
+  // hasAI before the plan is known flashed the locked screen at Pro users for a moment.
+  if (!demo && !entitlementsReady) return wrap(<ReadyGate ready={false} />);
+  if (!demo && !hasAI) {
+    if (!wjobs) return wrap(<ReadyGate ready={false} />);
+    if (wjobs.wardrobe.report !== "purchased") {
+      if (credits > 0 && wjobs.wardrobe.enoughPieces) {
+        return wrap(
+          <ReadyGate ready>
+          <ScreenCenter>
+            <Text style={[type.title, { textAlign: "center" }]}>WARDROBE</Text>
+            <Text style={[type.body, { color: colors.textMuted, textAlign: "center", marginTop: spacing.sm, marginBottom: spacing.lg }]}>{promptText}</Text>
+            <TextButton label="YES" onPress={performAnalysis} />
+            <StatusMessage status={status} style={{ marginTop: spacing.md, textAlign: "center" }} />
+          </ScreenCenter>
+          </ReadyGate>
+        );
+      }
+      if (credits > 0) {
+        return wrap(
+          <ReadyGate ready>
+          <ScreenCenter>
+            <Text style={[type.title, { textAlign: "center" }]}>WARDROBE</Text>
+            <Text style={[type.body, { color: colors.textMuted, textAlign: "center", marginTop: spacing.sm }]}>
+              {`You have ${credits} wardrobe ${credits === 1 ? "analysis" : "analyses"} available. Add a few more pieces first: a wardrobe analysis needs at least 5 items that make a complete outfit (a top, bottoms and shoes).`}
+            </Text>
+          </ScreenCenter>
+          </ReadyGate>
+        );
+      }
+      return wrap(<ReadyGate ready><LockedScreen title="WARDROBE" description="Wardrobe analysis, gap tracking, and leveling all require AI. Upgrade, or buy a Full Wardrobe Analysis, to unlock." /></ReadyGate>);
+    }
+  }
+
+  if (!demo && loading) return wrap(<ReadyGate ready={false} />);
+
+  if (!demo && tableMissing) {
+    return wrap(
+      <ReadyGate ready>
       <ScreenCenter>
-        <Text style={type.body}>Wardrobe leveling isn't set up on the server yet.</Text>
+        <Text style={type.body}>{"Wardrobe leveling isn't set up on the server yet."}</Text>
       </ScreenCenter>
+      </ReadyGate>
     );
   }
 
-  if (error || !analysis) {
-    return (
+  if (!demo && (error || !analysis)) {
+    return wrap(
+      <ReadyGate ready>
       <ScreenCenter>
-        <Text style={type.body}>No wardrobe analysis available yet.</Text>
+        <Text style={[type.body, { color: "#ff6b6b" }]}>
+          {error ? "RETRY FAILED. WAIT SOME TIME AND TRY AGAIN." : "No wardrobe analysis available yet."}
+        </Text>
         <TouchableOpacity onPress={load} style={{ marginTop: spacing.md }}>
-          <Text style={[type.button, { color: colors.text, textDecorationLine: "underline" }]}>RETRY</Text>
+          <Text style={[type.button, { color: colors.text }]}>RETRY</Text>
         </TouchableOpacity>
       </ScreenCenter>
+      </ReadyGate>
     );
   }
 
-  const a = analysis;
-  const lvl = level ?? 1;
-  const crossedGapSet = new Set(crossedGaps);
-  const crossedColorSet = new Set(crossedColors);
-  const crossedAesSet = new Set(crossedAesthetics);
+  // First-run tutorial: the sample report (lib/tutorialSamples.ts) in place of this account's own,
+  // nothing crossed off yet — display only.
+  const v_crossedGaps = demo ? [] : crossedGaps;
+  const v_crossedColors = demo ? [] : crossedColors;
+  const v_crossedAesthetics = demo ? [] : crossedAesthetics;
+  const v_crossedConIndices = demo ? [] : crossedConIndices;
+  const v_ghostCons = demo ? [] : ghostCons;
+  const v_gapProgress: Record<string, number> = demo ? {} : gapProgress;
+  const v_pieceImages = demo ? sampleImages : pieceImages;
+  const a = demo ? sampleReport : analysis!;
+  const lvl = demo ? 1 : level ?? 1;
+  const crossedGapSet = new Set(v_crossedGaps);
+  const crossedColorSet = new Set(v_crossedColors);
+  const crossedAesSet = new Set(v_crossedAesthetics);
 
   const allGapsCrossed = a.gaps.length === 0 || a.gaps.every(g => crossedGapSet.has(g.description));
   const allColorsCrossed = a.colors.missing.length === 0 || a.colors.missing.every(c => crossedColorSet.has(c));
   const allAesCrossed = a.aesthetics.missing.length === 0 || a.aesthetics.missing.every(ae => crossedAesSet.has(ae));
-  const allConsCrossed = a.cons.length === 0 || a.cons.every((_, i) => crossedConIndices.includes(i));
+  const allConsCrossed = a.cons.length === 0 || a.cons.every((_, i) => v_crossedConIndices.includes(i));
 
   const gapsLabel = allGapsCrossed ? `GAPS · COMPLETE` : `GAPS · LEVEL ${lvl}`;
   const colorsLabel = allColorsCrossed ? `MISSING COLORS · COMPLETE` : `MISSING COLORS · LEVEL ${lvl}`;
@@ -286,7 +466,7 @@ export default function WardrobeScreen() {
 
   const crossedInAnalysis = a.gaps.filter(g => crossedGapSet.has(g.description));
   const activeGaps = a.gaps.filter(g => !crossedGapSet.has(g.description));
-  const crossedGhosts = crossedGaps.filter(d => !a.gaps.find(g => g.description === d));
+  const crossedGhosts = v_crossedGaps.filter(d => !a.gaps.find(g => g.description === d));
 
   // Same left-to-right, top-to-bottom section order as the website's two-column layout
   // (app/wardrobe-analysis/page.tsx): pros, covered colors, covered aesthetics, insights, then
@@ -296,15 +476,15 @@ export default function WardrobeScreen() {
     focusItems.push({ key: "h-pros", text: "PROS", color: colors.textFaint });
     a.pros.forEach((p, i) => focusItems.push({ key: `pros-${i}`, text: p, color: colors.good }));
   }
-  if (a.colors.have.length > 0 || crossedColors.length > 0) {
+  if (a.colors.have.length > 0 || v_crossedColors.length > 0) {
     focusItems.push({ key: "h-colors", text: "COVERED COLORS", color: colors.textFaint });
     chunk3(a.colors.have).forEach((c, i) => focusItems.push({ key: `colors-${i}`, words: c, color: colors.textMuted }));
-    if (crossedColors.length > 0) chunk3(crossedColors).forEach((c, i) => focusItems.push({ key: `colors-x-${i}`, words: c, color: colors.textFaint }));
+    if (v_crossedColors.length > 0) chunk3(v_crossedColors).forEach((c, i) => focusItems.push({ key: `colors-x-${i}`, words: c, color: colors.textFaint }));
   }
-  if (a.aesthetics.covered.length > 0 || crossedAesthetics.length > 0) {
+  if (a.aesthetics.covered.length > 0 || v_crossedAesthetics.length > 0) {
     focusItems.push({ key: "h-aes", text: "COVERED AESTHETICS", color: colors.textFaint });
     chunk3(a.aesthetics.covered.map(x => x.name)).forEach((c, i) => focusItems.push({ key: `aes-${i}`, words: c, color: colors.textMuted }));
-    if (crossedAesthetics.length > 0) chunk3(crossedAesthetics).forEach((c, i) => focusItems.push({ key: `aes-x-${i}`, words: c, color: colors.textFaint }));
+    if (v_crossedAesthetics.length > 0) chunk3(v_crossedAesthetics).forEach((c, i) => focusItems.push({ key: `aes-x-${i}`, words: c, color: colors.textFaint }));
   }
   if (a.insights.length > 0) {
     focusItems.push({ key: "h-insights", text: "INSIGHTS", color: colors.textFaint });
@@ -314,8 +494,8 @@ export default function WardrobeScreen() {
     const visibleCons = a.cons
       .map((text, i) => ({ text, i }))
       .filter(({ text, i }) => {
-        const isDuplicate = ghostCons.some(g => g.trim().toLowerCase() === text.trim().toLowerCase());
-        return !isDuplicate && !crossedConIndices.includes(i);
+        const isDuplicate = v_ghostCons.some(g => g.trim().toLowerCase() === text.trim().toLowerCase());
+        return !isDuplicate && !v_crossedConIndices.includes(i);
       });
     if (visibleCons.length > 0) {
       focusItems.push({ key: "h-cons", text: weaknessesLabel, color: colors.textFaint });
@@ -323,10 +503,10 @@ export default function WardrobeScreen() {
     }
   }
   focusItems.push({ key: "h-mcolors", text: colorsLabel, color: colors.textFaint });
-  if (a.colors.missing.length === 0 && crossedColors.length === 0) {
+  if (a.colors.missing.length === 0 && v_crossedColors.length === 0) {
     focusItems.push({ key: "mcolors-none", text: "None", color: colors.textFaint });
   } else {
-    const extraCrossed = crossedColors.filter(c => !a.colors.missing.includes(c));
+    const extraCrossed = v_crossedColors.filter(c => !a.colors.missing.includes(c));
     chunk3(a.colors.missing).forEach((c, i) => focusItems.push({
       key: `mcolors-${i}`, words: c,
       color: c.every(w => crossedColorSet.has(w)) ? colors.textFaint : colors.textMuted,
@@ -334,10 +514,10 @@ export default function WardrobeScreen() {
     if (extraCrossed.length > 0) chunk3(extraCrossed).forEach((c, i) => focusItems.push({ key: `mcolors-x-${i}`, words: c, color: colors.textFaint }));
   }
   focusItems.push({ key: "h-maes", text: aesLabel, color: colors.textFaint });
-  if (a.aesthetics.missing.length === 0 && crossedAesthetics.length === 0) {
+  if (a.aesthetics.missing.length === 0 && v_crossedAesthetics.length === 0) {
     focusItems.push({ key: "maes-none", text: "None", color: colors.textFaint });
   } else {
-    const extraCrossed = crossedAesthetics.filter(ae => !a.aesthetics.missing.includes(ae));
+    const extraCrossed = v_crossedAesthetics.filter(ae => !a.aesthetics.missing.includes(ae));
     chunk3(a.aesthetics.missing).forEach((c, i) => focusItems.push({
       key: `maes-${i}`, words: c,
       color: c.every(w => crossedAesSet.has(w)) ? colors.textFaint : colors.textMuted,
@@ -349,7 +529,7 @@ export default function WardrobeScreen() {
     focusItems.push({ key: "gaps-none", text: "None", color: colors.textFaint });
   } else {
     activeGaps.forEach((gap, i) => {
-      const prog = gapProgress[gap.description] ?? 0;
+      const prog = v_gapProgress[gap.description] ?? 0;
       const isInProgress = prog > 0 && prog < 100;
       const descColor = isInProgress ? gapProgressColor(prog) : GAP_COLOR[gap.impact];
       const desc = gap.description.charAt(0).toUpperCase() + gap.description.slice(1);
@@ -376,26 +556,38 @@ export default function WardrobeScreen() {
     });
   }
 
-  return (
+  // A purchased report whose current level is finished can be taken further with another purchase.
+  const showAdvancePrompt = !demo && !hasAI && !!wjobs?.wardrobe.canAdvance && credits > 0;
+
+  return wrap(
+    <ReadyGate ready images={v_pieceImages}>
     <SafeAreaView
-      style={[styles.container, { justifyContent: "center", paddingBottom: insets.bottom + BAR_CONTENT_H }]}
+      style={[styles.container, { justifyContent: "center", paddingBottom: insets.bottom }]}
       edges={["top", "left", "right"]}
     >
       <View style={{ alignItems: "center" }}>
+        {showAdvancePrompt && (
+          <View style={{ alignItems: "center", marginBottom: spacing.md, paddingHorizontal: spacing.lg }}>
+            <Text style={[type.body, { color: colors.textMuted, textAlign: "center", marginBottom: spacing.xs }]}>{promptText}</Text>
+            <TextButton label="YES" onPress={performAnalysis} />
+          </View>
+        )}
+        <StatusMessage status={status} style={{ textAlign: "center" }} />
         <Text style={[type.label, { marginBottom: 2 }]}>LEVEL {lvl}</Text>
         <Text style={{ fontSize: 48, fontWeight: "700", color: scoreColor(a.score) }}>{a.score}</Text>
 
         <View style={styles.pieceBox}>
-          <BouncingPieces width={BOX_W - 3} height={228} remoteUris={pieceImages} active={isFocused} />
+          <BouncingPieces width={BOX_W - 3} height={228} remoteUris={v_pieceImages} active={isFocused} />
         </View>
       </View>
 
       {focusItems.length > 0 && (
         <View style={{ height: 190, marginTop: spacing.lg, marginBottom: spacing.sm }}>
-          <FocusScrollList items={focusItems} />
+          <FocusScrollList items={focusItems} focal={0.5} />
         </View>
       )}
     </SafeAreaView>
+    </ReadyGate>
   );
 }
 

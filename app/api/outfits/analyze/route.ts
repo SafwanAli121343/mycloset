@@ -6,9 +6,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 import { analyzeOutfit, deriveOutfitAesthetic } from "@/lib/outfitInference";
 import type { GarmentForScoring } from "@/lib/scoring";
+import { getUserById, type User } from "@/lib/db/users";
+import { resolveEntitlement, consumeAiCredit } from "@/lib/billing/entitlements";
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,7 +24,7 @@ type OutfitRow = {
   outfit_items: { garments: GarmentForScoring | GarmentForScoring[] | null }[];
 };
 
-async function analyzeAndPersist(outfit: OutfitRow): Promise<{ id: string; ok: boolean; error?: string }> {
+async function analyzeAndPersist(outfit: OutfitRow, billingUser: User): Promise<{ id: string; ok: boolean; error?: string }> {
   const items = outfit.outfit_items
     .flatMap(oi => {
       const g = oi.garments;
@@ -39,7 +42,8 @@ async function analyzeAndPersist(outfit: OutfitRow): Promise<{ id: string; ok: b
   const config    = typeof existingNotes.configName === "string"  ? existingNotes.configName  : "outfit";
   const aesthetic = deriveOutfitAesthetic(items);
 
-  const result = await analyzeOutfit(items, { score, configName: config, aesthetic });
+  // billingUser carries the user id — lets analyzeOutfit apply their age (lib/userAge.ts).
+  const result = await analyzeOutfit(items, { score, configName: config, aesthetic }, billingUser);
 
   const updatedNotes = JSON.stringify({
     ...existingNotes,
@@ -53,13 +57,23 @@ async function analyzeAndPersist(outfit: OutfitRow): Promise<{ id: string; ok: b
     .update({ notes: updatedNotes })
     .eq("id", outfit.id);
 
-  if (error) return { id: outfit.id, ok: false, error: error.message };
+  if (error) return { id: outfit.id, ok: false, error: "Save failed." };
   return { id: outfit.id, ok: true };
 }
 
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "outfits:analyze", 10, 3600000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Same AI entitlement gate every other OpenAI-backed route applies (see
+  // /api/garments/analyze): free/lapsed users, and Pro users over their monthly cap, never
+  // trigger a paid model call. This endpoint had no gate at all — only a rate limit.
+  const billingUser = await getUserById(session.userId).catch(() => null);
+  const ent = billingUser ? resolveEntitlement(billingUser) : null;
+  const aiAllowed = !!ent?.hasAI && (ent.tier !== "pro" || (await consumeAiCredit(billingUser!)).allowed);
+  if (!aiAllowed) return NextResponse.json({ error: "AI analysis requires MyCloset Pro." }, { status: 403 });
 
   const body = await req.json() as { outfitId?: string; year?: number; month?: number };
 
@@ -77,7 +91,7 @@ export async function POST(req: NextRequest) {
 
     if (error || !data) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const result = await analyzeAndPersist(data as unknown as OutfitRow);
+    const result = await analyzeAndPersist(data as unknown as OutfitRow, billingUser!);
     return NextResponse.json(result);
   }
 
@@ -98,12 +112,12 @@ export async function POST(req: NextRequest) {
       .gte("date", start)
       .lte("date", end);
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
 
     const results = [];
     for (const outfit of (data ?? []) as unknown as OutfitRow[]) {
       try {
-        results.push(await analyzeAndPersist(outfit));
+        results.push(await analyzeAndPersist(outfit, billingUser!));
       } catch (err) {
         results.push({ id: outfit.id, ok: false, error: (err as Error).message });
       }

@@ -2,17 +2,22 @@
   "expo": {
     "name": "mycloset",
     "slug": "mycloset",
+    "owner": "myclosetapp2026",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.mycloset.app",
       "infoPlist": {
         "NSCameraUsageDescription": "mycloset uses your camera to photograph clothing items you add to your wardrobe.",
         "NSPhotoLibraryUsageDescription": "mycloset lets you choose existing photos of clothing items to add to your wardrobe.",
-        "NSLocationWhenInUseUsageDescription": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions."
+        "NSLocationWhenInUseUsageDescription": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -23,7 +28,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -42,7 +51,13 @@
         {
           "locationWhenInUsePermission": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions."
         }
-      ]
-    ]
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "265a798e-7d4c-4cc2-86ec-6dce8c6ba962"
+      }
+    }
   }
 }

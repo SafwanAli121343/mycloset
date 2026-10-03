@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { geocodeCity, reverseGeocode } from "@/lib/weatherData";
 
 // GET /api/geocode?q=<city name>              -> { results: GeocodeResult[] }
@@ -9,6 +10,9 @@ import { geocodeCity, reverseGeocode } from "@/lib/weatherData";
 // geolocation is denied/unavailable) and the "weather based on: X" display label (reverse
 // geocode of whatever coordinates were actually resolved).
 export async function GET(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "geocode", 60, 60 * 1000);
+  if (rateBlock) return rateBlock;
+
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

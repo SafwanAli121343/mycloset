@@ -1,14 +1,33 @@
+import { aiChat } from "@/lib/aiGateway";
+import { getUserProfile, profileSystemMessage } from "@/lib/userAge";
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getSessionFromCookies } from "@/lib/auth/session";
-import OpenAI from "openai";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
+import { getUserById } from "@/lib/db/users";
+import { resolveEntitlement, consumeAiCredit, consumeErrorMessage } from "@/lib/billing/entitlements";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(request: NextRequest) {
+    // OpenAI call — limit to 10/hour per IP
+    const rateBlock = applyApiRateLimit(request, "analysis", 10, 60 * 60 * 1000);
+    if (rateBlock) return rateBlock;
+
     const session = await getSessionFromCookies();
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const userId = session.userId;
+
+    // This page isn't linked from anywhere in the nav, but was still POST-reachable (and
+    // ungated) by any logged-in user who knew or guessed the URL — a real gap found in the
+    // free-tier AI audit.
+    const billingUser = await getUserById(userId).catch(() => null);
+    if (!billingUser || !resolveEntitlement(billingUser).hasAI) {
+      return NextResponse.json({ error: "This feature requires an upgrade.", locked: true }, { status: 402 });
+    }
+    const consumeResult = await consumeAiCredit(billingUser);
+    if (!consumeResult.allowed) {
+      return NextResponse.json({ error: consumeErrorMessage(consumeResult.reason), capReached: true }, { status: 429 });
+    }
 
     const { data: garments, error } = await supabase
         .from("garments")
@@ -60,13 +79,15 @@ Return a JSON object with this exact structure:
 
 Be specific and brutally honest. Reference actual piece names when relevant.`;
 
-     const completion = await openai.chat.completions.create({
+     // The user's age + gender (Settings → GENDER & AGE) tailor the analysis — lib/userAge.ts.
+     const userProfile = await getUserProfile(session.userId);
+     const completion = await aiChat("openai:chat:analysis", {
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
+        messages: [...profileSystemMessage(userProfile), { role: "user", content: prompt }],
         response_format: { type: "json_object" },
-    });
+    }, billingUser);
 
-    const analysis = JSON.parse(completion.choices[0].message.content || "{}");
+    const analysis = JSON.parse(completion.content || "{}");
 
     return NextResponse.json({ analysis, garments });
         

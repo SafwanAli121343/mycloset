@@ -1,7 +1,7 @@
-import OpenAI from "openai";
 import { assertSafeUrl } from "@/lib/security/ssrfGuard";
+import { aiChat, aiWebSearch, type AiActor } from "./aiGateway";
+import { cleanProductTitle, decodeEntities } from "./cleanProductTitle";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export type UrlLookupResult = {
   brand: string | null;
@@ -109,14 +109,13 @@ async function extractBrandFromHtml(link: string): Promise<string | null> {
 // Searches the web for what brand/store operates a given domain.
 // Only passes the domain — NOT the item title or image — so GPT cannot guess
 // a brand from the product description.
-async function lookupBrandViaWebSearch(domain: string): Promise<string | null> {
+async function lookupBrandViaWebSearch(domain: string, actor: AiActor): Promise<string | null> {
   try {
-    const response = await openai.responses.create({
-      model: "gpt-4o",
-      tools: [{ type: "web_search_preview" }],
-      input: `What clothing brand or store operates the website "${domain}"?\nRespond with ONLY this JSON: {"brand": "BRAND_NAME"}`,
-    });
-    const text = (response.output_text ?? "").trim();
+    const text = await aiWebSearch(
+      "openai:responses:brand-search",
+      `What clothing brand or store operates the website "${domain}"?\nRespond with ONLY this JSON: {"brand": "BRAND_NAME"}`,
+      actor,
+    );
     console.log(`[productLookup] web search raw="${text}"`);
     const jsonMatch = text.match(/\{[^{}]*\}/);
     if (jsonMatch) {
@@ -285,6 +284,11 @@ export async function scrapeProductPage(url: string): Promise<ScrapedProduct> {
 
   const jinaPromise: Promise<JinaResult> = (async () => {
     try {
+      // Independent closure from htmlPromise above — its assertSafeUrl call doesn't cover this
+      // one, they run concurrently over the same `url`. Guards against using r.jina.ai as an
+      // SSRF/abuse pivot with an internal/private target URL, same as every other outbound
+      // fetch of a user-supplied URL in this file.
+      await assertSafeUrl(url);
       const res = await fetch(`https://r.jina.ai/${url}`, { headers: { Accept: "text/plain" }, signal: AbortSignal.timeout(10000) });
       if (!res.ok) return { pageText: null };
       const text = await res.text();
@@ -298,8 +302,12 @@ export async function scrapeProductPage(url: string): Promise<ScrapedProduct> {
 
   // Merge: shopify variant image wins over og:image for colorway accuracy
   imageUrl = shopifyImg || fc.imageUrl || html.imageUrl || null;
-  title    = fc.title  || html.title  || null;
   brand    = fc.brand  || html.brand  || null;
+  if (brand) brand = decodeEntities(brand).replace(/[™®©]/g, "").trim() || null;
+  // Cleaned here, at the single point every caller gets a scraped title from, so free (shown
+  // as-is) and Pro (scraped title wins over the AI's) both get a real item name rather than the
+  // page's SEO <title> — see lib/cleanProductTitle.ts.
+  title    = cleanProductTitle(fc.title || html.title || null, brand);
   price    = fc.price  || html.price  || null;
   pageText = fc.pageText || jina.pageText || null;
 
@@ -324,11 +332,13 @@ async function fetchPageText(link: string): Promise<string | null> {
 async function askGptMaterial(
   title: string,
   image: string,
-  context: string | null
+  context: string | null,
+  actor: AiActor | null,
 ): Promise<string | null> {
+  if (!actor) return null; // no AI for this request (free tier)
   if (context) {
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await aiChat("openai:chat:material-text", {
         model: "gpt-4o",
         response_format: { type: "json_object" },
         messages: [{
@@ -336,14 +346,14 @@ async function askGptMaterial(
           content: `${context}\n\nItem: "${title}"\n\nWhat is this item primarily made of? If you see a percentage breakdown, return the highest-percentage material.\nRespond with ONLY this JSON: {"material": "leather"} — replace the value with the actual material.`,
         }],
         max_tokens: 50,
-      });
-      const data = JSON.parse(completion.choices[0].message.content || "{}");
+      }, actor);
+      const data = JSON.parse(completion.content || "{}");
       const mat = parseField(data.material);
       if (mat) return mat;
     } catch {}
   }
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await aiChat("openai:chat:material-vision", {
       model: "gpt-4o",
       response_format: { type: "json_object" },
       messages: [{
@@ -357,17 +367,19 @@ async function askGptMaterial(
         ],
       }],
       max_tokens: 50,
-    });
-    const data = JSON.parse(completion.choices[0].message.content || "{}");
+    }, actor);
+    const data = JSON.parse(completion.content || "{}");
     return parseField(data.material);
   } catch { return null; }
 }
 
 
+// actor: who pays for the AI parts (lib/aiGateway.ts); null = no AI (HTML/text extraction only).
 export async function lookupAttributesFromUrl(
   title: string,
   link: string,
-  image: string
+  image: string,
+  actor: AiActor | null,
 ): Promise<UrlLookupResult> {
   const domain = getDomain(link);
   const skipBrandExtraction = shouldSkipBrandExtraction(domain);
@@ -382,13 +394,14 @@ export async function lookupAttributesFromUrl(
     ]);
     console.log(`[productLookup] htmlBrand=${htmlBrand} pageTextLength=${pageText?.length ?? 0}`);
 
-    const brand = htmlBrand ?? await lookupBrandViaWebSearch(domain);
+    const brand = htmlBrand ?? (actor ? await lookupBrandViaWebSearch(domain, actor) : null);
     console.log(`[productLookup] final brand=${brand}`);
 
     const material = await askGptMaterial(
       title,
       image,
-      pageText ? `Page content:\n${pageText.slice(0, 2500)}` : null
+      pageText ? `Page content:\n${pageText.slice(0, 2500)}` : null,
+      actor,
     );
     return { brand, material, pageText };
   }
@@ -398,7 +411,7 @@ export async function lookupAttributesFromUrl(
   const pageText = await fetchPageText(link);
   console.log(`[productLookup] marketplace pageTextLength=${pageText?.length ?? 0}`);
   const context = pageText ? `Page content:\n${pageText.slice(0, 2500)}` : null;
-  const material = await askGptMaterial(title, image, context);
+  const material = await askGptMaterial(title, image, context, actor);
   return { brand: null, material, pageText };
 }
 

@@ -20,7 +20,7 @@ export function bucketOf(g: SlotGarment): Bucket {
   // own), which used to claim them here first, so a hat could never actually resolve to "head"
   // and land in the dedicated Hat slot — dragging one there just deposited it in Accessories.
   const sub = (g.sub_type ?? "").toLowerCase();
-  if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") || sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) {
+  if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") || (sub.includes("bucket") && !sub.includes("bag")) || sub.includes("beret") || sub.includes("snapback")) {
     return "head";
   }
   if (g.category === "accessory") return "accessory";

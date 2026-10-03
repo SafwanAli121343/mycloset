@@ -6,9 +6,10 @@ import { colors, fontFamily } from "../theme/theme";
 // letter-spaced text (see SCORE/CLEAR/EDIT/REMOVE ITEM/REGEN throughout the site), not
 // buttons with a background fill. This is the native equivalent, used everywhere a button
 // appeared as a black or grey box in the first pass of these screens.
-export function TextButton({ label, onPress, color = colors.text, size = 11, disabled, loading, style }: {
+export function TextButton({ label, onPress, onLongPress, color = colors.text, size = 11, disabled, loading, style }: {
   label: string;
   onPress: () => void;
+  onLongPress?: () => void;
   color?: string;
   size?: number;
   disabled?: boolean;
@@ -16,7 +17,7 @@ export function TextButton({ label, onPress, color = colors.text, size = 11, dis
   style?: object;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} disabled={disabled || loading} style={style}>
+    <TouchableOpacity onPress={onPress} onLongPress={onLongPress} disabled={disabled || loading} style={style} activeOpacity={1}>
       {loading
         ? <LoadingDots color={color} size={size * 0.4} />
         : <Text style={[styles.text, { color: disabled ? colors.textFaint : color, fontSize: size }]}>{label}</Text>}

@@ -2,7 +2,6 @@ import { BRANDS } from "./constants/brands";
 import { SUB_TYPES } from "./constants/subtypes";
 import { FIT_KEYWORDS, PATTERN_KEYWORDS, MATERIAL_KEYWORDS } from "./constants/attributes";
 import { NAMED_COLORS } from "./constants/colors";
-import { verifyBrandCandidate } from "./brandVerification";
 import type { VisualMatch } from "./lensSearch";
 import type { LogoTextResult } from "./visionDetection";
 
@@ -115,7 +114,10 @@ export async function resolveBrand(
   title: string,
   visualMatches: VisualMatch[],
   visionResult: LogoTextResult,
-  extraBrands: string[] = []
+  extraBrands: string[] = [],
+  // A paid web search confirms an unknown leading word as a brand — only when someone pays for
+  // it (lib/aiGateway.ts). null = free tier: skipped, the curated list/OCR/logo checks still run.
+  verify: ((candidate: string) => Promise<boolean>) | null = null,
 ): Promise<BrandResult> {
   const directMatch = detectBrand(title, extraBrands);
   if (directMatch) {
@@ -128,7 +130,7 @@ export async function resolveBrand(
   }
 
   const candidate = extractTitleBrandCandidate(title);
-  if (candidate && (await verifyBrandCandidate(candidate))) {
+  if (candidate && verify && (await verify(candidate))) {
     const corroborated = wordBoundaryMatch(visionResult.ocrText, candidate);
     return {
       brand: candidate,
@@ -196,4 +198,73 @@ export function crossReferenceAttributes(
   }
 
   return { values, confidence };
+}
+
+// Keyword fallback for when detectSubType's exact-phrase match finds nothing — the free tier's
+// only source of a sub_type (no AI). Maps common title words to the same canonical sub_type
+// names the AI produces, so they slot (top/mid/bottom/foot/outer/acc) exactly like an
+// AI-tagged item. Ordered most-specific first within each category; null if nothing matches.
+const SUB_TYPE_KEYWORDS: Record<string, [RegExp, string][]> = {
+  top: [
+    [/\bzip[- ]?(up|hood)/i, "Zip-Up Hoodie"],
+    [/\bhood(ie|ed|y)?\b/i, "Pullover Hoodie"],
+    [/\bsweatshirt|crew ?neck sweat/i, "Crewneck Sweatshirt"],
+    [/\bcardigan/i, "Cardigan"],
+    [/\bfleece/i, "Fleece Jacket"],
+    [/\b(sweater|knit|jumper|pullover)\b/i, "Sweater"],
+    [/\bflannel/i, "Flannel Shirt"],
+    [/\boxford/i, "Oxford Shirt"],
+    [/\bpolo\b/i, "Polo Shirt"],
+    [/\b(button[- ]?(up|down)|shirt\b(?!.*\btee))/i, "Button-Up Shirt"],
+    [/\btank\b/i, "Tank Top"],
+    [/\b(long[- ]?sleeve|l\/s)\b/i, "Long Sleeve Tee"],
+    [/\bgraphic\b/i, "Graphic Tee"],
+    [/\b(tee|t-?shirt)s?\b/i, "T-Shirt"],
+  ],
+  bottom: [
+    [/\bsweat ?pants?\b/i, "Sweatpants"],
+    [/\bjoggers?\b/i, "Joggers"],
+    [/\bcargo/i, "Cargo Pants"],
+    [/\bchinos?\b/i, "Chinos"],
+    [/\bshorts?\b/i, "Shorts"],
+    [/\bskirt/i, "Skirt"],
+    [/\bwide[- ]?leg|baggy|loose/i, "Wide Leg Jeans"],
+    [/\bslim|skinny/i, "Slim Jeans"],
+    [/\b(jeans?|denim)\b/i, "Straight Leg Jeans"],
+    [/\b(trousers?|slacks|dress pants?)\b/i, "Dress Pants"],
+    [/\b(pants?|work pants?)\b/i, "Work Pants"],
+  ],
+  footwear: [
+    [/\bboots?\b/i, "Boot"],
+    [/\bloafers?\b/i, "Loafers"],
+    [/\b(sandals?|slides?|flip[- ]?flops?)\b/i, "Sandals"],
+    [/\bhigh[- ]?tops?\b/i, "High-Top Sneakers"],
+    [/\b(running|runner|trainer)s?\b/i, "Running Shoes"],
+    [/\b(sneakers?|shoes?|kicks|low[- ]?tops?)\b/i, "Low-Top Sneakers"],
+  ],
+  outerwear: [
+    [/\bpuffer|down jacket/i, "Puffer Jacket"],
+    [/\bbomber/i, "Bomber Jacket"],
+    [/\bleather/i, "Leather Jacket"],
+    [/\bdenim|jean jacket|trucker/i, "Denim Jacket"],
+    [/\bblazer|sport coat/i, "Blazer"],
+    [/\b(overcoat|trench|top ?coat|wool coat)\b/i, "Overcoat"],
+    [/\b(rain|shell|windbreaker|anorak)\b/i, "Shell Jacket"],
+    [/\bchore\b/i, "Chore Coat"],
+    [/\b(jacket|coat|parka)\b/i, "Field Jacket"],
+  ],
+  accessory: [
+    [/\bbeanie/i, "Beanie"],
+    [/\b(cap|hat|snapback)\b/i, "Cap"],
+    [/\bbelt\b/i, "Belt"],
+    [/\b(backpack|bag)\b/i, "Backpack"],
+    [/\b(necklace|chain)\b/i, "Necklace"],
+  ],
+};
+
+export function inferSubTypeFromKeywords(title: string, category: string | null | undefined): string | null {
+  for (const [re, subType] of SUB_TYPE_KEYWORDS[category ?? ""] ?? []) {
+    if (re.test(title)) return subType;
+  }
+  return null;
 }

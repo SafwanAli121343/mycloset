@@ -2,8 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { EntitlementsProvider } from "@/contexts/EntitlementsContext";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
+import EmailVerificationGate from "@/components/EmailVerificationGate";
+import Tutorial from "@/components/Tutorial";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -15,9 +18,7 @@ export const metadata: Metadata = {
 };
 
 // viewportFit: "cover" lets content draw under the iPhone notch/Dynamic Island so the
-// env(safe-area-inset-*) CSS variables (see globals.css) become available to opt into —
-// the Capacitor iOS shell also insets natively via contentInset in capacitor.config.ts,
-// so most screens don't need to think about this at all.
+// env(safe-area-inset-*) CSS variables (see globals.css) become available to opt into.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
@@ -32,11 +33,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preload" as="image" href="/loading-tee.png" />
       </head>
-      <body className="min-h-full flex flex-col">
+      {/* suppressHydrationWarning: browser extensions add their own classes/attributes to <body>
+          before React loads (e.g. "ud-body-normal"), which React reports as a hydration mismatch.
+          This only ignores attribute differences on <body> itself, not anything inside it. */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
         <AuthProvider>
-          <Navbar />
-          {children}
-          <MobileTabBar />
+          <EntitlementsProvider>
+            {/* #tut-stage: the page content the tutorial keeps its text clear of (components/Tutorial.tsx). */}
+            <div id="tut-stage">
+              <Navbar />
+              <EmailVerificationGate>{children}</EmailVerificationGate>
+            </div>
+            <MobileTabBar />
+            <Tutorial />
+          </EntitlementsProvider>
         </AuthProvider>
       </body>
     </html>

@@ -15,6 +15,7 @@ export async function verifyBrandCandidate(candidate: string): Promise<boolean> 
 
     const response = await fetch(`https://serpapi.com/search?${params.toString()}`);
     const data = await response.json();
+    if (!response.ok || data.error) return false;
 
     const needle = candidate.toLowerCase();
     const brandSignal = /brand|clothing|apparel|fashion|streetwear|denim|footwear|label/;

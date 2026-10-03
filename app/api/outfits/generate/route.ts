@@ -13,7 +13,10 @@ import { generateAndRankAllOutfits, type RankedOutfit } from "@/lib/wardrobeOutf
 import { generateMonthPlan, REPEAT_WINDOW } from "@/lib/monthOutfitPlan";
 import { type DayWeather } from "@/lib/weatherOutfitFilter";
 import { fetchMonthWeather, seasonalFallbackTemp, tempLabel } from "@/lib/weatherData";
-import { analyzeOutfit, deriveOutfitAesthetic } from "@/lib/outfitInference";
+import { analyzeCalendarOutfits } from "@/lib/calendarAnalysis";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
+import { getUserById } from "@/lib/db/users";
+import { resolveEntitlement } from "@/lib/billing/entitlements";
 
 export const maxDuration = 120;
 
@@ -25,14 +28,25 @@ const adminClient = createClient(
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Full-month outfit generation — AI inference per outfit. 5/hour per IP.
+  const rateBlock = applyApiRateLimit(req, "outfits:generate", 5, 60 * 60 * 1000);
+  if (rateBlock) return rateBlock;
+
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { year, month, lat, lon, overwrite } = body as {
+  const { year, month, lat: latRaw, lon: lonRaw, overwrite } = body as {
     year: number; month: number; lat?: number; lon?: number; overwrite?: boolean;
   };
   if (!year || !month) return NextResponse.json({ error: "year and month required" }, { status: 400 });
+
+  // `lat`/`lon` arrive as whatever the client's JSON body actually contains — the `as` cast above
+  // is compile-time only, so a malformed/malicious value would otherwise flow straight into the
+  // Open-Meteo request URL. Not exploitable as SSRF (the hostname is hardcoded), but validating
+  // here means a bad value degrades to "no weather data" instead of a malformed outbound request.
+  const lat = typeof latRaw === "number" && Number.isFinite(latRaw) && latRaw >= -90 && latRaw <= 90 ? latRaw : null;
+  const lon = typeof lonRaw === "number" && Number.isFinite(lonRaw) && lonRaw >= -180 && lonRaw <= 180 ? lonRaw : null;
 
   const pad         = (n: number) => String(n).padStart(2, "0");
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -56,7 +70,10 @@ export async function POST(req: NextRequest) {
   const { data: garments, error: garmentErr } = await adminClient
     .from("garments")
     .select(
-      "id, title, brand, sub_type, material, color_primary, color_secondary, " +
+      // `category` is required: resolveSlot() (lib/scoring.ts) slots items by category first.
+      // Without it, an item with no sub_type (every free-tier item — sub_type is AI-filled)
+      // fit no slot, so a free wardrobe could never form an outfit or a calendar.
+      "id, title, brand, category, sub_type, material, color_primary, color_secondary, " +
       "pattern, formality, aesthetic_tags, pros, cons, color_pairings, color_clashes, tags, image",
     )
     .eq("user_id", session.userId);
@@ -71,7 +88,7 @@ export async function POST(req: NextRequest) {
   const allRanked = generateAndRankAllOutfits(wardrobe, { maxTotal: 5000 });
   if (!allRanked.length)
     return NextResponse.json({
-      error: "Could not build any valid outfits — wardrobe may be missing footwear, tops, or bottoms",
+      error: "Could not build any valid outfits. Wardrobe may be missing footwear, tops, or bottoms.",
       code: "INSUFFICIENT_WARDROBE",
     }, { status: 422 });
 
@@ -191,40 +208,23 @@ export async function POST(req: NextRequest) {
 
   // Sequential analysis pass: fetch newly inserted outfits and call GPT-4o for each.
   // Runs after all inserts complete; individual failures are swallowed.
+  //
+  // The outfit SELECTION above (generateAndRankAllOutfits/generateMonthPlan) is deterministic,
+  // scoring-based, and runs for every tier regardless — free tier keeps every generated outfit
+  // exactly as picked. This pass only adds AI-written narrative notes on top, so it's the one
+  // part gated behind hasAI; skipping it for free tier leaves the outfits themselves untouched,
+  // just without AI notes attached. A read-only hasAI check, not consumeAiCredit — outfit
+  // narrative was never part of the credit design (credits are scoped to per-item analysis, see
+  // lib/billing/plans.ts), so a free user with purchased item-analysis credits still doesn't get
+  // this rather than silently draining those credits on something they weren't sold. Was
+  // previously ungated entirely, running once per generated day regardless of tier — a real gap
+  // found in the free-tier AI audit (this route can generate up to ~30 days' worth in one call).
   const generatedDates = Object.keys(results);
-  if (generatedDates.length > 0) {
-    type AnalysisRow = {
-      id: string; notes: string | null;
-      outfit_items: { garments: GarmentForScoring | null }[];
-    };
-    const { data: toAnalyze } = await adminClient
-      .from("outfits")
-      .select(`id, notes, outfit_items(garments(
-        id, title, brand, sub_type, material,
-        color_primary, color_secondary, pattern,
-        formality, aesthetic_tags, pros, cons,
-        color_pairings, color_clashes, tags, image
-      ))`)
-      .eq("user_id", session.userId)
-      .in("date", generatedDates);
-
-    for (const outfit of (toAnalyze ?? []) as unknown as AnalysisRow[]) {
-      const items = outfit.outfit_items
-        .map(oi => oi.garments)
-        .filter((g): g is GarmentForScoring => g != null);
-      if (items.length === 0) continue;
-      try {
-        let existingNotes: Record<string, unknown> = {};
-        try { existingNotes = JSON.parse(outfit.notes ?? "{}"); } catch {}
-        const score      = typeof existingNotes.styleScore === "number" ? existingNotes.styleScore : 50;
-        const configName = typeof existingNotes.configName === "string"  ? existingNotes.configName  : "outfit";
-        const aesthetic  = deriveOutfitAesthetic(items);
-        const analysis   = await analyzeOutfit(items, { score, configName, aesthetic });
-        await adminClient.from("outfits").update({
-          notes: JSON.stringify({ ...existingNotes, ...analysis }),
-        }).eq("id", outfit.id);
-      } catch { /* individual failure — outfit still saved without analysis */ }
-    }
+  const analysisBillingUser = await getUserById(session.userId).catch(() => null);
+  if (analysisBillingUser && resolveEntitlement(analysisBillingUser).hasAI && generatedDates.length > 0) {
+    // Scores + analysis for the new days (lib/calendarAnalysis.ts), in parallel. Anything not
+    // finished within the time limit is picked up the next time the month is viewed.
+    await analyzeCalendarOutfits(analysisBillingUser, { dates: generatedDates }, Date.now() + 75_000).catch(() => 0);
   }
 
   return NextResponse.json({ generated: results, count: Object.keys(results).length });

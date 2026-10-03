@@ -21,3 +21,21 @@ export function useIsMobile(): boolean {
 
   return isMobile;
 }
+
+// Same check, but null until the media query has actually been read on the client. For UI whose
+// POSITION depends on the answer (e.g. the Navbar: bottom-right on desktop, top-right on mobile):
+// rendering with the SSR-time `false` first painted it in the desktop spot, then visibly jumped
+// to the mobile spot a frame later on every page load on a phone. Render nothing until resolved.
+export function useIsMobileResolved(): boolean | null {
+  const [isMobile, setIsMobile] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
+    setIsMobile(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  return isMobile;
+}

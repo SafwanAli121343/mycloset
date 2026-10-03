@@ -9,6 +9,7 @@
 // WMO codes used everywhere else. Consolidated here so both call sites agree.
 
 import { weatherCodeToCondition, type DayWeather as ScoringDayWeather } from "@/lib/weatherOutfitFilter";
+import { isWeatherKitConfigured, fetchMonthWeatherViaWeatherKit } from "@/lib/weatherKit";
 
 export type DayWeather = ScoringDayWeather;
 
@@ -49,10 +50,19 @@ interface OpenMeteoDaily {
 async function fetchOpenMeteoDaily(url: string): Promise<OpenMeteoDaily | null> {
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      // Was a bare `catch { return null }` with no logging at all on either failure path — a
+      // silent forecast failure here falls through to the archive (last-year-same-date) branch
+      // below with zero trace of why, which reads as "today's temperature is just wrong" with no
+      // way to tell that from a real day-of mismatch after the fact. Logging both failure modes
+      // now so a future mismatch report can actually be diagnosed instead of re-guessed.
+      console.error(`[weatherData] Open-Meteo request failed: ${r.status} ${url}`);
+      return null;
+    }
     const d = await r.json() as { daily?: OpenMeteoDaily };
     return d?.daily ?? null;
-  } catch {
+  } catch (err) {
+    console.error(`[weatherData] Open-Meteo request threw: ${err instanceof Error ? err.message : err} ${url}`);
     return null;
   }
 }
@@ -71,8 +81,28 @@ export async function fetchMonthWeather(
   wantedDates: string[],
 ): Promise<Map<string, DayWeather>> {
   const pad  = (n: number) => String(n).padStart(2, "0");
-  const vars = "temperature_2m_mean,weathercode,windspeed_10m_max";
   const result = new Map<string, DayWeather>();
+
+  // Apple WeatherKit, when configured (see lib/weatherKit.ts's own setup comment) — matches what
+  // Apple's own Weather app shows, which Open-Meteo (a different model/blend) fundamentally can't
+  // guarantee no matter how its parameters are tuned. Dormant until the four WEATHERKIT_* env vars
+  // are set (nothing changes for anyone until then). Merged in BEFORE Open-Meteo runs, not
+  // returned early — WeatherKit's forecast window may not cover a whole month, and the existing
+  // "uncovered dates fall through" logic below already skips whatever's already in `result`, so
+  // Open-Meteo naturally fills in only what WeatherKit didn't, exactly like the forecast/archive
+  // split already does for Open-Meteo's own two calls.
+  if (isWeatherKitConfigured()) {
+    const wk = await fetchMonthWeatherViaWeatherKit(lat, lon, wantedDates);
+    for (const [date, w] of wk) result.set(date, w);
+  }
+
+  // Reverted to temperature_2m_mean — a brief attempt at temperature_2m_max (the daily high) was
+  // wrong for the opposite reason: on a genuinely cold day, the high alone overstates what most of
+  // the day actually feels like, which is just as misleading as the mean understating a warm day.
+  // Confirmed this wasn't the real source of the reported inaccuracy either way — readings were
+  // off regardless of which of the two was used, so the actual cause is elsewhere (most likely
+  // location resolution, not this choice of daily statistic).
+  const vars = "temperature_2m_mean,weathercode,windspeed_10m_max";
 
   const applyDaily = (daily: OpenMeteoDaily | null, dateFor: (rawDate: string) => string | null) => {
     if (!daily) return;
@@ -88,9 +118,14 @@ export async function fetchMonthWeather(
     }
   };
 
+  // URLSearchParams (not template-literal interpolation) so lat/lon are always properly encoded
+  // query values regardless of caller — matches the safer pattern geocodeCity already uses below.
+  const forecastParams = new URLSearchParams({
+    latitude: String(lat), longitude: String(lon),
+    daily: vars, temperature_unit: "fahrenheit", forecast_days: "16", timezone: "auto",
+  });
   const forecastDaily = await fetchOpenMeteoDaily(
-    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    `&daily=${vars}&temperature_unit=fahrenheit&forecast_days=16&timezone=auto`,
+    `https://api.open-meteo.com/v1/forecast?${forecastParams}`,
   );
   applyDaily(forecastDaily, (raw) => raw);
 
@@ -98,10 +133,13 @@ export async function fetchMonthWeather(
   if (uncovered.length > 0) {
     const days = new Date(year, month, 0).getDate();
     const ly   = year - 1;
+    const archiveParams = new URLSearchParams({
+      latitude: String(lat), longitude: String(lon),
+      start_date: `${ly}-${pad(month)}-01`, end_date: `${ly}-${pad(month)}-${pad(days)}`,
+      daily: vars, temperature_unit: "fahrenheit",
+    });
     const archiveDaily = await fetchOpenMeteoDaily(
-      `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
-      `&start_date=${ly}-${pad(month)}-01&end_date=${ly}-${pad(month)}-${pad(days)}` +
-      `&daily=${vars}&temperature_unit=fahrenheit`,
+      `https://archive-api.open-meteo.com/v1/archive?${archiveParams}`,
     );
     applyDaily(archiveDaily, (raw) => `${year}-${raw.slice(5)}`);
   }

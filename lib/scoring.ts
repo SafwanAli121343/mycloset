@@ -268,7 +268,10 @@ export function resolveSlot(item: GarmentForScoring): string | null {
   if (cat === "vest"      || cat === "gilet")                      return "vest";
   if (cat === "one-piece" || cat === "onepiece" || cat === "dress") return "onepiece";
   if (cat === "accessory" || cat === "accessories")                return "acc";
-  return getSlot(item.sub_type);
+  // A top whose sub_type is unknown (free tier never runs the AI that fills it, and the
+  // keyword fallback can miss) is still a top — treat it as a base layer rather than leaving
+  // it slotless, which silently excluded it from every outfit.
+  return getSlot(item.sub_type) ?? (cat === "top" ? "base" : null);
 }
 
 export function isValidOutfitCombination(
@@ -353,11 +356,12 @@ const PREMIUM_BRANDS = new Set([
   "PLEASURES","AWAKE NY","STAMPD","REPRESENT","ACRONYM",
   "HUMAN MADE","NEIGHBORHOOD","WTAPS","FRAGMENT",
   "MONCLER GENIUS","STONE ISLAND","CP COMPANY","LEVI'S","CARHARTT","DICKIES",
+  "UNIQLO","MUJI",
 ]);
 
 const BUDGET_BRANDS = new Set([
   "ZARA","H&M","SHEIN","PRIMARK","BOOHOO","ASOS","FOREVER 21","FASHION NOVA",
-  "TOPSHOP","UNIQLO","GAP","OLD NAVY","TARGET","WALMART","FAST FASHION",
+  "TOPSHOP","GAP","OLD NAVY","TARGET","WALMART","FAST FASHION",
   "PLT","PRETTY LITTLE THING","ROMWE","ZAFUL",
   "HANES","FRUIT OF THE LOOM","GILDAN","COTTON ON","COTTON:ON",
   "GEORGE","F21","PENNEYS","PEACOCKS",
@@ -512,7 +516,7 @@ const DOMAIN_BRAND_SCORES: Record<string, Record<string, number>> = {
   "vintage": {
     "LEVI'S": 48, "CARHARTT": 46, "WRANGLER": 44, "LEE": 42,
     "DICKIES": 40, "POLO RALPH LAUREN": 40, "RALPH LAUREN": 40,
-    "JNCO": 38, "STUSSY": 42, "SUPREME": 44, "CHAMPION": 36,
+    "JNCO": 38, "STUSSY": 42, "SUPREME": 44, "CHAMPION": 20,
   },
   "quiet-luxury": {
     "LORO PIANA": 50, "THE ROW": 50, "BRUNELLO CUCINELLI": 50, "TOTEME": 46,
@@ -523,6 +527,7 @@ const DOMAIN_BRAND_SCORES: Record<string, Record<string, number>> = {
     "MASSIMO ALBA": 46, "BOGLIOLI": 44, "ZEGNA": 46, "ERMENEGILDO ZEGNA": 46,
     "PRADA": 48, "DIOR": 48, "LOEWE": 48,
     "ISSEY MIYAKE": 44, "3.1 PHILLIP LIM": 38, "COMMON PROJECTS": 42,
+    "UNIQLO": 26,
   },
   "old-money": {
     "POLO RALPH LAUREN": 50, "RALPH LAUREN": 50, "BROOKS BROTHERS": 48,
@@ -566,6 +571,7 @@ const DOMAIN_BRAND_SCORES: Record<string, Record<string, number>> = {
     "ACNE STUDIOS": 46, "A.P.C.": 46, "OUR LEGACY": 44,
     "NORSE PROJECTS": 44, "FILIPPA K": 44, "SAMSOE SAMSOE": 42,
     "CARHARTT WIP": 38, "HOPE": 44, "STUDIO NICHOLSON": 46,
+    "UNIQLO": 32, "MUJI": 30,
   },
   "preppy": {
     "POLO RALPH LAUREN": 50, "RALPH LAUREN": 50, "BROOKS BROTHERS": 48,
@@ -664,12 +670,12 @@ export function scorePiece(item: GarmentForScoring): number {
   const colorTotal = pairCount + clashCount;
   const colorPts   = colorTotal > 0 ? Math.round((pairCount / colorTotal) * 15) : 9;
 
-  // Aesthetic context bonus — cap scales inversely with brand tier.
-  // For luxury brands (Balenciaga, Tiffany) the brand IS the statement: aesthetic cap = 4.
+  // Aesthetic context bonus — cap scales inversely with brand tier (except luxury = premium).
+  // Luxury and premium brands both cap at 8 — domain authority already separates them.
   // For unknown brands the aesthetics must carry the weight: cap = 12.
   // This means a well-styled unknown piece in streetwear/y2k can genuinely outscore
   // a poorly-styled premium piece — which is how outfit battles should feel.
-  const AESTHETIC_CAP: Record<number, number> = { 5: 4, 3: 8, 2: 12, 1: 6 };
+  const AESTHETIC_CAP: Record<number, number> = { 5: 8, 3: 8, 2: 12, 1: 6 };
   const aestheticPts = Math.round(aestheticScore(item.aesthetic_tags, AESTHETIC_CAP[brandTier] ?? 8));
 
   // Formality flexibility (0–3): smart-casual maximizes versatility
@@ -800,6 +806,19 @@ export function weatherPenalty(items: GarmentForScoring[], tempF: number): numbe
   const hasShorts = slots.has("bottom") && items.some(i =>
     (i.sub_type ?? "").toLowerCase().includes("short")
   );
+  const subOf = (i: GarmentForScoring) => (i.sub_type ?? "").toLowerCase();
+  // Fabric/weight signals the slot-only checks above couldn't see (found by running the month
+  // planner across temperatures: a T-shirt under only a shell jacket at 40°F, a blazer as the
+  // only coat in 18°F snow, long sleeves and boots at 97°F).
+  // A light outer layer is wind/style cover, not warmth.
+  const outerItems = items.filter(i => getSlot(i.sub_type) === "outer");
+  const isLightOuter = (i: GarmentForScoring) =>
+    /shell|windbreaker|rain|anorak|blazer|sport coat|denim jacket|jean jacket|chore|overshirt|shacket|coach|harrington|track jacket|bomber/.test(subOf(i));
+  const onlyLightOuter = outerItems.length > 0 && outerItems.every(isLightOuter);
+  const hasLongSleeveBase = items.some(i => getSlot(i.sub_type) === "base" &&
+    /long sleeve|long-sleeve|longsleeve|thermal|turtleneck|flannel/.test(subOf(i)));
+  const hasBoots = items.some(i => getSlot(i.sub_type) === "foot" && /boot/.test(subOf(i)));
+  const hasLinen = items.some(i => /linen/.test(subOf(i)));
 
   let penalty = 0;
 
@@ -807,11 +826,15 @@ export function weatherPenalty(items: GarmentForScoring[], tempF: number): numbe
     if (!hasOuter && !hasMid)  penalty += 20; // bare tee in freezing = wrong
     else if (!hasOuter)        penalty += 10; // hoodie only in freezing = borderline
     else if (!hasMid)          penalty += 4;  // jacket w/o mid = slightly under-layered
+    if (onlyLightOuter)        penalty += 8;  // blazer/shell as the only coat in freezing
+    if (hasLinen)              penalty += 4;  // linen in freezing
     if (hasOpenFoot)           penalty += 18; // sandals in freezing = critical fail
     if (hasShorts)             penalty += 12; // shorts in freezing
   } else if (tempF < 46) {
     if (!hasOuter && !hasMid)  penalty += 14;
     else if (!hasOuter)        penalty += 6;
+    else if (!hasMid && onlyLightOuter) penalty += 6; // tee + thin shell/blazer at 40°F
+    if (hasLinen)              penalty += 3;
     if (hasOpenFoot)           penalty += 14;
     if (hasShorts)             penalty += 8;
   } else if (tempF < 55) {
@@ -825,6 +848,8 @@ export function weatherPenalty(items: GarmentForScoring[], tempF: number): numbe
     if (hasOuter)              penalty += 14; // jacket in summer heat
     if (hasMid)                penalty += 8;  // sweater/hoodie at 82°F+ is uncomfortable
     if (hasMid && tempF >= 90) penalty += 5;  // extra penalty for 90°F+ extreme heat
+    if (hasLongSleeveBase)     penalty += tempF >= 90 ? 6 : 3; // short sleeves read right in heat
+    if (hasBoots)              penalty += tempF >= 90 ? 6 : 3; // boots at 90°F+
   } else if (tempF >= 75) {
     if (hasOuter)              penalty += 7;  // jacket at 75–81°F = too warm
     if (hasMid)                penalty += 4;  // sweater at 75–81°F = mildly warm
@@ -1022,7 +1047,11 @@ export function scoreOutfit(
   // way), and this only applies from 3 items up — with 2 items, an isolated item IS
   // the whole outfit's overlapRatio, already covered by the check above.
   if (scoringItems.length >= 3) {
-    const isIsolated = scoringItems.some(item => {
+    // Find the isolated item (if any) to determine penalty severity.
+    // Bottoms and footwear MUST exist in any outfit; if they're isolated it's more likely
+    // a tagging gap than a genuine mismatch. Apply a lighter penalty (0.75) for those slots
+    // vs the hard penalty (0.60) for isolated tops/outerwear which really don't belong.
+    const isolatedItem = scoringItems.find(item => {
       const itemTags = (item.aesthetic_tags ?? []).map(t => t.toLowerCase());
       if (itemTags.length === 0) return false;
       const itemTagSet = new Set(itemTags);
@@ -1030,7 +1059,14 @@ export function scoreOutfit(
         other !== item && (other.aesthetic_tags ?? []).some(t => itemTagSet.has(t.toLowerCase()))
       );
     });
-    if (isIsolated) aestheticPenaltyMult = Math.min(aestheticPenaltyMult, 0.60);
+    if (isolatedItem) {
+      const slot = resolveSlot(isolatedItem);
+      const isRequiredSlot = slot === "bottom" || slot === "foot";
+      // Required slots (bottom/footwear) must exist — isolation there is almost certainly
+      // a tagging gap, not a real mismatch. Don't penalize; overlapRatio already captures
+      // the reduced cohesion numerically. Isolated tops/outerwear genuinely don't belong.
+      if (!isRequiredSlot) aestheticPenaltyMult = Math.min(aestheticPenaltyMult, 0.60);
+    }
   }
 
   // Quality consistency (8 pts)
@@ -2321,9 +2357,16 @@ export function generateOutfits(
 
   const outfits: OutfitResult[] = [];
   const seen = new Set<string>();
+  // Per-base quota: each starting piece contributes at most this many outfits
+  // so that no single base dominates the final top-N list.
+  const baseCount = bases.length + mids.length + outers.length + onepieces.length;
+  const PER_BASE = Math.max(3, Math.ceil((limit * 4) / Math.max(baseCount, 1)));
+  const baseContrib = new Map<string, number>();
 
   const tryAdd = (combo: GarmentForScoring[]) => {
-    if (outfits.length >= limit) return;
+    if (outfits.length >= limit * 10) return;
+    const startId = combo[0]?.id ?? "";
+    if ((baseContrib.get(startId) ?? 0) >= PER_BASE) return;
     const key = [...new Set(combo.map(i => i.id))].sort().join(",");
     if (seen.has(key)) return;
     const wearable = combo.filter(i => getSlot(i.sub_type) !== "acc");
@@ -2332,6 +2375,7 @@ export function generateOutfits(
     const s = scoreOutfit(combo);
     if (s < minScore) return;
     seen.add(key);
+    baseContrib.set(startId, (baseContrib.get(startId) ?? 0) + 1);
     outfits.push({ items: combo, score: s });
   };
 

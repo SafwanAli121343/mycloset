@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { generateOutfits } from "@/lib/scoring";
 import { BOT_ARCHETYPES, assembleBotWardrobe, type DbProduct } from "@/lib/botGen";
 import type { GarmentForScoring } from "@/lib/scoring";
@@ -44,7 +45,9 @@ async function getWardrobes(): Promise<BotWardrobe[]> {
 
 // GET /api/bots
 // Returns all bots with their best outfit score for the bot-select screen.
-export async function GET() {
+export async function GET(req: Request) {
+  const rateBlock = applyApiRateLimit(req, "bots", 60, 60000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 

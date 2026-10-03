@@ -8,6 +8,7 @@ import { revalidateGarmentCrossings } from "@/lib/db/wardrobeState";
 import { getDiscoveredBrands, addDiscoveredBrand } from "@/lib/db/discoveredBrands";
 import {
   detectSubType,
+  inferSubTypeFromKeywords,
   detectBrand,
   resolveBrand,
   detectFit,
@@ -19,30 +20,106 @@ import { extractColors } from "@/lib/colorExtraction";
 import { inferGarmentAttributes, inferGarmentAttributesTextOnly } from "@/lib/aiInference";
 import { searchVisualMatches, type VisualMatch } from "@/lib/lensSearch";
 import { detectLogoAndText, type LogoTextResult } from "@/lib/visionDetection";
+import { aiPaidCall } from "@/lib/aiGateway";
+import { verifyBrandCandidate } from "@/lib/brandVerification";
 import { lookupAttributesFromUrl } from "@/lib/productLookup";
 import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 import { removeBackground } from "@imgly/background-removal-node";
+import { getUserById } from "@/lib/db/users";
+import { consumeAiCredit, resolveEntitlement } from "@/lib/billing/entitlements";
+import type { InferenceResult } from "@/lib/aiInference";
+
+// Free-tier items still get real organization + non-AI analysis (title, category, color via
+// sharp-based extractColors, fit/pattern/material via title-text heuristics) — only the actual
+// OpenAI/Vision calls (inferGarmentAttributes, searchVisualMatches, detectLogoAndText) are
+// gated. One credit (from a one-time-purchase balance) buys one item's worth of AI enrichment
+// regardless of how many underlying API calls that fans out into; Pro checks against its own
+// monthly dollar cap instead (see lib/billing/entitlements.ts's consumeAiCredit).
+// Returns the fetched user alongside the decision so callers can pass it straight into
+// inferGarmentAttributes/inferGarmentAttributesTextOnly for real per-call cost tracking, without
+// a second DB read.
+async function resolveAiAllowed(userId: string): Promise<{ allowed: boolean; user: Awaited<ReturnType<typeof getUserById>> }> {
+  const user = await getUserById(userId).catch(() => null);
+  if (!user) return { allowed: false, user: null };
+  // Silent degrade, not an error — matches the existing free-tier-no-credits behavior here: the
+  // item still saves, just without AI enrichment, same as it always has. This is a background
+  // pass on save, not an interactive action the user is actively waiting on, so there's nothing
+  // to show red error text for here specifically (unlike the direct, interactive AI actions —
+  // Add Item's own auto-fill, Preview, Wardrobe analysis — which DO surface consumeErrorMessage).
+  // Pro only (within its monthly cap). A free user's purchased scores are never spent on adding
+  // an item — only through "Use score?" in My Closet (/api/jobs).
+  const result = await consumeAiCredit(user);
+  return { allowed: result.allowed, user };
+}
+
+const EMPTY_INFERENCE: InferenceResult = { values: {}, confidence: {} };
+
+// Per-call prices for the non-OpenAI paid lookups, charged to the AI budget (lib/aiGateway.ts):
+// SerpAPI Google Lens ≈ 1.5¢/search, Cloud Vision logo + text detection ≈ 0.3¢.
+const LENS_CENTS = 1.5;
+const VISION_CENTS = 0.3;
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// AI-derived fields hidden (not deleted — see resolveEntitlement) from a free/lapsed-tier
+// response. color_pairings/color_clashes are excluded too even though a rule-based non-AI
+// substitute exists client-side (lib/colorTheory.ts computes those live from color_primary,
+// which IS always present) — the DB versions are the richer AI-written ones and shouldn't leak
+// back in once a subscription lapses.
+const AI_GATED_FIELDS = [
+  "pros", "cons", "aesthetic_tags", "color_pairings", "color_clashes", "style_pairings",
+  "formality", "design_complexity", "logo_prominence",
+] as const;
+
 export async function GET(_req: Request) {
   const session = await getSessionFromCookies();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data, error } = await adminClient
-    .from("garments")
-    .select("*")
-    .eq("user_id", session.userId)
-    .order("created_at", { ascending: false });
+  // Run alongside the garments query, not after it — sequential here would add a full extra
+  // round trip to the app's single most frequently called endpoint for no reason, since neither
+  // query depends on the other's result.
+  const [{ data, error }, billingUser] = await Promise.all([
+    adminClient
+      .from("garments")
+      .select("*")
+      .eq("user_id", session.userId)
+      .order("created_at", { ascending: false }),
+    getUserById(session.userId).catch(() => null),
+  ]);
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json(data, {
-    headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=300" },
+  if (error) return Response.json({ error: "Something went wrong." }, { status: 500 });
+
+  const hasAI = !!billingUser && resolveEntitlement(billingUser).hasAI;
+  const out = hasAI
+    ? data
+    : (data ?? []).map(g => {
+        const copy = { ...g } as Record<string, unknown>;
+        // Paid for with a one-time purchase — this item's AI details stay visible on free tier.
+        if (copy.ai_unlocked === true) return copy;
+        for (const f of AI_GATED_FIELDS) {
+          // aesthetic_tags is the one AI_GATED_FIELDS entry that can also be a user's own
+          // AestheticPicker choice, not just an AI guess (see aesthetic_source's own comment in
+          // lib/db/garments.ts) — stripping it here for a free/lapsed user must not also erase
+          // something they typed in themselves.
+          if (f === "aesthetic_tags" && copy.aesthetic_source === "manual") continue;
+          copy[f] = null;
+        }
+        return copy;
+      });
+
+  // no-store, not max-age: this is the user's own, frequently-mutated list. A max-age let the
+  // browser (and iOS's URL cache on native) answer from its HTTP cache for up to a minute, so
+  // the closet's 3.5s "analysis pending" poll kept getting the same stale pros:null snapshot,
+  // and a just-added/deleted item could be missing/still present after navigating back.
+  // Native keeps its own in-memory TTL cache (native/lib/dataCache.ts), so nothing is lost.
+  return Response.json(out, {
+    headers: { "Cache-Control": "private, no-store" },
   });
 }
 
@@ -99,6 +176,14 @@ export async function PATCH(request: NextRequest) {
   for (const key of ALLOWED) {
     if (key in raw) updates[key] = raw[key] ?? null;
   }
+  // Editing the aesthetic after the fact — same shape and "manual" source as Add Item's picker
+  // (see the manual-add path below), so a user's own pick is never stripped for free tier and
+  // never overwritten by AI. An empty value clears it.
+  if ("aesthetic" in raw) {
+    const a = typeof raw.aesthetic === "string" ? raw.aesthetic.trim().slice(0, 40) : "";
+    updates.aesthetic_tags = a ? [a] : null;
+    updates.aesthetic_source = a ? "manual" : null;
+  }
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: "No valid fields" }, { status: 400 });
 
   const { data: updatedGarment, error } = await adminClient
@@ -109,12 +194,12 @@ export async function PATCH(request: NextRequest) {
     .select("sub_type, category, color_primary, aesthetic_tags")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
 
   // If a crossing-relevant attribute changed, re-validate this item's existing wardrobe-analysis
   // crossings against its new attributes — a color crossing earned under the old color, for
   // example, must not keep showing as resolved after the edit.
-  const CROSSING_RELEVANT = ["category", "sub_type", "color_primary"];
+  const CROSSING_RELEVANT = ["category", "sub_type", "color_primary", "aesthetic_tags"];
   if (CROSSING_RELEVANT.some(k => k in updates) && updatedGarment) {
     try { await revalidateGarmentCrossings(adminClient, session.userId, id, updatedGarment); }
     catch { /* non-critical */ }
@@ -142,12 +227,16 @@ async function uploadBase64ToStorage(dataUri: string, userId: string): Promise<s
 }
 
 export async function POST(request: NextRequest) {
+  // AI inference + image processing make this expensive — limit to 30/hour per IP
+  const rateBlock = applyApiRateLimit(request, "garments:post", 30, 60 * 60 * 1000);
+  if (rateBlock) return rateBlock;
+
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const user_id = session.userId;
 
   const body = await request.json();
-  const { title, price, source, link, image, category, manual, brand: manualBrand, color_primary: manualColor } = body;
+  const { title, price, source, link, image, category, manual, brand: manualBrand, color_primary: manualColor, aesthetic: manualAesthetic } = body;
 
   // Manual add — save immediately, then infer scoring fields in the background
   if (manual) {
@@ -157,6 +246,11 @@ export async function POST(request: NextRequest) {
     const resolvedImageManual = image?.startsWith("data:")
       ? await uploadBase64ToStorage(image, user_id).catch(() => image)
       : (image ?? null);
+    // A manually-picked aesthetic (native's AestheticPicker, both free and paid) is available
+    // regardless of AI access — the one AI_GATED_FIELDS field a free-tier user can still set
+    // themselves. Stored immediately at insert time, not left for the AI enrichment pass below.
+    const manualAestheticTags: string[] | null =
+      typeof manualAesthetic === "string" && manualAesthetic.trim() ? [manualAesthetic.trim()] : null;
     const garment = await insertGarment({
       title,
       price: price ?? null,
@@ -167,14 +261,24 @@ export async function POST(request: NextRequest) {
       category,
       brand: manualBrand ?? null,
       color_primary: manualColor ?? null,
+      aesthetic_tags: manualAestheticTags,
+      aesthetic_source: manualAestheticTags ? "manual" : null,
+      // Deterministic sub_type from the title, at insert — the free tier's only source of one
+      // (no AI), and what lets outfit generation tell a hoodie (a layer) from a tee (a base).
+      // A Pro item's AI enrichment below overwrites it with the AI's own answer.
+      sub_type: detectSubType(title, category) ?? inferSubTypeFromKeywords(title, category),
     });
 
     // Run AI inference — visual when an image is available (same pipeline as Preview),
-    // text-only fallback otherwise
+    // text-only fallback otherwise. Free tier (no AI credit available) skips this entirely and
+    // keeps the item exactly as saved above — organization-only, no scoring/pros/cons/pairings.
     let enriched: Record<string, unknown> = { ...garment };
+    const { allowed: aiAllowedManual, user: billingUserManual } = await resolveAiAllowed(user_id);
     try {
       const DEEP_FIELDS = ["sub_type", "aesthetic_tags", "pros", "cons", "color_pairings", "color_clashes", "formality", "pattern", "item_tier", "novelty_quality"];
-      const result = image
+      const result = !aiAllowedManual
+        ? EMPTY_INFERENCE
+        : image
         ? await inferGarmentAttributes(
             {
               title,
@@ -186,7 +290,8 @@ export async function POST(request: NextRequest) {
               material: body.material ?? null,
               image,
             },
-            DEEP_FIELDS
+            DEEP_FIELDS,
+            billingUserManual!,
           )
         : await inferGarmentAttributesTextOnly({
             title,
@@ -195,12 +300,17 @@ export async function POST(request: NextRequest) {
             brand: manualBrand ?? null,
             colorPrimary: manualColor ?? null,
             material: body.material ?? null,
-          });
+          }, billingUserManual!);
       const v = result.values;
       const manualIsNovelty = (v.item_tier as string | undefined) === 'novelty';
       const updates: Record<string, unknown> = {};
       if (v.sub_type) updates.sub_type = v.sub_type;
-      if (v.aesthetic_tags) updates.aesthetic_tags = v.aesthetic_tags;
+      // Never overwrite a user's explicit aesthetic pick with AI's own guess — same "manual wins
+      // over inferred" rule already applied to brand/title in /api/garments/analyze.
+      if (v.aesthetic_tags && !manualAestheticTags) {
+        updates.aesthetic_tags = v.aesthetic_tags;
+        updates.aesthetic_source = "ai";
+      }
       if (v.pattern) updates.pattern = v.pattern;
       if (v.formality) updates.formality = v.formality;
       if (v.material) updates.material = v.material;
@@ -218,9 +328,11 @@ export async function POST(request: NextRequest) {
       if (manualIsNovelty) {
         updates.pros = [];
         updates.cons = [];
-      } else {
-        if (v.pros) updates.pros = v.pros;
-        if (v.cons) updates.cons = v.cons;
+      } else if (aiAllowedManual) {
+        // [] rather than leaving null when AI ran but returned none — see the URL path's
+        // analysisUpdate comment below for why null reads as "still analyzing" forever.
+        updates.pros = v.pros ?? [];
+        updates.cons = v.cons ?? [];
       }
       if (Object.keys(updates).length > 0) {
         await adminClient.from("garments").update(updates).eq("id", garment.id);
@@ -248,8 +360,11 @@ export async function POST(request: NextRequest) {
 
   const discoveredBrands = await getDiscoveredBrands().catch(() => [] as string[]);
 
-  let subType = detectSubType(title, category);
-  const subTypeConfidence = subType ? "high" : "unknown";
+  // Only an exact-phrase match counts as "high" confidence — a keyword guess still lets a Pro
+  // user's AI pass refine it, but is a usable answer on its own for the free tier.
+  const exactSubType = detectSubType(title, category);
+  let subType = exactSubType ?? inferSubTypeFromKeywords(title, category);
+  const subTypeConfidence = exactSubType ? "high" : "unknown";
 
   const isAccessory = category === "accessory";
   let fit = isAccessory ? null : detectFit(title);
@@ -257,68 +372,33 @@ export async function POST(request: NextRequest) {
   let material = detectMaterial(title);
   let materialConfidence: string | undefined = material ? "high" : undefined;
 
-  const needsLens = !detectBrand(title, discoveredBrands) || (!isAccessory && !fit) || !pattern || !material;
-  const needsVision = !detectBrand(title, discoveredBrands) || !material;
+  const { allowed: aiAllowed, user: billingUserMain } = await resolveAiAllowed(user_id);
+  const needsLens = aiAllowed && (!detectBrand(title, discoveredBrands) || (!isAccessory && !fit) || !pattern || !material);
+  const needsVision = aiAllowed && (!detectBrand(title, discoveredBrands) || !material);
 
-  // Step 1: image analysis + wardrobe fetch run in parallel
-  const [[visualMatches, colorResult, visionResult, urlLookup], existingItems] = await Promise.all([
-    Promise.all([
-      needsLens ? searchVisualMatches(image).catch(() => [] as VisualMatch[]) : Promise.resolve([] as VisualMatch[]),
-      extractColors(image),
-      needsVision
-        ? detectLogoAndText(image).catch(() => ({ detectedLogos: [], ocrText: "" } as LogoTextResult))
-        : Promise.resolve({ detectedLogos: [], ocrText: "" } as LogoTextResult),
-      link ? lookupAttributesFromUrl(title, link, image) : Promise.resolve({ brand: null, material: null, pageText: null }),
-    ]),
-    user_id
-      ? adminClient.from("garments")
-          .select("category, color_primary, color_secondary, sub_type, brand, fit, pattern, material, aesthetic_tags, formality, image")
-          .eq("user_id", user_id)
-          .limit(20)
-          .then(r => r.data ?? [])
-      : Promise.resolve([]),
+  // Step 1: image analysis in parallel. extractColors is plain sharp/Lab pixel math (no AI) and
+  // always runs — it's the free tier's real, non-AI color data.
+  const [visualMatches, colorResult, visionResult, urlLookup] = await Promise.all([
+    // Lens/Vision are paid APIs: billed to the user's AI budget and cached by image content
+    // like every AI call (lib/aiGateway.ts). aiAllowed ⇒ billingUserMain is set.
+    needsLens
+      ? aiPaidCall("serpapi:lens", { type: "image_url", image_url: { url: image } }, LENS_CENTS, billingUserMain!, () => searchVisualMatches(image)).catch(() => [] as VisualMatch[])
+      : Promise.resolve([] as VisualMatch[]),
+    extractColors(image),
+    needsVision
+      ? aiPaidCall("gcv:logo-text", { type: "image_url", image_url: { url: image } }, VISION_CENTS, billingUserMain!, () => detectLogoAndText(image))
+          .catch(() => ({ detectedLogos: [], ocrText: "" } as LogoTextResult))
+      : Promise.resolve({ detectedLogos: [], ocrText: "" } as LogoTextResult),
+    link ? lookupAttributesFromUrl(title, link, image, aiAllowed ? billingUserMain : null) : Promise.resolve({ brand: null, material: null, pageText: null }),
   ]);
 
-  type WardrobeItem = {
-    category: string;
-    color_primary: string | null;
-    color_secondary: string | null;
-    sub_type: string | null;
-    brand: string | null;
-    fit: string | null;
-    pattern: string | null;
-    material: string | null;
-    aesthetic_tags: string[] | null;
-    formality: string | null;
-    image: string | null;
-  };
 
-  const wardrobeLines = (existingItems as WardrobeItem[]).map((g, i) => {
-    const colorStr = [g.color_primary, g.color_secondary].filter(Boolean).join("/");
-    const attrs = [
-      g.brand,
-      g.sub_type || g.category,
-      colorStr && `color: ${colorStr}`,
-      g.fit && `fit: ${g.fit}`,
-      g.pattern && g.pattern !== "solid" && `pattern: ${g.pattern}`,
-      g.material && `material: ${g.material}`,
-      g.aesthetic_tags?.length && `aesthetic: ${g.aesthetic_tags.join("/")}`,
-      g.formality && `formality: ${g.formality}`,
-    ].filter(Boolean).join(" | ");
-    return `${i + 1}. ${attrs}`;
-  });
-
-  const wardrobeImages = (existingItems as WardrobeItem[])
-    .map((g, i) => g.image ? { label: `${i + 1}. ${[g.brand, g.sub_type || g.category].filter(Boolean).join(" ")}`, url: g.image } : null)
-    .filter((x): x is { label: string; url: string } => x !== null);
-
-  const wardrobeContext = wardrobeLines.length > 0
-    ? `This is the user's COMPLETE wardrobe (${wardrobeLines.length} item${wardrobeLines.length !== 1 ? "s" : ""} total — do not assume any unlisted items exist):\n${wardrobeLines.join("\n")}`
-    : null;
-
-
-
-  const brandResult = await resolveBrand(brandSearchText, visualMatches, visionResult, discoveredBrands);
+  const brandResult = await resolveBrand(
+    brandSearchText, visualMatches, visionResult, discoveredBrands,
+    aiAllowed
+      ? (c: string) => aiPaidCall("serpapi:brand-verify", { q: c.toLowerCase() }, LENS_CENTS, billingUserMain!, () => verifyBrandCandidate(c)).catch(() => false)
+      : null,
+  );
 
   if (brandResult.discovered) {
     await addDiscoveredBrand(brandResult.discovered).catch(() => {});
@@ -428,7 +508,7 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
     ?? null;
 
   const fieldsNeeded = [
-    ...(subType ? [] : ["sub_type"]),
+    ...(exactSubType ? [] : ["sub_type"]),
     ...(!isAccessory && !fit ? ["fit"] : []),
     ...(pattern ? [] : ["pattern"]),
     ...(materialConfidence ? [] : ["material"]),
@@ -441,35 +521,39 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
     "cons",
     "color_pairings",
     "color_clashes",
-    "style_pairings",
     "tags",
   ];
 
   const toHex = (rgb: [number, number, number] | null) =>
     rgb ? `#${rgb.map(v => v.toString(16).padStart(2, "0")).join("")}` : null;
 
-  const inferred = await inferGarmentAttributes(
-    {
-      title,
-      category,
-      subType,
-      brand: confirmedBrand,
-      colorPrimary: colorResult.primary,
-      colorPrimaryHex: toHex(colorResult.primaryRgb),
-      colorSecondary: colorResult.secondary,
-      colorSecondaryHex: toHex(colorResult.secondaryRgb),
-      fit,
-      material: materialConfidence ? material : undefined,
-      image,
-      listingText: urlListingText,
-      link,
-      wardrobeContext,
-      wardrobeImages,
-    },
-    fieldsNeeded
-  );
+  const inferred = !aiAllowed
+    ? EMPTY_INFERENCE
+    : await inferGarmentAttributes(
+        {
+          title,
+          category,
+          subType,
+          brand: confirmedBrand,
+          colorPrimary: colorResult.primary,
+          colorPrimaryHex: toHex(colorResult.primaryRgb),
+          colorSecondary: colorResult.secondary,
+          colorSecondaryHex: toHex(colorResult.secondaryRgb),
+          fit,
+          material: materialConfidence ? material : undefined,
+          image,
+          listingText: urlListingText,
+          link,
+          // No wardrobe context: the analysis depends only on the item itself, so the same item
+          // added by anyone sends the same request and reuses its stored answer (aiGateway.ts).
+          // Pairings with the user's own pieces come from /api/garments/pairings instead.
+        },
+        fieldsNeeded,
+        billingUserMain!,
+      );
 
-  subType = subType || (inferred.values.sub_type as string | undefined) || null;
+  // AI beats a keyword guess; only an exact-phrase match beats the AI.
+  subType = exactSubType || (inferred.values.sub_type as string | undefined) || subType || null;
 
   const finalColorPrimary = (inferred.values.color_primary as string | null | undefined) ?? colorResult.primary;
   const finalColorSecondary = (inferred.values.color_secondary as string | null | undefined) ?? colorResult.secondary;
@@ -518,6 +602,9 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
     design_complexity: inferred.values.design_complexity as number,
     logo_prominence: inferred.values.logo_prominence as number,
     aesthetic_tags: inferred.values.aesthetic_tags as string[],
+    // This insertion path (URL-scrape/auto-import) never takes a manual aesthetic from the
+    // client — whatever's here always came from inferred.values, i.e. AI.
+    aesthetic_source: (inferred.values.aesthetic_tags as string[] | null | undefined)?.length ? "ai" : null,
     formality: inferred.values.formality as string,
     tags: (() => {
       const base = (inferred.values.tags as Record<string, string[]> | null) ?? {};
@@ -555,9 +642,13 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
       "All-over graphic print clashes with most patterns and busy designs",
       "Very limited outfit versatility due to the novelty design",
     ];
-  } else {
-    if (prosVal?.length) analysisUpdate.pros = prosVal;
-    if (consVal?.length) analysisUpdate.cons = consVal;
+  } else if (aiAllowed) {
+    // Always written as arrays once AI has actually run, even when it returned none — null is
+    // what every client reads as "analysis still pending", so leaving it null made an item
+    // whose analysis found no pros/cons show "analyzing…" forever. Free tier never runs AI and
+    // keeps null (which GET strips/the clients hide anyway).
+    analysisUpdate.pros = prosVal ?? [];
+    analysisUpdate.cons = consVal ?? [];
   }
   if (colorPairings?.length) analysisUpdate.color_pairings = colorPairings;
   if (colorClashes?.length)  analysisUpdate.color_clashes  = colorClashes;
@@ -640,8 +731,11 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
     }
   });
 
+  // Includes analysisUpdate — `garment` is the row as first inserted, BEFORE the pros/cons/
+  // pairings update above, so returning it alone handed the client pros:null for an item that
+  // was already fully analyzed (the closet then showed "analyzing…" until its next refetch).
   return NextResponse.json(
-    { ...garment, functional_slot: getFunctionalSlot(garment.sub_type ?? null) },
+    { ...garment, ...analysisUpdate, functional_slot: getFunctionalSlot(garment.sub_type ?? null) },
     { status: 201 }
   );
 }

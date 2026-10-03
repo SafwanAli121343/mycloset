@@ -1,4 +1,6 @@
 ﻿"use client";
+import { invalidateClientCache } from "@/lib/clientCache";
+import { KNOWN_AESTHETICS } from "@/lib/constants/attributes";
 import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { gapTotalProgress, computeGapProgress } from "@/lib/wardrobeAnalysis";
@@ -204,6 +206,9 @@ export default function AddItemPage() {
   const [material, setMaterial] = useState("");
   const [price, setPrice]       = useState("");
   const [fit, setFit]           = useState("");
+  // Manual aesthetic — same as the app's AestheticPicker: available to every tier (it's the one
+  // "AI" field a free user can set), never AI-filled, stored with aesthetic_source "manual".
+  const [aesthetic, setAesthetic] = useState("");
   const [urlInput, setUrlInput] = useState("");
 
   const [analyzing, setAnalyzing]         = useState(false);
@@ -236,7 +241,7 @@ export default function AddItemPage() {
   function resetForm() {
     setImagePreview(""); setImageFile(null);
     setTitle(""); setBrand(""); setCategory("");
-    setColor(""); setMaterial(""); setPrice(""); setFit("");
+    setColor(""); setMaterial(""); setPrice(""); setFit(""); setAesthetic("");
     setUrlInput(""); setAnalyzed(false); setCameraErrMsg(null);
     setUrlError(null); setFieldError(null);
   }
@@ -333,7 +338,7 @@ export default function AddItemPage() {
     setImageFile(file);
     setImagePreview(dataUrl);
     setAnalyzed(false);
-    setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit("");
+    setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit(""); setAesthetic("");
     await runAIAnalysis(dataUrl, undefined);
   }
 
@@ -369,7 +374,7 @@ export default function AddItemPage() {
     const dataUrl = await normalizeToJpeg(raw); // AVIF/HEIC → JPEG before sending to server
     setImagePreview(dataUrl);
     setAnalyzed(false);
-    setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit("");
+    setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit(""); setAesthetic("");
     await runAIAnalysis(dataUrl, undefined);
   }
 
@@ -377,7 +382,7 @@ export default function AddItemPage() {
     if (!urlInput.trim()) return;
     setUrlError(null);
     setAnalyzing(true); setAnalyzed(false);
-    setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit("");
+    setTitle(""); setBrand(""); setCategory(""); setColor(""); setMaterial(""); setFit(""); setAesthetic("");
     const ok = await runAIAnalysis(undefined, urlInput.trim());
     if (!ok) setUrlError("Couldn't retrieve a product from that link. Try a different URL, or add the item by uploading a photo.");
     setAnalyzing(false);
@@ -438,6 +443,7 @@ export default function AddItemPage() {
           title: title.trim(), brand: brand.trim() || undefined,
           color_primary: color.trim() || undefined, material: material.trim() || undefined,
           price: price.trim() || undefined, fit: fit.trim() || undefined,
+          aesthetic: aesthetic.trim() || undefined,
           image: finalImage, category, user_id: user.id,
           link: tab === "url" ? urlInput : undefined,
         }),
@@ -449,6 +455,9 @@ export default function AddItemPage() {
     }
 
     if (!res.ok) { showNotice("err", "Something went wrong. Please try again."); setAdding(false); return; }
+    // The wardrobe changed — drop every page's cached copy that depends on it (lib/clientCache.ts)
+    // so Closet/Outfits/Builder show the new item on their next visit instead of the old list.
+    invalidateClientCache();
     const saved = await res.json() as {
       id?: string | null;
       title?: string | null; sub_type?: string | null; category?: string | null;
@@ -550,9 +559,15 @@ export default function AddItemPage() {
             }
             // Cons: same keyword-match logic as current level
             const priorConGapLinks = (priorA.conGapLinks ?? {}) as Record<string, string>;
+            // Lowercased at the source — con.includes(d) and the linkedGap lookup below both
+            // compare against an already-lowercased `con`, so a gap description with any
+            // uppercase letters (most of them, since they're written as normal sentences) would
+            // otherwise never match at all. Matches native's own conMatches, which already does
+            // this (native/lib/wardrobeCrossing.ts) — this was the one place native was actually
+            // right and the site had the bug.
             const priorCrossedGapKeys = new Set([
-              ...priorA.gaps.filter(g => gapTotalProgress(bs.crossed as CrossedEntry[], g.description, L) >= 100).map(g => g.description),
-              ...newEntries.filter(e => e.category === "gap" && e.analysisLevel === L).map(e => e.key),
+              ...priorA.gaps.filter(g => gapTotalProgress(bs.crossed as CrossedEntry[], g.description, L) >= 100).map(g => g.description.toLowerCase()),
+              ...newEntries.filter(e => e.category === "gap" && e.analysisLevel === L).map(e => e.key.toLowerCase()),
             ]);
             for (let i = 0; i < priorA.cons.length; i++) {
               if (priorConKeys.has(String(i))) continue;
@@ -599,12 +614,13 @@ export default function AddItemPage() {
             }
           }
 
-          // Gaps already fully resolved + gaps newly touched by this item (for con-linking)
+          // Gaps already fully resolved + gaps newly touched by this item (for con-linking).
+          // Lowercased at the source, same reasoning as priorCrossedGapKeys above.
           const allCrossedGapKeys = new Set([
             ...analysis.gaps
               .filter(g => gapTotalProgress(bs.crossed as CrossedEntry[], g.description, level) >= 100)
-              .map(g => g.description),
-            ...newEntries.filter(e => e.category === "gap").map(e => e.key),
+              .map(g => g.description.toLowerCase()),
+            ...newEntries.filter(e => e.category === "gap").map(e => e.key.toLowerCase()),
           ]);
           const conGapLinks = (analysis.conGapLinks ?? {}) as Record<string, string>;
           for (let i = 0; i < analysis.cons.length; i++) {
@@ -751,7 +767,7 @@ export default function AddItemPage() {
   const translateY = tab === "photo" ? "translateY(-2vh)" : "translateY(-4vh)";
 
   return (
-    <main style={{ ...FONT, minHeight: "100vh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "6vh 5vw" }}>
+    <main className="center-lift" style={{ ...FONT, minHeight: "100dvh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3vh 5vw calc(3vh + 60px + var(--safe-bottom))" }}>
       <style suppressHydrationWarning>{`
         @keyframes errShake {
           0%, 100% { transform: translateX(0); }
@@ -853,7 +869,7 @@ export default function AddItemPage() {
       {/* ── Main content ─────────────────────────────────────────────────────── */}
       <div style={{ width: "100%", maxWidth: 420, transform: translateY }}>
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
+        <div data-tutorial="add.main" style={{ display: "flex", justifyContent: "center", marginBottom: 0 }}>
           <button style={tabBtn("photo")} onClick={() => { setTab("photo"); resetForm(); }}>UPLOAD PHOTO</button>
           <button style={tabBtn("url")}   onClick={() => { setTab("url");   resetForm(); }}>PASTE URL</button>
         </div>
@@ -1035,6 +1051,15 @@ export default function AddItemPage() {
                 <div style={{ position: "relative", borderBottom: "1px solid #ddd" }}>
                   <input value={price} onChange={e => setPrice(e.target.value)} style={{ ...fieldInput, paddingRight: 44 }} />
                   <span style={fieldHint}>Price</span>
+                </div>
+                {/* Full width; the datalist gives type-or-pick suggestions from the same list
+                   the app's picker and the AI classifier use. */}
+                <div style={{ position: "relative", borderBottom: "1px solid #ddd", gridColumn: "1 / -1" }}>
+                  <input value={aesthetic} onChange={e => setAesthetic(e.target.value)} list="aesthetic-options" style={{ ...fieldInput, paddingRight: 72 }} />
+                  <span style={fieldHint}>Aesthetic</span>
+                  <datalist id="aesthetic-options">
+                    {KNOWN_AESTHETICS.map(a => <option key={a} value={a} />)}
+                  </datalist>
                 </div>
               </div>
 

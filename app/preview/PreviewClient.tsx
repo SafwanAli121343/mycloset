@@ -1,4 +1,5 @@
 ﻿"use client";
+import { createPortal } from "react-dom";
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { flushSync } from "react-dom";
 import type { CSSProperties, ChangeEvent } from "react";
@@ -7,6 +8,10 @@ import type { CrossedEntry } from "@/lib/wardrobeAnalysis";
 import { sameColorGroup } from "@/lib/constants/colors";
 import { scorePiece } from "@/lib/scoring";
 import type { GarmentForScoring } from "@/lib/scoring";
+import { useEntitlements } from "@/contexts/EntitlementsContext";
+import { LoadingDots } from "@/components/LoadingDots";
+import { ReadyGate } from "@/components/ReadyGate";
+import { describeColorPairing, colorsPairWell } from "@/lib/colorTheory";
 
 const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
 
@@ -24,7 +29,19 @@ const GAP_AES: [string, string[]][] = [
   ["athletic",        ["athleisure", "gorpcore"]],
 ];
 const MAX_COMPARE        = 3;
-const CATS               = ["top","sweater","vest","outerwear","bottom","footwear","one-piece","accessory"] as const;
+// Same five categories as the app's Preview and everywhere else items are categorized (Add Item,
+// Closet edit) — the only categories the rest of the system understands.
+const CATS               = ["top","bottom","footwear","outerwear","accessory"] as const;
+// Same mapping as the app's normalizeCategory (native/screens/PreviewScreen.tsx).
+function normalizeCategory(raw:string|null|undefined):string{
+  const c=(raw??"").toLowerCase();
+  return (CATS as readonly string[]).includes(c)?c
+    :c.includes("shoe")||c.includes("boot")||c.includes("sneaker")||c.includes("footwear")?"footwear"
+    :c.includes("pant")||c.includes("jean")||c.includes("skirt")||c.includes("short")||c.includes("bottom")?"bottom"
+    :c.includes("jacket")||c.includes("coat")||c.includes("outerwear")?"outerwear"
+    :c.includes("bag")||c.includes("hat")||c.includes("belt")||c.includes("accessory")?"accessory"
+    :"top";
+}
 const SPREAD_W           = 120;
 const SPREAD_H           = 190;
 const SPREAD_SCALE       = 5;
@@ -291,9 +308,18 @@ function cardItemsWithOverdone(
   return base;
 }
 
+// Free tier: scores (piece/overall/avg outfit/aesthetic fit) are a Pro feature. The numeric
+// comparison fallback mixes structural lines ("More outfit combinations", "Pairs with more
+// existing items") with score-based ones; this drops the score-based ones for free users.
+const SCORE_LINE_RE=/quality|integration|piece score/i;
+function scrubScoreLines(xs:string[],hasAI:boolean):string[]{ return hasAI?xs:xs.filter(x=>!SCORE_LINE_RE.test(x)); }
+// Free tier: no stats at all under the item (no scores, no outfit counts) — same as the app.
+const FREE_STAT_LABELS=new Set<string>();
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PreviewPage() {
+  const { hasAI } = useEntitlements();
   const [slots,    setSlots]    = useState<Slot[]>(()=>Array.from({length:MAX_COMPARE},emptySlot));
   const [pageStep, setPageStep] = useState<PageStep>("input");
   const [confirmIdx, setConfirmIdx] = useState(0);
@@ -327,7 +353,7 @@ export default function PreviewPage() {
       updateSlot(idx,{basicError:"Couldn't reach the server — check your connection and try again."});
       return;
     }
-    const basic:BasicAttrs=json;
+    const basic:BasicAttrs={...json,category:normalizeCategory(json?.category)};
     const imgSrc=basic.image??slot.imageDataUrl;
     let removedBgUrl:string|null=null;
     if (imgSrc) {
@@ -351,6 +377,12 @@ export default function PreviewPage() {
         updateSlot(idx,{deepError:msg,analysisStep:null}); return;
       }
       const deep:DeepAttrs=deepJson;
+      // Free tier gets no AI color_pairings (deep-analyze returns []) — fill in the same
+      // deterministic color rules the app's free tier uses, so the Color pairings card still
+      // has real content instead of being empty.
+      if (!hasAI && !deep.color_pairings?.length && confirmed.color_primary) {
+        deep.color_pairings=describeColorPairing(confirmed.color_primary);
+      }
       updateSlot(idx,{deep,analysisStep:"outfits"});
       const outfitRes=await fetch("/api/preview/outfit-count",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({garment:{title:confirmed.title,brand:confirmed.brand,category:confirmed.category,sub_type:deep.sub_type,material:confirmed.material,color_primary:confirmed.color_primary,formality:deep.formality,aesthetic_tags:deep.aesthetic_tags,pros:deep.pros,cons:deep.cons,color_pairings:deep.color_pairings,color_clashes:deep.color_clashes,image:confirmed.image}})});
       const outfitJson=await outfitRes.json();
@@ -512,9 +544,15 @@ export default function PreviewPage() {
   );
   }
 
-  if (analyzedSlots.length===1) return <SingleResult slot={analyzedSlots[0]} onReset={handleReset}/>;
+  // Results are gated (components/ReadyGate.tsx): the dots stay up until each item's image and the
+  // closet pieces its outfit stacks use are decoded, then the result appears complete.
+  const resultImages=analyzedSlots.flatMap(sl=>[
+    sl.removedBgUrl??sl.confirmedBasic?.image??sl.imageDataUrl,
+    ...Object.values(sl.outfitData?.items??{}).slice(0,24).map(i=>i.image),
+  ]);
+  if (analyzedSlots.length===1) return <ReadyGate ready images={resultImages}><SingleResult slot={analyzedSlots[0]} onReset={handleReset}/></ReadyGate>;
   const scoredSlots=analyzedSlots.map(slot=>({slot,cScore:compareScore(slot,maxOutfits)}));
-  return <MultiResult scoredSlots={scoredSlots} onReset={handleReset}/>;
+  return <ReadyGate ready images={resultImages}><MultiResult scoredSlots={scoredSlots} onReset={handleReset}/></ReadyGate>;
 }
 
 // ── InputSlot ─────────────────────────────────────────────────────────────────
@@ -526,7 +564,7 @@ function InputSlot({slot,onFilePick,onUrlChange,onModeChange,onOpen,onCancel}:{
 }) {
   const inputRef=useRef<HTMLInputElement|null>(null);
   if (!slot.open) return (
-    <div onClick={onOpen} style={{height:160,border:"1px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+    <div data-tutorial="preview.slot" onClick={onOpen} style={{height:160,border:"1px dashed #ddd",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
       <span style={{fontSize:24,color:"#ccc"}}>+</span>
     </div>
   );
@@ -684,9 +722,18 @@ function SlideCard({cardKey,dir,items,exiting,onHide,sections}:{
 
 // ── SingleResult ──────────────────────────────────────────────────────────────
 
+// The data guard lives in this thin wrapper, not at the top of the body — the body calls a
+// couple dozen hooks, and an early return ahead of them breaks React's rules-of-hooks: if a slot
+// ever rendered once incomplete and then complete while mounted, React would throw "Rendered
+// more hooks than during the previous render".
 function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
-  const {confirmedBasic:cb,removedBgUrl,deep,outfitData}=slot;
-  if (!cb||!deep||!outfitData) return null;
+  if (!slot.confirmedBasic||!slot.deep||!slot.outfitData) return null;
+  return <SingleResultBody slot={slot} onReset={onReset}/>;
+}
+function SingleResultBody({slot,onReset}:{slot:Slot; onReset:()=>void}) {
+  const { hasAI } = useEntitlements();
+  const {removedBgUrl}=slot;
+  const cb=slot.confirmedBasic!, deep=slot.deep!, outfitData=slot.outfitData!;
 
   const imgSrc=removedBgUrl??cb.image??slot.imageDataUrl;
   const pScore=pieceScore(cb,deep);
@@ -720,9 +767,14 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
 
   useEffect(()=>{
     if (!deep||!cb) return;
+    // Every early exit below (no cached wardrobe analysis in this browser, no analysis at this
+    // level, a corrupt cache) still has to mark the impact as settled — PROS/AESTHETICS/
+    // PAIRINGS clicks queue until waImpactReady, so leaving it false made those cards
+    // permanently unopenable for anyone without a wa_cache_v20 entry (e.g. a user who hasn't
+    // opened Wardrobe Analysis in this browser yet).
     try {
       const raw=localStorage.getItem("wa_cache_v20");
-      if (!raw) return;
+      if (!raw) { setWaImpactReady(true); return; }
       const parsed=JSON.parse(raw) as {
         backendState:{
           analysisHistory:Array<{
@@ -740,7 +792,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
       const level=parsed.backendState?.currentLevel??1;
       const analysis=parsed.backendState?.analysisHistory?.[level-1]
                   ?? parsed.backendState?.analysisHistory?.[0];
-      if (!analysis) return;
+      if (!analysis) { setWaImpactReady(true); return; }
       const norm=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
       const cat=(cb.category??"").toLowerCase();
       const crossed:CrossedEntry[]=parsed.backendState?.crossed??[];
@@ -877,7 +929,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
         setWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:algorithmicWeaknesses});
         setWaImpactReady(true);
       }
-    } catch {}
+    } catch { setWaImpactReady(true); }
   },[]);
 
   // Card panel state
@@ -981,7 +1033,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
   // Button label/color helpers — a queued (not-yet-ready) card reads as "loading" so the
   // click still feels responsive instead of appearing to do nothing.
   function btnLabel(key:CardKey, show:string, hide:string) {
-    if (pendingCardOpen===key) return "Loading...";
+    if (pendingCardOpen===key) return "…"; // queued until its data settles (dots, not "Loading...")
     return isOpen(key)?hide:show;
   }
   function btnColor(key:CardKey, base:string) { return (isOpen(key)||pendingCardOpen===key)?"#999":base; }
@@ -1012,8 +1064,8 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
           paddingInline:24,
         }}>
           <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-end",paddingRight:56}}>
-            <button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>
-            <button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>
+            {hasAI&&(<button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>)}
+            {hasAI&&(<button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>)}
             <button onClick={()=>openCard("piece_pairings")}style={cardBtnStyle(btnColor("piece_pairings",CARD_COLORS.piece_pairings))}>{btnLabel("piece_pairings","Show piece pairings","Hide piece pairings")} </button>
           </div>
           {/* Center: title */}
@@ -1021,7 +1073,7 @@ function SingleResult({slot,onReset}:{slot:Slot; onReset:()=>void}) {
             {cb.title}
           </p>
           <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-start",paddingLeft:56}}>
-            <button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>
+            {hasAI&&(<button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>)}
             <button onClick={()=>openCard("pairings")} style={cardBtnStyle(btnColor("pairings",CARD_COLORS.pairings))}> {btnLabel("pairings","Show color pairings","Hide color pairings")} </button>
             <button onClick={onReset}                  style={cardBtnStyle("#c83030")}>Reset</button>
           </div>
@@ -1092,6 +1144,7 @@ const SCORE_COL_W = "min(230px, 30vw)";
 function MultiResult({scoredSlots,onReset}:{
   scoredSlots:{slot:Slot;cScore:number}[]; onReset:()=>void;
 }) {
+  const { hasAI } = useEntitlements();
   const n=scoredSlots.length;
   const STRIP_W=110, STRIP_GAP=24, STRIP_STEP=STRIP_W+STRIP_GAP;
 
@@ -1103,8 +1156,8 @@ function MultiResult({scoredSlots,onReset}:{
   const [bottomCard,    setBottomCard]    = useState<{key:CardKey;exiting:boolean}|null>(null);
   const [topCard,       setTopCard]       = useState<{key:CardKey;exiting:boolean}|null>(null);
   const [openOrder,     setOpenOrder]     = useState<CardKey[]>([]);
-  const [aiCmp, setAiCmp] = useState<{better0:string[];worse0:string[];better1:string[];worse1:string[];sims:string[];diffs:string[]}|"loading"|null>(n===2?"loading":null);
-  const [aiCmp3, setAiCmp3] = useState<{better:string[][];worse:string[][];sims:string[][];diffs:string[][]}|"loading"|null>(n===3?"loading":null);
+  const [aiCmp, setAiCmp] = useState<{better0:string[];worse0:string[];better1:string[];worse1:string[];sims:string[];diffs:string[]}|"loading"|null>(n===2&&hasAI?"loading":null);
+  const [aiCmp3, setAiCmp3] = useState<{better:string[][];worse:string[][];sims:string[][];diffs:string[][]}|"loading"|null>(n===3&&hasAI?"loading":null);
   const [stripSettled,             setStripSettled]             = useState(false);
   const [compareEntranceTransforms]= useState<[string,string]>(["translateY(35vh)","translateY(35vh)"]);
   const [surAlpha, setSurAlpha] = useState(1);
@@ -1155,7 +1208,12 @@ function MultiResult({scoredSlots,onReset}:{
     const [s0,s1]=scoredSlots;
     const d0=s0.slot.deep, d1=s1.slot.deep;
     const cb0=s0.slot.confirmedBasic, cb1=s1.slot.confirmedBasic;
-    if(!d0||!d1||!cb0||!cb1) { setAiCmp(null); return; }
+    // Free tier: no AI comparison — go straight to the computed fallback, same as a failure.
+    if(!hasAI||!d0||!d1||!cb0||!cb1) {
+      setAiCmp(null);setContentVisible(true);setCompareEntered(true);
+      setTimeout(()=>setLoaderShowing(false), 450);
+      return;
+    }
     fetch("/api/preview/compare",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({
@@ -1181,7 +1239,7 @@ function MultiResult({scoredSlots,onReset}:{
     const [s0,s1,s2]=scoredSlots;
     const d0=s0.slot.deep,d1=s1.slot.deep,d2=s2.slot.deep;
     const cb0=s0.slot.confirmedBasic,cb1=s1.slot.confirmedBasic,cb2=s2.slot.confirmedBasic;
-    if(!d0||!d1||!d2||!cb0||!cb1||!cb2){
+    if(!hasAI||!d0||!d1||!d2||!cb0||!cb1||!cb2){
       setAiCmp3(null);setContentVisible(true);setCompareEntered(true);
       requestAnimationFrame(()=>setThree3Phase(p=>p==='waiting'?'stacked':p));
       setTimeout(()=>setLoaderShowing3(false),450);return;
@@ -1231,14 +1289,15 @@ function MultiResult({scoredSlots,onReset}:{
     const sCb=selSlot?.confirmedBasic;
     const sDp=selSlot?.deep;
     const sBg=selSlot?.removedBgUrl;
-    if(!sDp||!sCb){setSelWaImpact(null);return;}
+    // Same "every exit settles readiness" rule as SingleResult's impact effect — see its comment.
+    if(!sDp||!sCb){setSelWaImpact(null);setSelWaImpactReady(true);return;}
     try{
       const raw=localStorage.getItem("wa_cache_v20");
-      if(!raw){setSelWaImpact(null);return;}
+      if(!raw){setSelWaImpact(null);setSelWaImpactReady(true);return;}
       const parsed=JSON.parse(raw) as {backendState:{analysisHistory:Array<{gaps:{description:string}[];colors:{missing:string[]};aesthetics:{missing:string[]};cons:string[];conGapLinks?:Record<string,string>;overdone?:{description:string;count:number;suggestion:string}[]}>;crossed:CrossedEntry[];currentLevel:number}};
       const level=parsed.backendState?.currentLevel??1;
       const analysis=parsed.backendState?.analysisHistory?.[level-1]??parsed.backendState?.analysisHistory?.[0];
-      if(!analysis){setSelWaImpact(null);return;}
+      if(!analysis){setSelWaImpact(null);setSelWaImpactReady(true);return;}
       const norm=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
       const cat=(sCb.category??"").toLowerCase();
       const crossed:CrossedEntry[]=parsed.backendState?.crossed??[];
@@ -1318,7 +1377,7 @@ function MultiResult({scoredSlots,onReset}:{
         setSelWaImpact({fillsGaps:algorithmic.slice(0,3),addsAesthetics,addsColors,addressesWeaknesses:algorithmicWeaknesses});
         setSelWaImpactReady(true);
       }
-    }catch{setSelWaImpact(null);}
+    }catch{setSelWaImpact(null);setSelWaImpactReady(true);}
     return()=>{cancelled=true;};
   },[selectedIdx]);
 
@@ -1338,14 +1397,35 @@ function MultiResult({scoredSlots,onReset}:{
     return ()=>clearTimeout(t);
   },[three3Phase]);
 
-  const sorted=[...scoredSlots.entries()].sort(([,a],[,b])=>b.cScore-a.cScore).map(([i])=>i);
+  // Free tier compare (no AI, no scores): outfits created, closet pieces it forms outfits with,
+  // and closet pieces whose color pairs with it (lib/colorTheory.ts) — same three metrics and
+  // same 50/30/20 ranking as the app's free compare.
+  const [closetColors,setClosetColors]=useState<string[]>([]);
+  useEffect(()=>{
+    if(hasAI) return;
+    fetch("/api/garments").then(r=>r.ok?r.json():[]).then((gs:{color_primary:string|null}[])=>setClosetColors(gs.map(g=>g.color_primary).filter((c):c is string=>!!c))).catch(()=>{});
+  },[hasAI]);
+  const freeMetrics=(slot:Slot)=>({
+    outfits:slot.outfitData?.outfitCount??0,
+    pieces:Object.keys(slot.outfitData?.items??{}).length,
+    colors:slot.confirmedBasic?.color_primary?closetColors.filter(c=>colorsPairWell(slot.confirmedBasic!.color_primary,c)).length:0,
+  });
+  const fm=scoredSlots.map(({slot})=>freeMetrics(slot));
+  const rel=(v:number,max:number)=>max>0?v/max:0;
+  const maxO=Math.max(0,...fm.map(m=>m.outfits)),maxP=Math.max(0,...fm.map(m=>m.pieces)),maxC=Math.max(0,...fm.map(m=>m.colors));
+  const freeScores=fm.map(m=>Math.round(100*(rel(m.outfits,maxO)*0.5+rel(m.pieces,maxP)*0.3+rel(m.colors,maxC)*0.2)));
+  const rankScore=(i:number)=>hasAI?scoredSlots[i].cScore:freeScores[i];
+  const sorted=scoredSlots.map((_,i)=>i).sort((a,b)=>rankScore(b)-rankScore(a));
   const rankOf=(i:number):RankLabel=>{const r=sorted.indexOf(i);if(r===0)return"best";if(r===n-1)return"worst";return"second";};
   // Use the same overallScore formula as the display so ties/labels match what the user sees
   const _scores=scoredSlots.map(({slot})=>{
     if(!slot.confirmedBasic||!slot.deep||!slot.outfitData) return 0;
     return overallScore(pieceScore(slot.confirmedBasic,slot.deep),slot.outfitData);
   });
+  const effScores=hasAI?_scores:freeScores;
   function getStripInfo(i:number):{label:string;color:string}{
+    // Pro ranks on overall score; free on its own non-AI metrics (freeScores above).
+    const _scores=effScores;
     if(n===2){
       if(_scores[0]===_scores[1])return{label:"TIE",color:"#d97706"};
       return rankOf(i)==="best"?{label:"BETTER",color:"#2e7d32"}:{label:"WORSE",color:"#c00000"};
@@ -1385,7 +1465,7 @@ function MultiResult({scoredSlots,onReset}:{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[selWaImpactReady]);
   function btnLabel(key:CardKey,show:string,hide:string){
-    if(pendingCardOpen===key) return "Loading...";
+    if(pendingCardOpen===key) return "…";
     return isOpen(key)?hide:show;
   }
   function btnColor(key:CardKey,base:string){return (isOpen(key)||pendingCardOpen===key)?"#999":base;}
@@ -1598,9 +1678,9 @@ function MultiResult({scoredSlots,onReset}:{
       {n===2&&(()=>{
         if(aiCmp==="loading") return null;
         const resolved=aiCmp??{
-          better0:cmpData?.better0??[],worse0:cmpData?.worse0??[],
-          better1:cmpData?.better1??[],worse1:cmpData?.worse1??[],
-          sims:cmpData?.sims??[],diffs:cmpData?.diffs??[],
+          better0:scrubScoreLines(cmpData?.better0??[],hasAI),worse0:scrubScoreLines(cmpData?.worse0??[],hasAI),
+          better1:scrubScoreLines(cmpData?.better1??[],hasAI),worse1:scrubScoreLines(cmpData?.worse1??[],hasAI),
+          sims:scrubScoreLines(cmpData?.sims??[],hasAI),diffs:scrubScoreLines(cmpData?.diffs??[],hasAI),
         };
         function renderPanel(better:string[],worse:string[],title:string|null|undefined,pIdx:number) {
           const panelOpacity=(!vis?0:!inCompare?0:1)*surAlpha;
@@ -1723,13 +1803,13 @@ function MultiResult({scoredSlots,onReset}:{
               <div style={{height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",
                 paddingInline:24,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                 <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-end",paddingRight:56}}>
-                  <button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>
-                  <button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>
+                  {hasAI&&(<button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>)}
+                  {hasAI&&(<button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>)}
                   <button onClick={()=>openCard("piece_pairings")}style={cardBtnStyle(btnColor("piece_pairings",CARD_COLORS.piece_pairings))}>{btnLabel("piece_pairings","Show piece pairings","Hide piece pairings")} </button>
                 </div>
                 <p style={{...FONT,fontSize:21,fontWeight:700,textAlign:"center",lineHeight:1.2,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"28vw"}}>{cb.title}</p>
                 <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-start",paddingLeft:56}}>
-                  <button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>
+                  {hasAI&&(<button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>)}
                   <button onClick={()=>openCard("pairings")} style={cardBtnStyle(btnColor("pairings",CARD_COLORS.pairings))}> {btnLabel("pairings","Show color pairings","Hide color pairings")} </button>
                   <button onClick={onReset}                  style={cardBtnStyle("#c83030")}>Reset</button>
                 </div>
@@ -1792,9 +1872,10 @@ function MultiResult({scoredSlots,onReset}:{
                   <div style={{display:"flex",gap:56,alignItems:"flex-start",justifyContent:"center",flexWrap:"wrap"}}>
                     <StatNum value={`${pScore}`}                   label="Piece score"      color={sColor(pScore)}/>
                     <StatNum value={`${outfitData.avgScore}`}      label="Avg outfit score" color={sColor(outfitData.avgScore)}/>
-                    <StatNum value={`${outfitData.outfitCount}`}   label="New outfits"      color={outfitCountColor(outfitData.outfitCount)}/>
+                    <StatNum value={`${outfitData.outfitCount}`}   label="New outfits"      color={outfitCountColor(outfitData.outfitCount)} show/>
                     <StatNum value={`${outfitData.aestheticFit}%`} label="Aesthetic fit"    color={sColor(outfitData.aestheticFit)}/>
-                    <StatNum value={`${pieceMatchCount}`}          label="Piece matches"    color={pieceMatchColor(pieceMatchCount)}/>
+                    <StatNum value={`${pieceMatchCount}`}          label="Piece matches"    color={pieceMatchColor(pieceMatchCount)} show/>
+                    {!hasAI&&selectedIdx!==null&&<StatNum value={`${fm[selectedIdx].colors}`} label="Color matches" color={pieceMatchColor(fm[selectedIdx].colors)} show/>}
                   </div>
                   <StatNum value={`${oScore}`} label="Overall" color={sColor(oScore)} big/>
                 </div>
@@ -1817,13 +1898,13 @@ function MultiResult({scoredSlots,onReset}:{
           <div style={{opacity:vis?1:0,transition:"opacity 0.6s ease",width:"100%",display:"flex",flexDirection:"column",alignItems:"center",position:"sticky",top:0,zIndex:10,background:"#fff"}}>
             <div style={{width:"100%",height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",paddingInline:24}}>
               <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-end",paddingRight:56}}>
-                <button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>
-                <button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>
+                {hasAI&&(<button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>)}
+                {hasAI&&(<button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>)}
                 <button onClick={()=>openCard("piece_pairings")}style={cardBtnStyle(btnColor("piece_pairings",CARD_COLORS.piece_pairings))}>{btnLabel("piece_pairings","Show piece pairings","Hide piece pairings")} </button>
               </div>
               <p style={{...FONT,fontSize:21,fontWeight:700,textAlign:"center",lineHeight:1.2,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"28vw"}}>{cb.title}</p>
               <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-start",paddingLeft:56}}>
-                <button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>
+                {hasAI&&(<button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>)}
                 <button onClick={()=>openCard("pairings")} style={cardBtnStyle(btnColor("pairings",CARD_COLORS.pairings))}> {btnLabel("pairings","Show color pairings","Hide color pairings")} </button>
                 <button onClick={onReset}                  style={cardBtnStyle("#c83030")}>Reset</button>
               </div>
@@ -1866,7 +1947,9 @@ function MultiResult({scoredSlots,onReset}:{
                     {d&&od&&(
                       <div style={{opacity:vis?1:0,transition:"opacity 0.5s ease"}}>
                         <StatNum value={`${os}`} label="Overall" color={sColor(os)} small/>
-                        <StatNum value={`${od.outfitCount}`} label="Outfits" color={outfitCountColor(od.outfitCount)} small/>
+                        <StatNum value={`${od.outfitCount}`} label="Outfits" color={outfitCountColor(od.outfitCount)} small show/>
+                        {!hasAI&&<StatNum value={`${fm[i].pieces}`} label="Piece matches" color={pieceMatchColor(fm[i].pieces)} small show/>}
+                        {!hasAI&&<StatNum value={`${fm[i].colors}`} label="Color matches" color={pieceMatchColor(fm[i].colors)} small show/>}
                       </div>
                     )}
                   </div>
@@ -1908,9 +1991,10 @@ function MultiResult({scoredSlots,onReset}:{
               <div style={{display:"flex",gap:56,alignItems:"flex-start",justifyContent:"center",flexWrap:"wrap"}}>
                 <StatNum value={`${pScore}`}                   label="Piece score"      color={sColor(pScore)}/>
                 <StatNum value={`${outfitData.avgScore}`}      label="Avg outfit score" color={sColor(outfitData.avgScore)}/>
-                <StatNum value={`${outfitData.outfitCount}`}   label="New outfits"      color={outfitCountColor(outfitData.outfitCount)}/>
+                <StatNum value={`${outfitData.outfitCount}`}   label="New outfits"      color={outfitCountColor(outfitData.outfitCount)} show/>
                 <StatNum value={`${outfitData.aestheticFit}%`} label="Aesthetic fit"    color={sColor(outfitData.aestheticFit)}/>
-                <StatNum value={`${pieceMatchCount}`}          label="Piece matches"    color={pieceMatchColor(pieceMatchCount)}/>
+                <StatNum value={`${pieceMatchCount}`}          label="Piece matches"    color={pieceMatchColor(pieceMatchCount)} show/>
+                    {!hasAI&&selectedIdx!==null&&<StatNum value={`${fm[selectedIdx].colors}`} label="Color matches" color={pieceMatchColor(fm[selectedIdx].colors)} show/>}
               </div>
               <StatNum value={`${oScore}`} label="Overall" color={sColor(oScore)} big/>
             </div>
@@ -2115,7 +2199,7 @@ function MultiResult({scoredSlots,onReset}:{
                             {s.confirmedBasic.title}
                           </p>
                         )}
-                        {renderPanel3(perPieceBetter(i),perPieceWorse(i),perPieceSims(i),perPieceDiffs(i),i)}
+                        {renderPanel3(scrubScoreLines(perPieceBetter(i),hasAI),scrubScoreLines(perPieceWorse(i),hasAI),scrubScoreLines(perPieceSims(i),hasAI),scrubScoreLines(perPieceDiffs(i),hasAI),i)}
                       </div>
                     );
                   })}
@@ -2127,13 +2211,13 @@ function MultiResult({scoredSlots,onReset}:{
               <div style={{height:52,display:"grid",gridTemplateColumns:"1fr auto 1fr",alignItems:"center",
                 paddingInline:24,opacity:vis?surAlpha:0,transition:"opacity 0.4s ease"}}>
                 <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-end",paddingRight:56}}>
-                  <button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>
-                  <button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>
+                  {hasAI&&(<button onClick={()=>openCard("pros")}          style={cardBtnStyle(btnColor("pros",          CARD_COLORS.pros))}>          {btnLabel("pros",          "Show pros",          "Hide pros")}          </button>)}
+                  {hasAI&&(<button onClick={()=>openCard("aesthetics")}    style={cardBtnStyle(btnColor("aesthetics",    CARD_COLORS.aesthetics))}>    {btnLabel("aesthetics",    "Show aesthetics",    "Hide aesthetics")}    </button>)}
                   <button onClick={()=>openCard("piece_pairings")}style={cardBtnStyle(btnColor("piece_pairings",CARD_COLORS.piece_pairings))}>{btnLabel("piece_pairings","Show piece pairings","Hide piece pairings")} </button>
                 </div>
                 <p style={{...FONT,fontSize:21,fontWeight:700,textAlign:"center",lineHeight:1.2,margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"28vw"}}>{cb.title}</p>
                 <div style={{display:"flex",gap:36,alignItems:"center",justifyContent:"flex-start",paddingLeft:56}}>
-                  <button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>
+                  {hasAI&&(<button onClick={()=>openCard("cons")}     style={cardBtnStyle(btnColor("cons",    CARD_COLORS.cons))}>     {btnLabel("cons",    "Show cons",         "Hide cons")}          </button>)}
                   <button onClick={()=>openCard("pairings")} style={cardBtnStyle(btnColor("pairings",CARD_COLORS.pairings))}> {btnLabel("pairings","Show color pairings","Hide color pairings")} </button>
                   <button onClick={onReset}                  style={cardBtnStyle("#c83030")}>Reset</button>
                 </div>
@@ -2195,9 +2279,10 @@ function MultiResult({scoredSlots,onReset}:{
                   <div style={{display:"flex",gap:56,alignItems:"flex-start",justifyContent:"center",flexWrap:"wrap"}}>
                     <StatNum value={`${pScore}`}                   label="Piece score"      color={sColor(pScore)}/>
                     <StatNum value={`${outfitData.avgScore}`}      label="Avg outfit score" color={sColor(outfitData.avgScore)}/>
-                    <StatNum value={`${outfitData.outfitCount}`}   label="New outfits"      color={outfitCountColor(outfitData.outfitCount)}/>
+                    <StatNum value={`${outfitData.outfitCount}`}   label="New outfits"      color={outfitCountColor(outfitData.outfitCount)} show/>
                     <StatNum value={`${outfitData.aestheticFit}%`} label="Aesthetic fit"    color={sColor(outfitData.aestheticFit)}/>
-                    <StatNum value={`${pieceMatchCount}`}          label="Piece matches"    color={pieceMatchColor(pieceMatchCount)}/>
+                    <StatNum value={`${pieceMatchCount}`}          label="Piece matches"    color={pieceMatchColor(pieceMatchCount)} show/>
+                    {!hasAI&&selectedIdx!==null&&<StatNum value={`${fm[selectedIdx].colors}`} label="Color matches" color={pieceMatchColor(fm[selectedIdx].colors)} show/>}
                   </div>
                   <StatNum value={`${oScore}`} label="Overall" color={sColor(oScore)} big/>
                 </div>
@@ -2245,6 +2330,7 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
   totalCount:number;
   compact?:boolean;
 }) {
+  const { hasAI } = useEntitlements();
   const [shownCount, setShownCount] = useState(OUTFITS_PER_PAGE);
 
   const [galleryPhase,          setGalleryPhase]          = useState<"gallery"|"overlay">("gallery");
@@ -2484,7 +2570,7 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
                 </div>
               </div>
               <p style={{...FONT,margin:0,fontSize:compact?10:13,fontWeight:700,letterSpacing:".06em",color:scoreC}}>
-                {outfit.score} / 100
+                {hasAI?`${outfit.score} / 100`:"\u00a0"}
               </p>
             </div>
           );
@@ -2497,7 +2583,10 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
         </div>
       )}
 
-      {galleryPhase!=="gallery"&&(
+      {/* Portaled to <body>: Preview's compare panels slide with CSS transforms, and a transformed
+          ancestor turns position:fixed into "relative to that panel" — the spread opened huge and
+          off in a corner. Rendering on <body> keeps it measured against the real screen. */}
+      {galleryPhase!=="gallery"&&typeof document!=="undefined"&&createPortal(
         <>
           <div style={{position:"fixed",inset:0,zIndex:2000}}/>
           <div style={{position:"fixed",inset:0,zIndex:2001,background:"#fff",opacity:bgVisible?1:0,transition:"opacity .3s ease",pointerEvents:"none"}}/>
@@ -2558,18 +2647,21 @@ function OutfitGallery({outfits,items,previewItem,totalCount,compact=false}:{
               </button>
             </>); })()}
             <p style={{position:"absolute",top:28,left:"50%",transform:"translateX(-50%)",margin:0,fontSize:22,fontWeight:700,letterSpacing:".06em",color:sc(current?.score??0),opacity:isSpread?1:0,transition:"opacity .3s .1s",...FONT}}>
-              {current?.score} / 100
+              {hasAI?`${current?.score} / 100`:""}
             </p>
           </div>
         </>
-      )}
+      , document.body)}
     </div>
   );
 }
 
 // ── Shared components ─────────────────────────────────────────────────────────
 
-function StatNum({value,label,color,small,big}:{value:string;label:string;color:string;small?:boolean;big?:boolean}) {
+function StatNum({value,label,color,small,big,show}:{value:string;label:string;color:string;small?:boolean;big?:boolean;show?:boolean}) {
+  const { hasAI } = useEntitlements();
+  // `show` marks one of the free tier's own (non-AI) compare metrics — always displayed.
+  if (!hasAI && !show && !FREE_STAT_LABELS.has(label)) return null;
   return (
     <div style={{textAlign:"center"}}>
       <p style={{...FONT,fontSize:big&&small?24:big?46:small?16:28,fontWeight:700,color,lineHeight:1,marginBottom:small?4:7}}>{value}</p>
@@ -2593,6 +2685,8 @@ function FieldHint({value,onChange,hint}:{value:string;onChange:(v:string)=>void
   );
 }
 
-function Spinner({size=20}:{size?:number}) {
-  return <div style={{width:size,height:size,border:`${size>16?2:1.5}px solid #eee`,borderTopColor:"#555",borderRadius:"50%",animation:"_spin 0.8s linear infinite",flexShrink:0}}/>;
+// Every load uses the site-wide three dots (components/LoadingDots.tsx) — was a rotating ring.
+// Name/props kept so the call sites didn't change.
+function Spinner(_props:{size?:number}) {
+  return <LoadingDots/>;
 }

@@ -1,6 +1,9 @@
+import { aiChat } from "@/lib/aiGateway";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
-import OpenAI from "openai";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
+import { getUserById } from "@/lib/db/users";
+import { resolveEntitlement, consumeAiCredit } from "@/lib/billing/entitlements";
 
 // POST /api/wardrobe/gap-check
 // Body: {
@@ -14,11 +17,28 @@ import OpenAI from "openai";
 
 export const maxDuration = 20;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "wardrobe:gap", 30, 60000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Was ungated for any logged-in user — fired automatically after saving/previewing an item
+  // (native lib/wardrobeCrossing.ts, lib/wardrobeImpact.ts) with no entitlement check at all.
+  // Matching an item's image against described wardrobe gaps genuinely needs vision, so there's
+  // no non-AI substitute here (unlike garments/pairings' color/aesthetic fallback) — free tier
+  // just gets the same empty-result shape this route already returns on any other failure, which
+  // every caller already has to handle gracefully.
+  const billingUser = await getUserById(session.userId).catch(() => null);
+  const ent = billingUser ? resolveEntitlement(billingUser) : null;
+  // A Pro user over their own monthly $ cap gets the same empty-result fallback as free tier —
+  // this fires automatically after every save/preview with no button of its own, so there's
+  // nothing interactive to show a red error for here specifically (unlike Wardrobe analysis).
+  const aiAllowed = !!ent?.hasAI && (ent.tier !== "pro" || (await consumeAiCredit(billingUser!)).allowed);
+  if (!aiAllowed) {
+    return NextResponse.json({ gap_fills: [], aesthetic_fills: [], color_fills: [], weakness_fills: [], fills: [] });
+  }
 
   let body: {
     sub_type?: string | null;
@@ -65,7 +85,7 @@ export async function POST(req: NextRequest) {
   const prompt = `${context}\n\n${sections.join("\n\n")}\n\nLook at the item in the image. For each section, return which entries this item fills/addresses.\n\nColor matching rule: use broad family/shade matching, not exact names. A beige, tan, or khaki item fills both "Camel" and "Cream" gaps. A wine or maroon item fills "Burgundy". A moss, army-green, or plain green item fills "Olive" (olive is a muted shade of green, not a distinct hue). A midnight-blue item fills "Navy". Ask yourself: is this item's color close enough in shade/tone to the gap color that a stylist would call them the same color family? If yes, it fills the gap — match on shade similarity, not literal name equality.\n\nReturn ONLY JSON with these keys (use exact text from each list, empty array if none):\n{\n  "gap_fills": [],\n  "aesthetic_fills": [],\n  "color_fills": [],\n  "weakness_fills": []\n}`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await aiChat("openai:chat:gap-check", {
       model: "gpt-4o",
       messages: [
         {
@@ -79,10 +99,11 @@ export async function POST(req: NextRequest) {
       response_format: { type: "json_object" },
       max_tokens: 300,
       temperature: 0,
-    });
+    }, billingUser!);
+
 
     let parsed: Record<string, unknown> = {};
-    try { parsed = JSON.parse(completion.choices[0].message.content ?? "{}"); } catch { /* ignore */ }
+    try { parsed = JSON.parse(completion.content ?? "{}"); } catch { /* ignore */ }
 
     function extractArr(key: string, valid: Set<string>): string[] {
       const raw = parsed[key];

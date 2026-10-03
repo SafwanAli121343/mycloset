@@ -11,5 +11,8 @@ export async function searchVisualMatches(imageUrl: string): Promise<VisualMatch
 
   const response = await fetch(`https://serpapi.com/search?${params.toString()}`);
   const data = await response.json();
+  // Throw on an error response instead of returning [] — callers already treat a throw as "no
+  // matches", and it keeps a failed lookup out of the shared cache (lib/aiGateway.ts).
+  if (!response.ok || data.error) throw new Error(`lens: ${data.error ?? response.status}`);
   return data.visual_matches || [];
 }

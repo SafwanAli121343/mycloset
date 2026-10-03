@@ -25,6 +25,8 @@ export async function detectLogoAndText(imageUrl: string): Promise<LogoTextResul
   );
 
   const data = await response.json();
+  // Throw on an error response (see lib/lensSearch.ts) so it's never cached as "nothing found".
+  if (!response.ok || data.error || data.responses?.[0]?.error) throw new Error(`vision: ${response.status}`);
   const result = data.responses?.[0] || {};
 
   return {

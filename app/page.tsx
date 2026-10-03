@@ -21,7 +21,7 @@ export default function LandingPage() {
   if (!isLoaded || isSignedIn) return null;
 
   return (
-    <main className="relative min-h-screen bg-black flex flex-col items-center justify-center overflow-hidden">
+    <main className="relative min-h-screen bg-black flex flex-col items-center justify-center overflow-hidden center-lift">
       <div className="relative z-10 flex flex-col items-center" style={{ transform: "translateY(-12vh)" }}>
         <p className="text-3xl font-bold uppercase tracking-[0.04em] mb-10 text-white" style={FONT}>
           MYCLOSET

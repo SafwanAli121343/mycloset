@@ -1,5 +1,13 @@
 "use client";
+import { peekCache, rememberCache } from "@/lib/clientCache";
+import { ReadyGate } from "@/components/ReadyGate";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { TAB_BAR_H } from "@/components/MobileTabBar";
+import { useEntitlements } from "@/contexts/EntitlementsContext";
+import { LoadingDots } from "@/components/LoadingDots";
+import { useTutorialDemo } from "@/lib/client/tutorialState";
+import { sampleCloset, sampleOutfits, SAMPLE_IMAGES } from "@/lib/client/tutorialSamples";
 
 const FONT = { fontFamily: "Arial, sans-serif" } as const;
 const LOADING_IMG        = "/loading-tee.png";
@@ -75,6 +83,18 @@ type GalleryOutfit = {
   score: number | null; pros?: string[]; cons?: string[]; aesthetic?: string | null;
 };
 type SpreadCfg = { containerW: number; containerH: number; stackLeft: number; stackTop: number; };
+type OutfitAnalysis = { pros: string[]; cons: string[] };
+
+// Same key the server uses (lib/outfitAnalysisStore.ts comboKey).
+function comboKey(ids: string[]): string {
+  return [...new Set(ids)].sort().join("|");
+}
+const outfitKey = (o: GalleryOutfit) => comboKey(o.items.map(i => i.id));
+// Same paging as the app (native/screens/OutfitsScreen.tsx): the first page and the FIRST "Show
+// more" are analyzed before they appear; later pages show "?" until an outfit is opened.
+const INITIAL_PAGE_SIZE = 12;
+const PAGE_SIZE = 30;
+const ANALYSIS_UNAVAILABLE = "Analysis unavailable right now. Try again later.";
 
 // stackOrder: used for SPREAD positions (accessories spread first so they get
 // consistent grid slots). Lower = earlier in the spread layout.
@@ -141,16 +161,77 @@ function vSpreadZoom(N: number): number {
 const DEFAULT_CFG = buildSpreadCfg(3);
 
 export default function OutfitsPage() {
-  const [outfits, setOutfits]       = useState<GalleryOutfit[]>([]);
-  const [loading, setLoading]       = useState(true);
+  const router = useRouter();
+  const { hasAI, ready: entitlementsReady } = useEntitlements();
+  // Pro outfit analyses, keyed by comboKey (see the paging note above).
+  const [analyses, setAnalyses] = useState<Record<string, OutfitAnalysis>>({});
+  const analysesRef = useRef<Record<string, OutfitAnalysis>>({});
+  const [analysisFailed, setAnalysisFailed] = useState<Record<string, string>>({});
+  const [visibleCount, setVisibleCount] = useState(INITIAL_PAGE_SIZE);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [firstPageReady, setFirstPageReady] = useState(false);
+  const showMoreCountRef = useRef(0);
+  const requestedRef = useRef(new Set<string>());
+  const mergeAnalyses = useCallback((add: Record<string, OutfitAnalysis>) => {
+    if (!Object.keys(add).length) return;
+    analysesRef.current = { ...analysesRef.current, ...add };
+    setAnalyses(analysesRef.current);
+  }, []);
+  const ensureAnalyzed = useCallback(async (batch: GalleryOutfit[]) => {
+    const need = batch.filter(o => o.score != null && o.score >= IDEAL_THRESHOLD && !analysesRef.current[outfitKey(o)]);
+    for (let i = 0; i < need.length; i += 40) {
+      try {
+        const r = await fetch("/api/outfits/combo-analysis", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ combos: need.slice(i, i + 40).map(o => o.items.map(it => it.id)) }),
+        });
+        if (r.ok) mergeAnalyses(((await r.json()) as { results?: Record<string, OutfitAnalysis> }).results ?? {});
+      } catch { /* stays "?" */ }
+    }
+  }, [mergeAnalyses]);
+  const requestAnalysis = useCallback(async (o: GalleryOutfit) => {
+    const key = outfitKey(o);
+    if (requestedRef.current.has(key) || analysesRef.current[key]) return;
+    requestedRef.current.add(key);
+    try {
+      const r = await fetch("/api/outfits/combo-analysis", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ combos: [o.items.map(it => it.id)] }),
+      });
+      const body = await r.json().catch(() => null) as { results?: Record<string, OutfitAnalysis>; message?: string } | null;
+      if (body?.results?.[key]) mergeAnalyses({ [key]: body.results[key] });
+      else setAnalysisFailed(prev => ({ ...prev, [key]: body?.message ?? ANALYSIS_UNAVAILABLE }));
+    } catch {
+      setAnalysisFailed(prev => ({ ...prev, [key]: ANALYSIS_UNAVAILABLE }));
+    } finally {
+      requestedRef.current.delete(key);
+    }
+  }, [mergeAnalyses]);
+  // First-run tutorial: the sample closet's outfits (lib/client/tutorialSamples.ts), with scores
+  // and analysis — display only, never cached or saved.
+  const demo = useTutorialDemo();
+  const sampleList = useMemo<GalleryOutfit[]>(() => {
+    const byId = Object.fromEntries(sampleCloset(SAMPLE_IMAGES).garments.map(g => [g.id, g as unknown as GalleryItem]));
+    return sampleOutfits().map((o, i) => ({ id: `sample-${i}`, score: o.score, items: o.itemIds.map(id => byId[id]) }));
+  }, []);
+  const sampleAnalyses = useMemo(() => Object.fromEntries(sampleOutfits().map(o => [comboKey(o.itemIds), o.analysis])), []);
+  // Stale-while-revalidate (lib/clientCache.ts): a revisit opens instantly with the last list.
+  const [outfits, setOutfits]       = useState<GalleryOutfit[]>(() => peekCache<GalleryOutfit[]>("outfits:list") ?? []);
+  const shownOutfits = demo ? sampleList : outfits;
+  const shownAnalyses = demo ? sampleAnalyses : analyses;
+  const [loading, setLoading]       = useState(() => !peekCache("outfits:list"));
   const [fetchError, setFetchError] = useState<string|null>(null);
   const [gridPadV, setGridPadV]     = useState(24);
-
+  const gridRef                     = useRef<HTMLDivElement>(null);
   const [showFilter,       setShowFilter]       = useState(false);
   const [filterAesthetics, setFilterAesthetics] = useState<string[]>([]);
   const [filterMinScore,   setFilterMinScore]   = useState(0);
   const [filterColors,     setFilterColors]     = useState<string[]>([]);
   const [filterPieces,     setFilterPieces]     = useState<string[]>([]);
+  // false ("any"/OR): matches if the outfit contains ANY selected piece. true ("all"/AND, shown in
+  // blue): matches only if the outfit contains EVERY selected piece together. Mirrors native's
+  // OutfitsScreen exactly (native/screens/OutfitsScreen.tsx's togglePieceFilter).
+  const [filterPiecesAll,  setFilterPiecesAll]  = useState(false);
   const [colorsShown,      setColorsShown]      = useState(COLORS_CHUNK);
   const [piecesShown,      setPiecesShown]      = useState(PIECES_CHUNK);
 
@@ -168,7 +249,6 @@ export default function OutfitsPage() {
 
   const [displayCount, setDisplayCount] = useState(0);
 
-  const gridRef            = useRef<HTMLDivElement>(null);
   const displayCountRef    = useRef(0);
   const countAnimRef       = useRef<ReturnType<typeof setInterval>|undefined>(undefined);
   const stackRefs          = useRef<Map<number, HTMLElement>>(new Map());
@@ -189,20 +269,16 @@ export default function OutfitsPage() {
         try { return JSON.parse(txt); }
         catch { return Promise.reject(`Bad JSON: ${txt.slice(0, 200)}`); }
       }))
-      .then(async (d: { items: Record<string, GalleryItem>; outfits: Array<{ score: number; itemIds: string[] }> }) => {
+      .then(async (d: { items: Record<string, GalleryItem>; outfits: Array<{ score: number; itemIds: string[]; analysis?: OutfitAnalysis }> }) => {
+        const stored: Record<string, OutfitAnalysis> = {};
         const outfitList = d.outfits.map((o, i) => {
           const items = o.itemIds.map(id => d.items[id]).filter(Boolean) as GalleryItem[];
-          const pros = [...new Set(items.flatMap(item => item.pros ?? []))].slice(0, 4);
-          const cons = [...new Set(items.flatMap(item => item.cons ?? []))].slice(0, 4);
-          return {
-            id:    String(i),
-            score: o.score,
-            items,
-            pros:  pros.length > 0 ? pros : undefined,
-            cons:  cons.length > 0 ? cons : undefined,
-          };
+          if (o.analysis) stored[comboKey(o.itemIds)] = o.analysis;
+          return { id: String(i), score: o.score, items };
         });
+        mergeAnalyses(stored);
         setOutfits(outfitList);
+        rememberCache("outfits:list", outfitList);
 
         // Uniform spread scale — based on the largest outfit so all pieces look the same size.
         if (outfitList.length > 0) {
@@ -230,19 +306,6 @@ export default function OutfitsPage() {
       })
       .catch((e: unknown) => { setFetchError(String(e)); setLoading(false); });
   }, []);
-
-  // Measure the rendered grid height (includes score badges) to compute exact
-  // vertical centering padding. Runs before paint so there's no visible flash.
-  useLayoutEffect(() => {
-    if (loading || !gridRef.current) return;
-    const el = gridRef.current;
-    el.style.paddingTop    = '0';
-    el.style.paddingBottom = '0';
-    const contentH = el.offsetHeight;
-    // React will overwrite these inline styles on the next render with gridPadV
-    const viewH = window.innerHeight;
-    setGridPadV(Math.max(24, Math.floor((viewH - contentH) / 2)));
-  }, [loading]);
 
   const openOutfit = useCallback((idx: number, arr: GalleryOutfit[]) => {
     clearTimeout(timerRef.current);
@@ -449,7 +512,20 @@ export default function OutfitsPage() {
     }, 300);
   }, [navFading]);
 
-  const filteredOutfits = outfits.filter(o => {
+  // Measure the rendered grid height (includes score badges) to compute exact
+  // vertical centering padding. Runs before paint so there's no visible flash.
+  useLayoutEffect(() => {
+    if (loading || !gridRef.current) return;
+    const el = gridRef.current;
+    el.style.paddingTop    = '0';
+    el.style.paddingBottom = '0';
+    const contentH = el.offsetHeight;
+    // React will overwrite these inline styles on the next render with gridPadV
+    const viewH = window.innerHeight;
+    setGridPadV(Math.max(24, Math.floor((viewH - contentH) / 2)));
+  }, [loading]);
+
+  const filteredOutfits = shownOutfits.filter(o => {
     if (filterAesthetics.length > 0) {
       if (!o.items.some(item =>
         item.aesthetic_tags?.some((t: string) => filterAesthetics.includes(t))
@@ -462,10 +538,42 @@ export default function OutfitsPage() {
       )) return false;
     }
     if (filterPieces.length > 0) {
-      if (!o.items.some(item => filterPieces.includes(item.id))) return false;
+      const ids = o.items.map(item => item.id);
+      if (filterPiecesAll ? !filterPieces.every(id => ids.includes(id)) : !ids.some(id => filterPieces.includes(id))) return false;
     }
     return true;
   });
+
+  const filtersKey = JSON.stringify([filterAesthetics, filterMinScore, filterColors, filterPieces, filterPiecesAll]);
+  const visibleOutfits = filteredOutfits.slice(0, visibleCount);
+  // A new list or filter starts again from page 1, with its first page analyzed up front (Pro).
+  const firstPageKey = `${filtersKey}|${shownOutfits.length}|${hasAI}|${demo}`;
+  const firstPageKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || !entitlementsReady || firstPageKeyRef.current === firstPageKey) return;
+    firstPageKeyRef.current = firstPageKey;
+    setVisibleCount(INITIAL_PAGE_SIZE);
+    showMoreCountRef.current = 0;
+    if (!hasAI || demo) { setFirstPageReady(true); return; } // samples already carry their analysis
+    ensureAnalyzed(filteredOutfits.slice(0, INITIAL_PAGE_SIZE)).finally(() => setFirstPageReady(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstPageKey, loading, entitlementsReady]);
+
+  async function showMore() {
+    if (loadingMore || visibleCount >= filteredOutfits.length) return;
+    setLoadingMore(true);
+    const next = filteredOutfits.slice(visibleCount, visibleCount + PAGE_SIZE);
+    const analyzeNow = hasAI && showMoreCountRef.current === 0;
+    showMoreCountRef.current += 1;
+    await Promise.all([
+      ...next.flatMap(o => o.items.map(it => it.image).filter(Boolean).map(src => new Promise<void>(res => {
+        const img = new Image(); img.onload = img.onerror = () => res(); img.src = src!;
+      }))),
+      analyzeNow ? ensureAnalyzed(next) : null,
+    ]);
+    setVisibleCount(v => v + PAGE_SIZE);
+    setLoadingMore(false);
+  }
 
   const current     = filteredOutfits[displayIdx] ?? null;
   const items       = current ? sortItems(current.items) : [];
@@ -476,10 +584,19 @@ export default function OutfitsPage() {
   const panelOffset = containerW / 2 + 160;
   const currentScore = current?.score ?? null;
   const isIdeal      = currentScore != null && currentScore >= IDEAL_THRESHOLD;
+  // The open outfit's score and analysis appear together — loading dots for both until ready.
+  const currentKey      = current ? outfitKey(current) : "";
+  const currentAnalysis = current ? shownAnalyses[currentKey] : undefined;
+  const currentFailed   = current ? analysisFailed[currentKey] : undefined;
+  const analysisReady   = !!currentAnalysis || !!currentFailed;
+  useEffect(() => {
+    if (phase === "overlay" && current && isIdeal && hasAI && !demo && !analysisReady) requestAnalysis(current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, currentKey]);
 
   const availablePieces = useMemo(() => {
     const seen = new Map<string, string>(); // id → label
-    for (const o of outfits) {
+    for (const o of shownOutfits) {
       for (const item of o.items) {
         if (!seen.has(item.id) && item.title) {
           const label = item.title.trim().split(/\s+/).slice(0, 3).join(" ");
@@ -490,7 +607,7 @@ export default function OutfitsPage() {
     return [...seen.entries()]
       .map(([id, label]) => ({ id, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [outfits]);
+  }, [shownOutfits]);
 
   useEffect(() => {
     const target = filteredOutfits.length;
@@ -515,29 +632,39 @@ export default function OutfitsPage() {
     return () => clearInterval(countAnimRef.current);
   }, [filteredOutfits.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading) return (
-    <main style={{...FONT,height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#fff"}}>
-      <style suppressHydrationWarning>{KEYFRAMES}</style>
-      <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:160}}>
-        <img src={LOADING_IMG} alt="" draggable={false} style={{width:270,height:340,objectFit:"contain",opacity:.88}}/>
-        <div style={{width:190,height:5,background:"#e8e8e8",overflow:"hidden",marginTop:-88}}>
-          <div style={{height:"100%",background:"#111",animation:"loadbar 8s ease-out forwards"}}/>
-        </div>
-      </div>
-    </main>
-  );
+  // Wrapped in ReadyGate (components/ReadyGate.tsx): three dots until the page is fully drawn.
+  if (!demo && (loading || !entitlementsReady || !firstPageReady)) return <ReadyGate ready={false} />;
 
   if (fetchError) return (
-    <main style={{...FONT,height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#fff",gap:8}}>
+    <main className="center-lift" style={{...FONT,height:"100dvh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#fff",gap:8}}>
       <p style={{fontSize:10,letterSpacing:".14em",textTransform:"uppercase",color:"#bbb"}}>FAILED TO LOAD</p>
       <p style={{fontSize:11,color:"#bbb",maxWidth:400,textAlign:"center"}}>{fetchError}</p>
     </main>
   );
 
   const hasFilters = filterAesthetics.length > 0 || filterMinScore > 0 || filterColors.length > 0 || filterPieces.length > 0;
-  const clearFilters = () => { setFilterAesthetics([]); setFilterMinScore(0); setFilterColors([]); setFilterPieces([]); };
+  const clearFilters = () => { setFilterAesthetics([]); setFilterMinScore(0); setFilterColors([]); setFilterPieces([]); setFilterPiecesAll(false); };
+  // See native's togglePieceFilter (OutfitsScreen.tsx) for the full reasoning: tapping an
+  // unselected piece just adds it; tapping one that's ALREADY selected escalates the whole
+  // selection into "all" (AND) mode instead of deselecting, turning every selected chip blue.
+  // Once in "all" mode, tapping an already-selected chip goes back to a normal deselect, and
+  // dropping to 1 or 0 pieces resets to "any" mode automatically.
+  function togglePieceFilter(id: string) {
+    if (!filterPieces.includes(id)) {
+      setFilterPieces([...filterPieces, id]);
+      return;
+    }
+    if (!filterPiecesAll) {
+      setFilterPiecesAll(true);
+      return;
+    }
+    const next = filterPieces.filter(x => x !== id);
+    setFilterPieces(next);
+    if (next.length <= 1) setFilterPiecesAll(false);
+  }
 
   return (
+    <ReadyGate ready images={filteredOutfits.slice(0, 9).flatMap(o => o.items.map(i => i.image))}>
     <main style={{...FONT,minHeight:"100vh",background:"#fff"}}>
       <style suppressHydrationWarning>{KEYFRAMES}</style>
 
@@ -560,6 +687,9 @@ export default function OutfitsPage() {
           </div>
         </div>
 
+        {/* Aesthetic + min-score filters are Pro-only (free outfits carry no score and only
+           manual aesthetics) — removed outright for free users, leaving color and pieces. */}
+        {hasAI && (<>
         {/* Aesthetics */}
         <div>
           <p style={{...FONT,margin:"0 0 10px",fontSize:10,letterSpacing:".12em",textTransform:"uppercase",color:"#000"}}>Aesthetic</p>
@@ -588,6 +718,8 @@ export default function OutfitsPage() {
             </span>
           </div>
         </div>
+
+        </>)}
 
         {/* Color */}
         <div>
@@ -695,8 +827,8 @@ export default function OutfitsPage() {
         </button>
       </div>
 
-      {outfits.length === 0 && (
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
+      {shownOutfits.length === 0 && (
+        <div className="center-lift" style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100dvh"}}>
           <p style={{fontSize:10,letterSpacing:".14em",textTransform:"uppercase",color:"#bbb"}}>NO OUTFITS — ADD MORE ITEMS TO YOUR CLOSET</p>
         </div>
       )}
@@ -708,11 +840,12 @@ export default function OutfitsPage() {
       )}
 
       {filteredOutfits.length > 0 && (
-        <div ref={gridRef} style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",columnGap:20,rowGap:64,padding:`${gridPadV}px 28px ${Math.max(gridPadV, 120)}px`}}>
-          {filteredOutfits.map((outfit, idx) => {
+        <div ref={gridRef} data-tutorial="outfits.grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",columnGap:20,rowGap:64,padding:demo /* tutorial samples: top-aligned like a full list, not centered */ ? "24px 28px 0" : `${gridPadV}px 28px ${Math.max(gridPadV, 120)}px`}}>
+          {visibleOutfits.map((outfit, idx) => {
             const si         = sortItems(outfit.items);
             const score      = outfit.score;
             const ideal      = score != null && score >= IDEAL_THRESHOLD;
+            const analyzed   = !!shownAnalyses[outfitKey(outfit)];
             const scoreColor = score==null?"#ccc":score>=75?"#1d9e52":score>=50?"#c88800":"#c83030";
             const colIdx     = idx % 3;
             const shiftX     = showFilter ? -(colIdx * 28) : 0;
@@ -726,6 +859,7 @@ export default function OutfitsPage() {
                 <div style={{width:"100%",height:SPREAD_H,display:"flex",alignItems:"center",justifyContent:"center"}}>
                   <div
                     ref={el => { if(el) stackRefs.current.set(idx,el as HTMLElement); else stackRefs.current.delete(idx); }}
+                    data-tutorial={idx === 0 ? "outfits.first" : undefined}
                     onClick={() => phase==="gallery" && openOutfit(idx,filteredOutfits)}
                     style={{
                       position:"relative", width:SPREAD_W, height:SPREAD_H,
@@ -755,8 +889,8 @@ export default function OutfitsPage() {
                   </div>
                 </div>
                 {ideal && (
-                  <p style={{...FONT,margin:"12px 0 0",fontSize:12,fontWeight:700,letterSpacing:".06em",color:scoreColor}}>
-                    {score} / 100
+                  <p style={{...FONT,margin:"12px 0 0",fontSize:12,fontWeight:700,letterSpacing:".06em",color:analyzed?scoreColor:"#bbb"}}>
+                    {analyzed ? `${score} / 100` : "?"}
                   </p>
                 )}
               </div>
@@ -765,7 +899,20 @@ export default function OutfitsPage() {
         </div>
       )}
 
+      {visibleCount < filteredOutfits.length && (
+        <div style={{display:"flex",justifyContent:"center",padding:"24px 0 8px"}}>
+          {loadingMore ? <LoadingDots /> : (
+            <button onClick={showMore} style={{...FONT,background:"none",border:"none",cursor:"pointer",fontSize:11,fontWeight:700,letterSpacing:".14em"}}>SHOW MORE</button>
+          )}
+        </div>
+      )}
+
       </div>{/* end content squish wrapper */}
+
+      {/* Reserved clearance for the fixed mobile tab bar — kept outside the
+          flex:1/flex:1 centering pair above so it doesn't skew the balance
+          toward the bottom; it's a nav zone, not part of the centered content. */}
+      <div style={{flexShrink:0,height:`calc(${TAB_BAR_H}px + var(--safe-bottom))`}}/>
 
       {/* Overlay */}
       {phase!=="gallery" && (
@@ -845,7 +992,7 @@ export default function OutfitsPage() {
               }}>Aesthetic: {current.aesthetic}</p>
             ) : null}
 
-            {isIdeal && (
+            {isIdeal && analysisReady && (
               <p style={{
                 position:"absolute",top:50,left:"50%",transform:"translateX(-50%)",
                 margin:0,fontSize:22,fontWeight:700,letterSpacing:".06em",
@@ -853,6 +1000,15 @@ export default function OutfitsPage() {
                 color:currentScore!>=75?"#1d9e52":currentScore!>=50?"#c88800":"#c83030",
                 opacity:isSpread?1:0,transition:"opacity .3s .15s",...FONT,
               }}>{currentScore} / 100</p>
+            )}
+            {isIdeal && !analysisReady && (
+              <div style={{position:"absolute",top:58,left:"50%",transform:"translateX(-50%)",opacity:isSpread?1:0,transition:"opacity .3s .15s"}}><LoadingDots /></div>
+            )}
+            {isIdeal && currentFailed && (
+              <p style={{position:"absolute",bottom:"calc(90px + var(--safe-bottom))",left:"50%",transform:"translateX(-50%)",margin:0,fontSize:11,color:"#999",textAlign:"center",...FONT}}>{currentFailed}</p>
+            )}
+            {isIdeal && !analysisReady && (
+              <div style={{position:"absolute",bottom:"calc(110px + var(--safe-bottom))",left:"50%",transform:"translateX(-50%)",opacity:isSpread?1:0,transition:"opacity .3s .15s"}}><LoadingDots /></div>
             )}
 
             <button onClick={() => filteredOutfits.length>1 && navigateTo((displayIdx-1+filteredOutfits.length)%filteredOutfits.length,filteredOutfits)}
@@ -874,27 +1030,28 @@ export default function OutfitsPage() {
           </div>
 
           {/* Pros/cons panels — only when there's actual content */}
-          {bgVisible && isIdeal && (current?.pros ?? []).length > 0 && (
+          {bgVisible && isIdeal && (currentAnalysis?.pros ?? []).length > 0 && (
             <div style={{position:"fixed",top:`calc(50% - ${OVERLAY_TOP_OFFSET}px)`,
               right:`calc(50% + ${panelOffset}px)`,transform:"translateY(-50%)",
               width:190,zIndex:204,textAlign:"center",
               opacity:isSpread?1:0,transition:"opacity .3s",...FONT}}>
               <p style={{fontSize:16,fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",margin:"0 0 14px"}}>PROS</p>
-              {current!.pros!.map((p,i)=><p key={i} style={{fontSize:19,color:"#2e7d32",lineHeight:1.5,margin:"0 0 10px"}}>{p}</p>)}
+              {currentAnalysis!.pros.slice(0, 4).map((p,i)=><p key={i} style={{fontSize:19,color:"#2e7d32",lineHeight:1.5,margin:"0 0 10px"}}>{p}</p>)}
             </div>
           )}
 
-          {bgVisible && isIdeal && (current?.cons ?? []).length > 0 && (
+          {bgVisible && isIdeal && (currentAnalysis?.cons ?? []).length > 0 && (
             <div style={{position:"fixed",top:`calc(50% - ${OVERLAY_TOP_OFFSET}px)`,
               left:`calc(50% + ${panelOffset}px)`,transform:"translateY(-50%)",
               width:190,zIndex:204,textAlign:"center",
               opacity:isSpread?1:0,transition:"opacity .3s",...FONT}}>
               <p style={{fontSize:16,fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",margin:"0 0 14px"}}>CONS</p>
-              {current!.cons!.map((c,i)=><p key={i} style={{fontSize:19,color:"#c00",lineHeight:1.5,margin:"0 0 10px"}}>{c}</p>)}
+              {currentAnalysis!.cons.slice(0, 4).map((c,i)=><p key={i} style={{fontSize:19,color:"#c00",lineHeight:1.5,margin:"0 0 10px"}}>{c}</p>)}
             </div>
           )}
         </>
       )}
     </main>
+    </ReadyGate>
   );
 }

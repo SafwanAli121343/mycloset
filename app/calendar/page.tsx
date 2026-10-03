@@ -1,5 +1,9 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ReadyGate } from "@/components/ReadyGate";
+import { useTutorialDemo } from "@/lib/client/tutorialState";
+import { sampleCloset, sampleOutfits, SAMPLE_IMAGES } from "@/lib/client/tutorialSamples";
+import { LoadingDots } from "@/components/LoadingDots";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
 import { getSlot } from "@/lib/outfitRules";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { getCurrentLocation } from "@/lib/native/geolocation";
@@ -69,6 +73,13 @@ function toDateStr(y: number, m: number, d: number) { return `${y}-${pad(m)}-${p
 function addMonths(y: number, m: number, n: number) {
   const d = new Date(y, m - 1 + n, 1);
   return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
+// Removes trailing week rows made up only of the next month's days.
+function trimEmptyWeeks<T extends { current: boolean }>(cells: T[]): T[] {
+  let end = cells.length;
+  while (end >= 7 && cells.slice(end - 7, end).every(c => !c.current)) end -= 7;
+  return cells.slice(0, end);
 }
 
 function getCalendarCells(year: number, month: number) {
@@ -213,10 +224,11 @@ function DayCell({
         transition: "background 0.12s", boxSizing: "border-box",
       }}
     >
-      {/* Top row: temp/condition left, day number right — hidden when loading */}
-      {!skeletal && (
+      {/* Top row: temp/condition left, day number right. The day number stays while loading (the
+         layout holds); the temperature only appears with the outfit, never before or after it. */}
+      {(
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          {current && weather ? (
+          {current && weather && !skeletal ? (
             <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
               <span style={{ fontSize: 9, color: "#aaa", ...FONT }}>{weather.tempF}°F</span>
               {conditionShort(weather.condition) && (
@@ -230,21 +242,16 @@ function DayCell({
         </div>
       )}
 
-      {/* Three bouncing dots — shown while month data or auto-generation is in flight */}
+      {/* The site's standard three dots in the stack area — while the month's outfits + weather
+          load, or auto-generation is in flight. */}
       {skeletal && current && (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{
-              width: 4, height: 4, borderRadius: "50%", background: "#d0d0d0",
-              animation: "waveDot 0.9s ease-in-out infinite",
-              animationDelay: `${i * 0.15}s`,
-            }} />
-          ))}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <LoadingDots />
         </div>
       )}
 
       {hasBouncing && (
-        <div ref={containerRef} style={{ flex: 1, position: "relative", minHeight: 50, marginTop: 2, overflow: "hidden" }}>
+        <div ref={containerRef} data-tut-moving style={{ flex: 1, position: "relative", minHeight: 50, marginTop: 2, overflow: "hidden" }}>
           {bouncingGs.map((g, i) => (
             <img
               key={g.id}
@@ -707,7 +714,7 @@ function DayDetailModal({
             // actually land in the dedicated Hat slot.
             const sub = (g.sub_type ?? "").toLowerCase();
             if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") ||
-                sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) {
+                (sub.includes("bucket") && !sub.includes("bag")) || sub.includes("beret") || sub.includes("snapback")) {
               heads.push(g); continue;
             }
             if (g.category === "accessory") { accs.push(g); continue; }
@@ -1126,7 +1133,7 @@ function dndSlotRole(g: Garment): string {
   // Checked before category === "accessory" — hats commonly get that category from the AI
   // tagger, which would otherwise claim them before this hat-specific check ever runs.
   const sub = (g.sub_type ?? "").toLowerCase();
-  if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") || sub.includes("beret") || sub.includes("bucket")) return "HAT";
+  if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") || sub.includes("beret") || (sub.includes("bucket") && !sub.includes("bag"))) return "HAT";
   if (g.category === "accessory") return "ACCESSORY";
   if (sub.includes("hoodie") || sub.includes("sweatshirt") || sub.includes("sweater") || sub.includes("crewneck") || sub.includes("pullover") || sub.includes("cardigan") || sub.includes("fleece")) return "MID LAYER";
   if (sub.includes("flannel") || sub.includes("oxford") || sub.includes("chambray") || sub.includes("button-up") || sub.includes("button up") || sub.includes("button-down") || sub.includes("linen shirt") || sub.includes("camp collar")) return "OUTER LAYER";
@@ -1232,16 +1239,10 @@ const WAVE_CSS = `
   }
 `;
 
-function LoadingShirtBar({ barDuration }: { barDuration: string }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 160 }}>
-      <img src={LOADING_IMG} alt="" draggable={false}
-        style={{ width: 270, height: 340, objectFit: "contain", opacity: 0.88 }} />
-      <div style={{ width: 190, height: 5, background: "#e8e8e8", overflow: "hidden", marginTop: -88 }}>
-        <div style={{ height: "100%", background: "#111", animation: `loadbar ${barDuration} ease-out forwards` }} />
-      </div>
-    </div>
-  );
+// Every load uses the same three dots as the rest of the site and the app (was a shirt image
+// with a progress bar). Name kept so the overlays below didn't need restructuring.
+function LoadingShirtBar(_props: { barDuration: string }) {
+  return <LoadingDots />;
 }
 
 function GeneratingOverlay({ message: _message }: { message: string }) {
@@ -1320,6 +1321,29 @@ export default function OutfitsPage() {
   const isMobile = useIsMobile();
   const today = new Date();
 
+  // Whether the wardrobe can form even one valid outfit — the exact check generation itself
+  // applies (/api/outfits/readiness). false → the whole page is one "add more items" message;
+  // the first-visit setup below also waits for true, so it can't burn its once-ever run on a
+  // wardrobe that's still too small (it used to mark itself done after failing, leaving the
+  // current month un-generated forever). Re-checked whenever the tab regains focus, so adding
+  // items elsewhere activates the calendar without a manual reload. Same as the app.
+  const [calReady, setCalReady] = useState<boolean | null>(null);
+  const demo = useTutorialDemo();
+  const sampleOutfitList = useMemo(() => {
+    const byId = Object.fromEntries(sampleCloset(SAMPLE_IMAGES).garments.map(g => [g.id, g as unknown as Garment]));
+    return sampleOutfits().map(o => o.itemIds.map(id => byId[id]));
+  }, []);
+  useEffect(() => {
+    const check = () => {
+      fetch("/api/outfits/readiness").then(r => (r.ok ? r.json() : null))
+        .then((d: { ready?: boolean } | null) => { if (d) setCalReady(!!d.ready); })
+        .catch(() => {});
+    };
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
+
   // Starts empty — hydrated from localStorage in useEffect below (useRef initializer
   // and useState lazy-init both run during SSR where window is undefined, so neither
   // can read localStorage; useEffect is the only safe client-side-only hook).
@@ -1341,7 +1365,11 @@ export default function OutfitsPage() {
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [buildDate,  setBuildDate]  = useState<string | null>(null);
   const [isEditing,  setIsEditing]  = useState(false);
-  const [weather,      setWeather]      = useState<Record<string, DayWeather>>({});
+  // Weather kept PER MONTH (like the outfits cache): a month's cells only show their contents once
+  // its weather AND outfits are both in, so temperatures never pop in after the outfits — and a
+  // revisited month already has both, so it appears complete immediately.
+  const [weatherByMonth, setWeatherByMonth] = useState<Record<string, Record<string, DayWeather>>>({});
+  const weather = weatherByMonth[`${year}-${month}`] ?? {};
   const [geoResolved,  setGeoResolved]  = useState(false);
   const [userLoc,      setUserLoc]      = useState<{ lat: number; lon: number } | null>(null);
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
@@ -1400,10 +1428,14 @@ export default function OutfitsPage() {
     if (!geoResolved) return;
     const params = new URLSearchParams({ year: String(year), month: String(month) });
     if (userLoc) { params.set("lat", String(userLoc.lat)); params.set("lon", String(userLoc.lon)); }
+    const key = `${year}-${month}`;
+    // Stored under its own month key — a slower response for a month the user already left can
+    // never overwrite the month on screen.
+    const apply = (data: Record<string, DayWeather>) => setWeatherByMonth(prev => ({ ...prev, [key]: data }));
     fetch(`/api/weather?${params}`)
       .then(r => r.ok ? r.json() : {})
-      .then((data: Record<string, DayWeather>) => setWeather(data))
-      .catch(() => {});
+      .then((data: Record<string, DayWeather>) => apply(data))
+      .catch(() => apply({}));
   }, [year, month, userLoc, geoResolved]);
 
   // Resolve a human-readable place name for whatever coordinates are actually in use, so the
@@ -1465,10 +1497,11 @@ export default function OutfitsPage() {
     setLoading(false);
   }, []);
 
-  // ── localStorage hydration — must run BEFORE the loadOutfits effect so the cache
-  // is populated when loadOutfits checks it. Also pre-warms months 2+3 in background
-  // so navigating to them is instant without waiting for their individual fetches.
-  useEffect(() => {
+  // ── localStorage hydration — useLayoutEffect so the cache is applied BEFORE the
+  // browser paints, eliminating the loading flash for users with cached data.
+  // The loadOutfits effect that follows reads monthCacheRef (populated here) correctly
+  // because effects in the same component always run in declaration order.
+  useLayoutEffect(() => {
     const cache = cacheLoad();
     monthCacheRef.current = cache;
     const key = `${year}-${month}`;
@@ -1511,7 +1544,7 @@ export default function OutfitsPage() {
   // Blocks the page entirely (InitializingScreen) until all three months are generated.
   // After setup, navigating to new months shows a manual "Generate" button instead.
   useEffect(() => {
-    if (autoGenRef.current || loading || !garmentsReady || garments.length === 0) return;
+    if (autoGenRef.current || loading || !garmentsReady || garments.length === 0 || calReady !== true) return;
     autoGenRef.current = true;
 
     const isSetupDone = typeof window !== "undefined" && localStorage.getItem(SETUP_KEY) === "true";
@@ -1561,7 +1594,7 @@ export default function OutfitsPage() {
       setInitializing(false);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, garmentsReady]);
+  }, [loading, garmentsReady, calReady]);
 
   // Auto-generate outfits for months within the initial 3-month range that ended up
   // completely blank (generation failed or was never triggered for that month).
@@ -1687,14 +1720,22 @@ export default function OutfitsPage() {
     }
   }
 
-  const cells           = getCalendarCells(year, month);
+  const allCells        = getCalendarCells(year, month);
+  // Tutorial samples: drop the trailing week rows that are all next month's (empty) days.
+  const cells           = demo ? trimEmptyWeeks(allCells) : allCells;
   const onThisMonth     = year === today.getFullYear() && month === today.getMonth() + 1;
   const daysInMonth     = new Date(year, month, 0).getDate();
   const monthDates      = Array.from({ length: daysInMonth }, (_, i) => toDateStr(year, month, i + 1));
-  const blankDays       = monthDates.filter(d => !outfits[d]).length;
-  const hasBrokenOutfits = monthDates.some(d => outfits[d] && outfits[d].garments.length === 0);
+  // First-run tutorial: every day of the month shows a sample outfit (lib/client/tutorialSamples.ts)
+  // — display only; nothing is fetched, generated or saved for them.
+  const shownOutfits: OutfitMap = demo ? Object.fromEntries(monthDates.map((d, i) => {
+    const o = sampleOutfitList[i % sampleOutfitList.length];
+    return [d, { id: `sample-${d}`, garments: o }];
+  })) : outfits;
+  const blankDays       = monthDates.filter(d => !shownOutfits[d]).length;
+  const hasBrokenOutfits = monthDates.some(d => shownOutfits[d] && shownOutfits[d].garments.length === 0);
   const needsGeneration = blankDays > 0 || hasBrokenOutfits;
-  const hasCustomizedDay = monthDates.some(d => outfits[d]?.customized);
+  const hasCustomizedDay = monthDates.some(d => shownOutfits[d]?.customized);
 
   function onRegenClick() {
     // A full-month regen (nothing left blank/broken) deletes and replaces every day,
@@ -1704,48 +1745,44 @@ export default function OutfitsPage() {
   }
 
   // Precompute prev/next for the day detail modal navigation (stable, computed from current outfits)
-  const validDatesForNav = Object.keys(outfits)
-    .filter(d => (outfits[d]?.garments.length ?? 0) > 0)
+  const validDatesForNav = Object.keys(shownOutfits)
+    .filter(d => (shownOutfits[d]?.garments.length ?? 0) > 0)
     .sort();
   const navIdx         = detailDate ? validDatesForNav.indexOf(detailDate) : -1;
   const prevDetailDate = navIdx > 0 ? validDatesForNav[navIdx - 1] : null;
   const nextDetailDate = navIdx < validDatesForNav.length - 1 ? validDatesForNav[navIdx + 1] : null;
 
   // Block entire page render during initial 3-month setup
-  if (initializing) {
+  // Every return below is wrapped in ReadyGate (components/ReadyGate.tsx): three dots until the
+  // page is 100% ready, then everything at once — including while readiness (calReady) is still
+  // unknown, so the calendar can't flash before switching to "add more items".
+  if (!demo && (initializing || calReady === null)) return <ReadyGate ready={false} />;
+
+  if (!demo && calReady === false) {
     return (
-      <>
-        <style suppressHydrationWarning>{WAVE_CSS}</style>
-        <InitializingScreen message={generateMsg} showOnceNote />
-      </>
+      <ReadyGate ready>
+      <main className="center-lift" style={{ ...FONT, height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", padding: 24, boxSizing: "border-box" }}>
+        <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#999", textAlign: "center", margin: 0 }}>
+          Add more items to activate your calendar!
+        </p>
+      </main>
+      </ReadyGate>
     );
   }
 
   // Full-screen on initial page load (outfits state is empty — no prior month data in memory).
   // When navigating between months, outfits still holds the previous month's data so this
   // condition is false and the calendar shows with skeleton dots in each day cell instead.
-  if (loading && Object.keys(outfits).length === 0) {
-    return (
-      <>
-        <style suppressHydrationWarning>{WAVE_CSS}</style>
-        <InitializingScreen message="YOUR CALENDAR IS LOADING" />
-      </>
-    );
-  }
+  if (!demo && loading && Object.keys(outfits).length === 0) return <ReadyGate ready={false} />;
 
   // Full-screen loading while generating a newly-navigated future month
-  if (pendingGenerating) {
-    return (
-      <>
-        <style suppressHydrationWarning>{WAVE_CSS}</style>
-        <InitializingScreen message="STYLING YOUR MONTH" />
-      </>
-    );
-  }
+  if (!demo && pendingGenerating) return <ReadyGate ready={false} />;
 
   return (
-    <main style={{
-      ...FONT, height: "100vh", display: "flex", flexDirection: "column",
+    <ReadyGate ready>
+    <main className="nav-row-host" style={{
+      // --tut-bottom: the first-run tutorial's text strip under the calendar (0 otherwise).
+      ...FONT, height: "calc(100dvh - var(--tut-bottom, 0px))", display: "flex", flexDirection: "column",
       padding: "20px 20px 16px", boxSizing: "border-box", background: "#fff",
     }}>
       <style suppressHydrationWarning>{WAVE_CSS}</style>
@@ -1845,8 +1882,8 @@ export default function OutfitsPage() {
         </div>
       )}
 
-      {/* Month header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 28, marginBottom: 6, flexShrink: 0 }}>
+      {/* Month header — on mobile, on the nav icons' center line (.nav-row, globals.css). */}
+      <div className="nav-row" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 28, marginBottom: 6, flexShrink: 0 }}>
         <button
           onClick={prevMonth}
           disabled={onThisMonth}
@@ -1854,7 +1891,7 @@ export default function OutfitsPage() {
         >
           <svg width="10" height="17" viewBox="0 0 10 17"><polygon points="10,0 0,8.5 10,17" fill="#111" /></svg>
         </button>
-        <p style={{ fontSize: 17, fontWeight: 700, letterSpacing: "0.2em", color: "#111", minWidth: 230, textAlign: "center", margin: 0 }}>
+        <p data-tutorial="calendar.title" style={{ fontSize: 17, fontWeight: 700, letterSpacing: "0.2em", color: "#111", minWidth: 230, textAlign: "center", margin: 0 }}>
           {MONTHS[month - 1]} {year}
         </p>
         <button onClick={nextMonth} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 8px" }}>
@@ -1944,10 +1981,11 @@ export default function OutfitsPage() {
       {/* Calendar grid — mobile trades per-day thumbnails for a compact numbers+dot grid
           (see MobileDayCell); the full outfit is one tap away in the day-detail view. */}
       <div
+        data-tutorial="calendar.grid"
         style={{
           flex: isMobile ? "0 0 auto" : 1, minHeight: 0,
           display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
-          gridTemplateRows: isMobile ? undefined : "repeat(6, 1fr)",
+          gridTemplateRows: isMobile ? undefined : `repeat(${cells.length / 7}, 1fr)`,
           gap: 1, background: "#ebebeb",
         }}
       >
@@ -1956,11 +1994,12 @@ export default function OutfitsPage() {
           const isToday =
             cell.current && cell.day === today.getDate() &&
             month === today.getMonth() + 1 && year === today.getFullYear();
+          const monthReady = demo || (!loading && !autoGenerating && `${year}-${month}` in weatherByMonth);
           const commonProps = {
             day: cell.day, current: cell.current, isToday,
-            outfit: cell.current && !loading && !autoGenerating ? outfits[ds] : undefined,
-            onClick: () => cell.current && !loading && !autoGenerating && handleDayClick(ds),
-            skeletal: (loading || autoGenerating) && cell.current,
+            outfit: cell.current && monthReady ? shownOutfits[ds] : undefined,
+            onClick: () => cell.current && monthReady && handleDayClick(ds),
+            skeletal: !monthReady && cell.current,
           };
           return isMobile
             ? <MobileDayCell key={i} {...commonProps} />
@@ -1969,7 +2008,7 @@ export default function OutfitsPage() {
       </div>
 
       {/* Day detail overlay */}
-      {detailDate && outfits[detailDate] && (
+      {!demo && detailDate && outfits[detailDate] && (
         <DayDetailModal
           key={detailDate}
           dateStr={detailDate}
@@ -2014,5 +2053,6 @@ export default function OutfitsPage() {
         />
       )}
     </main>
+    </ReadyGate>
   );
 }

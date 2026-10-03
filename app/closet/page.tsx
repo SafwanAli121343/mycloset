@@ -1,9 +1,20 @@
 ﻿"use client";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { peekCache, rememberCache, invalidateClientCache } from "@/lib/clientCache";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import { useEntitlements } from "@/contexts/EntitlementsContext";
+import { ReadyGate } from "@/components/ReadyGate";
+import { describeColorPairing } from "@/lib/colorTheory";
+import { KNOWN_AESTHETICS } from "@/lib/constants/attributes";
 import { MobileScrollFade } from "@/components/MobileScrollFade";
 import { TAB_BAR_H } from "@/components/MobileTabBar";
+import { AnalysisOverlay } from "@/components/AnalysisOverlay";
+import { useTutorialDemo } from "@/lib/client/tutorialState";
+import { sampleCloset, SAMPLE_IMAGES } from "@/lib/client/tutorialSamples";
+import {
+  fetchJobs, startJob, waitForJob, ackJobs, jobFailureMessage, ITEM_STAGES, type JobsStatus,
+} from "@/lib/client/analysisJobs";
 
 function scoreColor(score: number | null | undefined): string {
   if (score == null) return "#ccc";
@@ -56,6 +67,9 @@ type Garment = {
   color_pairings: string[] | null;
   color_clashes: string[] | null;
   style_pairings: string[] | null;
+  aesthetic_tags?: string[] | null;
+  // AI analysis paid for with a one-time purchase — visible on free tier (score stays Pro-only).
+  ai_unlocked?: boolean;
 };
 
 type EditState = {
@@ -64,13 +78,16 @@ type EditState = {
   brand: string;
   color_primary: string;
   category: string;
+  aesthetic: string;
 };
+// PATCH body — `aesthetic` is the manual-aesthetic field the server stores as aesthetic_tags.
+type EditUpdate = Partial<Garment> & { aesthetic?: string };
 
 const EDIT_CATEGORIES = ["top", "bottom", "footwear", "outerwear", "accessory"];
 
 function EditModal({ initial, onSave, onClose }: {
   initial: EditState;
-  onSave: (updated: Partial<Garment>) => Promise<void>;
+  onSave: (updated: EditUpdate) => Promise<void>;
   onClose: () => void;
 }) {
   const [fields, setFields] = useState<EditState>(initial);
@@ -88,6 +105,8 @@ function EditModal({ initial, onSave, onClose }: {
       brand:         fields.brand.trim()         || null,
       color_primary: fields.color_primary.trim() || null,
       category:      fields.category             || undefined,
+      // Only sent when changed, so saving other fields never touches an AI-derived aesthetic.
+      ...(fields.aesthetic !== initial.aesthetic ? { aesthetic: fields.aesthetic.trim() } : {}),
     });
     setSaving(false);
     setSaveDone(true);
@@ -126,11 +145,13 @@ function EditModal({ initial, onSave, onClose }: {
             { key: "title",         hint: "Title"         },
             { key: "brand",         hint: "Brand"         },
             { key: "color_primary", hint: "Primary Color" },
+            { key: "aesthetic",     hint: "Aesthetic"     },
           ] as { key: keyof EditState; hint: string }[]).map(({ key, hint }) => (
             <div key={key} style={{ position: "relative", borderBottom: "1px solid #ddd" }}>
               <input
                 value={fields[key]}
                 onChange={e => set(key, e.target.value)}
+                list={key === "aesthetic" ? "edit-aesthetic-options" : undefined}
                 style={{
                   width: "100%", border: "none", padding: "7px 90px 7px 0",
                   fontSize: 12, outline: "none", background: "transparent",
@@ -146,6 +167,10 @@ function EditModal({ initial, onSave, onClose }: {
             </div>
           ))}
         </div>
+
+        <datalist id="edit-aesthetic-options">
+          {KNOWN_AESTHETICS.map(a => <option key={a} value={a} />)}
+        </datalist>
 
         {/* Category + Cancel/Save */}
         <div style={{ marginTop: 28 }}>
@@ -336,22 +361,48 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
   );
 }
 
+// Free tier gets only what the free plan includes: Pairs With (the pairings route's non-AI
+// color/aesthetic match for free users) and Colors from the deterministic color rules. No
+// score, Pros, Cons or Avoid — those are Pro/AI, and their headers over "analyzing…"/"none"
+// read as broken for an item that will never be analyzed. Same as the app's Closet.
+function freeSections(item: { color_primary?: string | null }, pairings: string[]): PanelSection[] {
+  const colorMatches = item.color_primary ? describeColorPairing(item.color_primary) : [];
+  return [
+    { label: "PAIRS WITH", items: pairings, color: "#555", emptyText: "nothing in your wardrobe pairs well with this yet — add more items" },
+    ...(colorMatches.length ? [{ label: "COLORS", items: [colorMatches.join(" · ")], color: "#555" }] : []),
+  ];
+}
+
 export default function ClosetPage() {
+  const { hasAI, ready: entitlementsReady, refresh: refreshEntitlements } = useEntitlements();
   const router = useRouter();
   const isMobile = useIsMobile();
-  const [garments, setGarments] = useState<Garment[]>([]);
+  // Stale-while-revalidate (lib/clientCache.ts): a revisit opens instantly with the last list.
+  const [garments, setGarments] = useState<Garment[]>(() => peekCache<Garment[]>("/api/garments") ?? []);
   const [index, setIndex]       = useState(0);
   const [phase, setPhase]       = useState<Phase>("idle");
   const [dir, setDir]           = useState<"left" | "right">("right");
   const [animKey, setAnimKey]   = useState(0);
-  const [loading, setLoading]   = useState(true);
+  const [loading, setLoading]   = useState(() => !peekCache("/api/garments"));
   const [loadError, setLoadError] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [freshPairings, setFreshPairings] = useState<Record<string, string[] | null>>({});
   const [editItem, setEditItem] = useState<EditState | null>(null);
-  const [scores, setScores]     = useState<Record<string, number>>({});
+  const [scores, setScores]     = useState<Record<string, number>>(() => peekCache<Record<string, number>>("closet:scores") ?? {});
   // sub_type.toLowerCase() → suggestion text from WA analysis overdone array
   const [overdoneMap, setOverdoneMap] = useState<Record<string, string>>({});
+
+  // First-run tutorial: the sample closet (lib/client/tutorialSamples.ts) in place of this
+  // account's own — usually still empty for a new account. Display only; never cached or saved.
+  const demo = useTutorialDemo();
+  const sample = useMemo(() => sampleCloset(SAMPLE_IMAGES), []);
+  const shownGarments = demo ? (sample.garments as unknown as Garment[]) : garments;
+  const shownScores = demo ? sample.scores : scores;
+  // Purchased "Use score?" (free tier) — same flow as the app's Closet (lib/client/analysisJobs.ts).
+  const [jobs, setJobs] = useState<JobsStatus | null>(null);
+  const [scoringId, setScoringId] = useState<string | null>(null);
+  const unmounted = useRef(false);
+  useEffect(() => () => { unmounted.current = true; }, []);
 
   const busy = useRef(false);
   const refreshedRef   = useRef<Set<string>>(new Set());
@@ -370,58 +421,117 @@ export default function ClosetPage() {
   }
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/garments").then(r => {
-        if (r.status === 401) { router.push("/sign-in"); return null; }
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      }),
-      fetch("/api/scoring").then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch("/api/wardrobe/state").then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([data, scoringData, waState]) => {
-      if (data === null) return; // redirecting to sign-in
-      if (scoringData?.pieces) {
-        const map: Record<string, number> = {};
-        for (const p of scoringData.pieces) map[p.id] = p.score;
-        setScores(map);
-      }
+    let cancelled = false;
 
-      if (waState?.analysisHistory?.length && waState.currentLevel >= 1) {
-        const level = Math.max(1, Math.min(waState.currentLevel, waState.analysisHistory.length));
-        const analysis = waState.analysisHistory[level - 1];
-        // Re-check against the CURRENT wardrobe (data, just fetched) rather than the
-        // frozen count from whenever this level's analysis was generated - an entry
-        // stops showing the moment its actual sub-type count drops back below the
-        // overdone threshold (3+), independent of levels/scoring.
-        const liveSubTypeCounts: Record<string, number> = {};
-        for (const g of (data as Garment[])) {
-          if (g.sub_type) liveSubTypeCounts[g.sub_type] = (liveSubTypeCounts[g.sub_type] ?? 0) + 1;
+    // Scoring is fetched on its own, outside the main Promise.all, with its own cold-start
+    // retry budget — previously a failed/slow /api/scoring response was swallowed via
+    // .catch(() => null) inside the same Promise.all as /api/garments, so it never triggered
+    // the outer retry-with-backoff below (that only re-runs on a /api/garments failure) and
+    // every item's score was stuck missing until a full page reload gave it a fresh attempt.
+    async function loadScores() {
+      for (const delay of [0, 1500, 3000, 5000]) {
+        if (delay) await new Promise(r => setTimeout(r, delay));
+        if (cancelled) return;
+        try {
+          // skipOutfits=1: only pieces[].score is read here — the full response also runs the
+          // expensive whole-wardrobe outfit search (topOutfits), which the app already skips.
+          const res = await fetch("/api/scoring?skipOutfits=1");
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const scoringData = await res.json();
+          if (cancelled) return;
+          if (scoringData?.pieces) {
+            const map: Record<string, number> = {};
+            for (const p of scoringData.pieces) map[p.id] = p.score;
+            setScores(map);
+            rememberCache("closet:scores", map);
+          }
+          return;
+        } catch { /* retry */ }
+      }
+    }
+
+    async function load(attempt: number) {
+      try {
+        const [data, waState] = await Promise.all([
+          fetch("/api/garments").then(r => {
+            if (r.status === 401) { router.push("/sign-in"); return null; }
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          }),
+          fetch("/api/wardrobe/state").then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        if (cancelled) return;
+        if (data === null) return; // redirecting to sign-in
+
+        if (waState?.analysisHistory?.length && waState.currentLevel >= 1) {
+          const level = Math.max(1, Math.min(waState.currentLevel, waState.analysisHistory.length));
+          const analysis = waState.analysisHistory[level - 1];
+          // Re-check against the CURRENT wardrobe (data, just fetched) rather than the
+          // frozen count from whenever this level's analysis was generated - an entry
+          // stops showing the moment its actual sub-type count drops back below the
+          // overdone threshold (3+), independent of levels/scoring.
+          const liveSubTypeCounts: Record<string, number> = {};
+          for (const g of (data as Garment[])) {
+            if (g.sub_type) liveSubTypeCounts[g.sub_type] = (liveSubTypeCounts[g.sub_type] ?? 0) + 1;
+          }
+          const omap: Record<string, string> = {};
+          for (const o of (analysis?.overdone ?? [])) {
+            if ((liveSubTypeCounts[o.description] ?? 0) >= 3) {
+              omap[o.description.toLowerCase()] = o.suggestion;
+            }
+          }
+          setOverdoneMap(omap);
         }
-        const omap: Record<string, string> = {};
-        for (const o of (analysis?.overdone ?? [])) {
-          if ((liveSubTypeCounts[o.description] ?? 0) >= 3) {
-            omap[o.description.toLowerCase()] = o.suggestion;
+
+        setGarments(data);
+        setLoading(false);
+        preloadAround(data, 0);
+        const seed: Record<string, string[]> = {};
+        for (const g of data) {
+          seed[g.id] = g.style_pairings ?? [];
+          if (g.style_pairings?.length) {
+            refreshedRef.current.add(g.id);
           }
         }
-        setOverdoneMap(omap);
-      }
-
-      setGarments(data);
-      setLoading(false);
-      preloadAround(data, 0);
-      const seed: Record<string, string[]> = {};
-      for (const g of data) {
-        seed[g.id] = g.style_pairings ?? [];
-        if (g.style_pairings?.length) {
-          refreshedRef.current.add(g.id);
+        setFreshPairings(seed);
+      } catch {
+        if (cancelled) return;
+        // Retry with backoff before giving up — a dev-server cold start (or a transient
+        // network blip) on /api/garments used to go straight to "COULDN'T LOAD YOUR CLOSET"
+        // and require a manual page reload for something that often resolves on its own a
+        // few seconds later, same as the native app's wardrobe/calendar screens.
+        const delays = [1500, 3000, 5000];
+        if (attempt < delays.length) {
+          setTimeout(() => load(attempt + 1), delays[attempt]);
+          return;
         }
+        setLoadError(true);
+        setLoading(false);
       }
-      setFreshPairings(seed);
-    }).catch(() => { setLoadError(true); setLoading(false); });
+    }
+
+    load(0);
+    loadScores();
+    return () => { cancelled = true; };
   }, [router]);
+
+  // Keep the shared cache in step with every change to the list (load, delete, edit), so a revisit
+  // never resurrects a deleted item; a changed wardrobe also invalidates what's derived from it.
+  const prevGarmentsJsonRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading) return;
+    const json = JSON.stringify(garments.map(g => [g.id, g.color_primary, g.category, g.sub_type]));
+    if (prevGarmentsJsonRef.current !== null && prevGarmentsJsonRef.current !== json) {
+      invalidateClientCache("outfits:"); invalidateClientCache("closet:scores");
+    }
+    prevGarmentsJsonRef.current = json;
+    rememberCache("/api/garments", garments);
+  }, [garments, loading]);
 
   // Poll for analysis data on garments that were just added (pros === null means analysis pending)
   useEffect(() => {
+    // Free-tier items are never AI-analyzed (pros stays null by design) — nothing to wait for.
+    if (!hasAI) return;
     const pending = garments.filter(g => g.pros === null);
     if (pending.length === 0) return;
     const timer = setTimeout(async () => {
@@ -448,8 +558,86 @@ export default function ClosetPage() {
       .catch(() => {});
   }, [index, garments]);
 
+  // Once the score is ready: the item's new details, score, pairings and image are all loaded
+  // while the loading screen is still up, so everything appears at once when it lifts.
+  async function revealScored(garmentId: string) {
+    invalidateClientCache("closet:scores");
+    const [fresh, scoring, pairs] = await Promise.all([
+      fetch("/api/garments").then(r => r.ok ? r.json() as Promise<Garment[]> : null).catch(() => null),
+      fetch("/api/scoring?skipOutfits=1").then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/garments/pairings?id=${garmentId}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    const img = fresh?.find(g => g.id === garmentId)?.image;
+    if (img) await new Promise<void>(res => { const i = new Image(); i.onload = i.onerror = () => res(); i.src = img; });
+    if (unmounted.current) return;
+    if (fresh) setGarments(fresh);
+    if (scoring?.pieces) {
+      const map: Record<string, number> = {};
+      for (const p of scoring.pieces as { id: string; score: number }[]) map[p.id] = p.score;
+      setScores(map);
+      rememberCache("closet:scores", map);
+    }
+    if (pairs?.pairings) setFreshPairings(prev => ({ ...prev, [garmentId]: pairs.pairings }));
+    refreshedRef.current.add(garmentId);
+  }
+
+  const followingRef = useRef<string | null>(null);
+  async function followJob(jobId: string, garmentId: string) {
+    // One watcher per job — revisiting the tab while it runs must not start a second one.
+    if (followingRef.current === jobId) return;
+    followingRef.current = jobId;
+    setScoringId(garmentId);
+    const job = await waitForJob(jobId, () => unmounted.current);
+    if (unmounted.current) return;
+    if (job.status === "done") await revealScored(garmentId);
+    else if (job.status === "failed") setRemoveError(jobFailureMessage(job));
+    ackJobs([jobId]);
+    followingRef.current = null;
+    refreshEntitlements();
+    fetchJobs().then(s => { if (!unmounted.current) setJobs(s); }).catch(() => {});
+    if (!unmounted.current) setScoringId(null);
+  }
+
+  // Free tier: credits, plus a score that was running (or finished/failed) while the page was
+  // closed — the loading screen picks up where it left off.
+  useEffect(() => {
+    if (!entitlementsReady || hasAI || loading) return;
+    let cancelled = false;
+    fetchJobs().then(async s => {
+      if (cancelled) return;
+      setJobs(s);
+      const items = s.jobs.filter(j => j.kind === "item");
+      const running = items.find(j => j.status === "running");
+      if (running?.targetId) {
+        const at = garments.findIndex(g => g.id === running.targetId);
+        if (at >= 0) setIndex(at);
+        followJob(running.id, running.targetId);
+      }
+      const finished = items.filter(j => j.status !== "running");
+      for (const j of finished) if (j.status === "done" && j.targetId) await revealScored(j.targetId);
+      const failed = finished.find(j => j.status === "failed");
+      if (failed) setRemoveError(jobFailureMessage(failed));
+      ackJobs(finished.map(j => j.id));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entitlementsReady, hasAI, loading]);
+
+  async function spendScore(garmentId: string) {
+    if (scoringId) return;
+    setScoringId(garmentId);
+    try {
+      const job = await startJob("item", garmentId);
+      await followJob(job.id, garmentId);
+    } catch (e) {
+      setScoringId(null);
+      setRemoveError(e instanceof Error ? e.message : "Couldn't start the analysis. Nothing was used — please try again.");
+      fetchJobs().then(setJobs).catch(() => {});
+    }
+  }
+
   function navigate(d: "left" | "right") {
-    if (busy.current || garments.length < 2) return;
+    if (busy.current || shownGarments.length < 2) return;
     busy.current = true;
     setDir(d);
     setPhase("out");
@@ -457,9 +645,9 @@ export default function ClosetPage() {
     setTimeout(() => {
       setIndex((prev) => {
         const next = d === "right"
-          ? (prev + 1) % garments.length
-          : (prev - 1 + garments.length) % garments.length;
-        preloadAround(garments, next);
+          ? (prev + 1) % shownGarments.length
+          : (prev - 1 + shownGarments.length) % shownGarments.length;
+        preloadAround(shownGarments, next);
         return next;
       });
       setAnimKey((k) => k + 1);
@@ -538,26 +726,31 @@ export default function ClosetPage() {
       brand:         item.brand ?? "",
       color_primary: item.color_primary ?? "",
       category:      item.category ?? "",
+      aesthetic:     item.aesthetic_tags?.[0] ?? "",
     });
   }
 
-  async function saveEdit(updated: Partial<Garment>) {
+  async function saveEdit(updated: EditUpdate) {
     if (!item) return;
     await fetch("/api/garments", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: item.id, ...updated }),
     });
+    const { aesthetic, ...rest } = updated;
     setGarments(prev => prev.map(g =>
-      g.id === item.id ? { ...g, ...updated } : g
+      g.id !== item.id ? g : {
+        ...g, ...rest,
+        ...(aesthetic !== undefined ? { aesthetic_tags: aesthetic ? [aesthetic] : null } : {}),
+      }
     ));
     // Modal closes itself after showing DONE! for 2 seconds via its onClose callback.
   }
 
 
-  const item = garments[index] ?? null;
+  const item = shownGarments[index % Math.max(1, shownGarments.length)] ?? null;
 
-  const pairingsForItem = item ? (freshPairings[item.id] ?? []) : [];
+  const pairingsForItem = !item ? [] : demo ? (item.style_pairings ?? []) : (freshPairings[item.id] ?? []);
 
   const outAnim = dir === "right"
     ? "slideOutLeft 0.18s ease-in forwards"
@@ -568,27 +761,29 @@ export default function ClosetPage() {
 
   // Closet frame is always visible — only the item area shows loading state.
   // This makes the page feel instant: layout appears immediately on navigation.
-  const showEmpty = !loading && garments.length === 0;
+  const showEmpty = !loading && shownGarments.length === 0;
 
-  if (loading) {
-    return (
-      <main style={{ ...FONT, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
-        <style suppressHydrationWarning>{ANIMATIONS}</style>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 160 }}>
-          <img src={LOADING_IMG} alt="" draggable={false} style={{ width: 270, height: 340, objectFit: "contain", opacity: 0.88 }} />
-          <div style={{ width: 190, height: 5, background: "#e8e8e8", overflow: "hidden", marginTop: -88 }}>
-            <div style={{ height: "100%", background: "#111", animation: "loadbar 8s ease-out forwards" }} />
-          </div>
-        </div>
-      </main>
-    );
-  }
+  // Every return is wrapped in ReadyGate (components/ReadyGate.tsx): the three dots stay up until
+  // the page — current item image included — is fully drawn, then it all appears at once.
+  if (loading && !demo) return <ReadyGate ready={false} />;
+
+  // Free tier with a purchased Single Item Analysis: score THIS item (same as the app).
+  const scoreButton = item && !hasAI && !item.ai_unlocked && (jobs?.credits.item ?? 0) > 0 ? (
+    <button
+      onClick={() => spendScore(item.id)}
+      disabled={!!scoringId}
+      style={{ background: "none", border: "none", cursor: "pointer", marginTop: 6, padding: 0, fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "#1d9e52", ...FONT }}
+    >
+      USE SCORE?
+    </button>
+  ) : null;
 
   return (
+    <ReadyGate ready images={[item?.image]}>
     <main
       style={{
         ...FONT,
-        height: "100vh",
+        height: "100dvh",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
@@ -614,7 +809,7 @@ export default function ClosetPage() {
       )}
 
       {/* Load-failure state — distinct from the legitimately-empty-wardrobe state below */}
-      {loadError && (
+      {!demo && loadError && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <p style={{ color: "#c00", fontSize: 14, letterSpacing: "0.08em" }}>
             COULDN&apos;T LOAD YOUR CLOSET
@@ -632,6 +827,7 @@ export default function ClosetPage() {
       {!loadError && showEmpty && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <img
+            data-tutorial="closet.main"
             src="/closet.png"
             alt="closet"
             style={{ height: CLOSET_IMG_H_EMPTY, width: "auto", display: "block" }}
@@ -655,8 +851,8 @@ export default function ClosetPage() {
               two side columns that no longer fit. */}
           {isMobile && item && (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, width: "100%" }}>
-              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 0 0" }}>
-                <Arrow dir="left" onClick={() => navigate("left")} disabled={garments.length < 2} small />
+              <div data-tutorial="closet.main" style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "8px 0 0" }}>
+                <Arrow dir="left" onClick={() => navigate("left")} disabled={shownGarments.length < 2} small />
                 <div style={{ position: "relative", display: "inline-block" }}>
                   <img src="/closet.png" alt="closet" style={{ height: "26vh", width: "auto", display: "block" }} draggable={false} />
                   <div style={{
@@ -677,7 +873,7 @@ export default function ClosetPage() {
                     </div>
                   </div>
                 </div>
-                <Arrow dir="right" onClick={() => navigate("right")} disabled={garments.length < 2} small />
+                <Arrow dir="right" onClick={() => navigate("right")} disabled={shownGarments.length < 2} small />
               </div>
 
               {/* Title + score up top, right under the image — the two things worth seeing
@@ -687,16 +883,19 @@ export default function ClosetPage() {
                 <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>
                   {item.brand ?? item.title}
                 </p>
-                <p style={{
-                  fontSize: 22, fontWeight: 700, margin: "2px 0 0",
-                  color: scoreColor(scores[item.id]),
-                }}>
-                  {scores[item.id] != null ? scores[item.id] : "—"}
-                </p>
+                {(hasAI || item.ai_unlocked) && (
+                  <p style={{
+                    fontSize: 22, fontWeight: 700, margin: "2px 0 0",
+                    color: scoreColor(shownScores[item.id]),
+                  }}>
+                    {shownScores[item.id] != null ? shownScores[item.id] : "—"}
+                  </p>
+                )}
+                {scoreButton}
               </div>
 
               <MobileScrollFade padding={`4px 24px calc(20px + ${TAB_BAR_H}px + var(--safe-bottom))`}>
-                {([
+                {(!hasAI && !item.ai_unlocked ? freeSections(item, pairingsForItem) : [
                   { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
                   { label: "PAIRS WITH", items: pairingsForItem, color: "#555", emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet — add more items" },
                   { label: "COLORS", items: item.color_pairings ?? [], color: "#555" },
@@ -732,8 +931,10 @@ export default function ClosetPage() {
               sections={
                 !item
                   ? []
+                  : !hasAI && !item.ai_unlocked
+                  ? freeSections(item, pairingsForItem)
                   : [
-                      { label: "SCORE", items: [scores[item.id] != null ? `${scores[item.id]} / 100` : "—"], color: "#111" },
+                      ...(hasAI || item.ai_unlocked ? [{ label: "SCORE", items: [shownScores[item.id] != null ? `${shownScores[item.id]} / 100` : "—"], color: "#111" }] : []),
                       { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
                       {
                         label: "PAIRS WITH",
@@ -747,8 +948,8 @@ export default function ClosetPage() {
             />
 
             {/* Center block — arrow + closet image + arrow */}
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-              <Arrow dir="left" onClick={() => navigate("left")} disabled={garments.length < 2} />
+            <div data-tutorial="closet.main" style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <Arrow dir="left" onClick={() => navigate("left")} disabled={shownGarments.length < 2} />
 
               <div style={{ position: "relative", display: "inline-block" }}>
                 <img
@@ -796,13 +997,13 @@ export default function ClosetPage() {
                 </div>
               </div>
 
-              <Arrow dir="right" onClick={() => navigate("right")} disabled={garments.length < 2} />
+              <Arrow dir="right" onClick={() => navigate("right")} disabled={shownGarments.length < 2} />
             </div>
 
             <SidePanel
               side="right"
               sections={
-                !item
+                !item || (!hasAI && !item.ai_unlocked)
                   ? []
                   : (() => {
                       const overdoneSuggestion = item.sub_type ? overdoneMap[item.sub_type.toLowerCase()] : undefined;
@@ -830,6 +1031,7 @@ export default function ClosetPage() {
                     {item.title}
                   </p>
                 )}
+                {!isMobile && scoreButton}
                 <div style={{ display: "flex", gap: 16, marginTop: 10 }}>
                   <button
                     onClick={openEdit}
@@ -869,6 +1071,8 @@ export default function ClosetPage() {
           onClose={() => setEditItem(null)}
         />
       )}
+      <AnalysisOverlay visible={!!scoringId} stages={ITEM_STAGES} />
     </main>
+    </ReadyGate>
   );
 }

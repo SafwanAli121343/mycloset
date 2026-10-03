@@ -28,6 +28,11 @@ export type Garment = {
   logo_prominence: number | null;
   material: string | null;
   aesthetic_tags: string[] | null;
+  // Distinguishes a user's own AestheticPicker choice from an AI guess — both free and paid
+  // users can set aesthetic_tags themselves (see app/api/garments/route.ts's manual-add branch),
+  // so AI_GATED_FIELDS stripping it for a free/lapsed user must not also erase a manual pick.
+  // null for garments predating this column, or for anything never explicitly tagged either way.
+  aesthetic_source: "manual" | "ai" | null;
   formality: string | null;
   pros: string[] | null;
   cons: string[] | null;
@@ -57,6 +62,7 @@ export type NewGarment = Pick<
       | "design_complexity"
       | "logo_prominence"
       | "aesthetic_tags"
+      | "aesthetic_source"
       | "formality"
       | "pros"
       | "cons"

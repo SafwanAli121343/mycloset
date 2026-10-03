@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { ReadyGate } from "@/components/ReadyGate";
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -13,6 +14,8 @@ const NAV = [
   { label: "BUILDER", href: "/builder" },
   { label: "PREVIEW", href: "/preview" },
   { label: "WARDROBE", href: "/wardrobe-analysis" },
+  { label: "UPGRADE", href: "/upgrade" },
+  { label: "SETTINGS", href: "/settings" },
 ];
 
 const SCATTER_SRCS = Array.from({ length: 42 }, (_, i) => `/scatter/piece${i + 21}.png`);
@@ -22,6 +25,17 @@ const COUNT  = 4;
 function rand(a: number, b: number) { return Math.random() * (b - a) + a; }
 
 type Piece = { src: string; h: number };
+
+const NO_PIECES: Piece[] = [];
+let picked: Piece[] | null = null;
+function clientPieces(): Piece[] {
+  picked ??= [...SCATTER_SRCS]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, COUNT)
+    .map(src => ({ src, h: Math.round(rand(120, 175)) }));
+  return picked;
+}
+const noopSubscribe = () => () => {};
 type Ball  = { x: number; y: number; vx: number; vy: number };
 
 export default function DashboardPage() {
@@ -32,22 +46,11 @@ export default function DashboardPage() {
   const balls     = useRef<Ball[]>([]);
   const rafId     = useRef(0);
 
-  const [wardrobeScore, setWardrobeScore] = useState<number | null>(null);
 
-  // Pieces are stable — picked once on mount, never change
-  const [pieces] = useState<Piece[]>(() =>
-    [...SCATTER_SRCS]
-      .sort(() => Math.random() - 0.5)
-      .slice(0, COUNT)
-      .map(src => ({ src, h: Math.round(rand(120, 175)) }))
-  );
-
-  useEffect(() => {
-    fetch("/api/scoring")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.wardrobeScore != null) setWardrobeScore(d.wardrobeScore); })
-      .catch(() => {});
-  }, []);
+  // Pieces are picked at random in the browser only (the server renders none), so the page the
+  // server sends and the browser's first render agree — picking on both sides gave each a
+  // different random set (a hydration mismatch). Picked once per visit, then stable.
+  const pieces = useSyncExternalStore(noopSubscribe, clientPieces, () => NO_PIECES);
 
   // useLayoutEffect (not useEffect) so the starting corner positions are applied
   // BEFORE the browser paints, and the animation loop starts on the very next
@@ -153,7 +156,10 @@ export default function DashboardPage() {
     return () => { cancelAnimationFrame(rafId.current); };
   }, [pieces]);
 
+  // Gated on the floating pieces' images (components/ReadyGate.tsx) so the page appears complete
+  // instead of pieces popping in one by one as they download.
   return (
+    <ReadyGate ready images={pieces.map(p => p.src)}>
     <main className="relative min-h-screen bg-white flex flex-col items-center justify-center overflow-hidden">
       {pieces.map((p, i) => (
         <img
@@ -201,5 +207,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+    </ReadyGate>
   );
 }

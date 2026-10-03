@@ -1,10 +1,10 @@
+import { getUserProfile, profileSystemMessage } from "@/lib/userAge";
 import OpenAI from "openai";
+import { aiChat, type AiActor, type AiCallOpts } from "./aiGateway";
 import { BRAND_AESTHETICS } from "./constants/brandAesthetics";
 import { AESTHETIC_TAGS, STREETWEAR_CATEGORIES } from "./constants/attributes";
 import { SUB_TYPES } from "./constants/subtypes";
 import { NAMED_COLORS } from "./constants/colors";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const COLOR_LIST = NAMED_COLORS.map((c) => c.name).join(", ");
 
@@ -82,7 +82,10 @@ export type InferenceResult = {
 // fields the title/Lens cascade couldn't resolve, plus the always-visual fields.
 export async function inferGarmentAttributes(
   item: InferenceInput,
-  fieldsNeeded: string[]
+  fieldsNeeded: string[],
+  // Who pays (lib/aiGateway.ts): the user, or "system" for maintenance scripts.
+  billingUser: AiActor,
+  ai: AiCallOpts = {},
 ): Promise<InferenceResult> {
   let allFields = Array.from(new Set([...fieldsNeeded, ...VISUAL_FIELDS]));
 
@@ -161,9 +164,11 @@ ${schema}
         { type: "image_url" as const, image_url: { url, detail: "low" as const } },
       ]);
 
-    const completion = await openai.chat.completions.create({
+    // The user's age + gender (Settings → GENDER & AGE) tailor the analysis — lib/userAge.ts.
+    const userProfile = await getUserProfile(billingUser === "system" ? null : billingUser.id);
+    const completion = await aiChat("openai:chat:analyze", {
       model: "gpt-4o",
-      messages: [
+      messages: [...profileSystemMessage(userProfile), 
         {
           role: "system",
           content:
@@ -185,10 +190,10 @@ ${schema}
         },
       ],
       response_format: { type: "json_object" },
-    });
+    }, billingUser, ai);
 
 
-    const aiValues = JSON.parse(completion.choices[0].message.content || "{}");
+    const aiValues = JSON.parse(completion.content || "{}");
     for (const field of allFields) {
       values[field] = aiValues[field];
       confidence[field] = VISUAL_FIELDS.includes(field) ? "medium" : "low";
@@ -202,7 +207,9 @@ ${schema}
 // Infers scoring-critical fields (aesthetic_tags, pros, cons, color_pairings,
 // color_clashes, sub_type, formality, material) from title + brand + category alone.
 export async function inferGarmentAttributesTextOnly(
-  item: TextInferenceInput
+  item: TextInferenceInput,
+  billingUser: AiActor,
+  ai: AiCallOpts = {},
 ): Promise<InferenceResult> {
   const values: Record<string, unknown> = {};
   const confidence: Record<string, string> = {};
@@ -246,9 +253,11 @@ export async function inferGarmentAttributesTextOnly(
     .filter(Boolean)
     .join(" | ");
 
-  const completion = await openai.chat.completions.create({
+  // The user's age + gender (Settings → GENDER & AGE) tailor the analysis — lib/userAge.ts.
+  const userProfile = await getUserProfile(billingUser === "system" ? null : billingUser.id);
+  const completion = await aiChat("openai:chat:analyze-text", {
     model: "gpt-4o",
-    messages: [
+    messages: [...profileSystemMessage(userProfile), 
       {
         role: "system",
         content:
@@ -260,9 +269,10 @@ export async function inferGarmentAttributesTextOnly(
       },
     ],
     response_format: { type: "json_object" },
-  });
+  }, billingUser, ai);
 
-  const aiValues = JSON.parse(completion.choices[0].message.content || "{}");
+
+  const aiValues = JSON.parse(completion.content || "{}");
   for (const field of fieldsToInfer) {
     values[field] = aiValues[field];
     confidence[field] = "medium";

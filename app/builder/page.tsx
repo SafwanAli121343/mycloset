@@ -1,4 +1,9 @@
 "use client";
+import { peekCache, rememberCache } from "@/lib/clientCache";
+import { useEntitlements } from "@/contexts/EntitlementsContext";
+import { useTutorialDemo } from "@/lib/client/tutorialState";
+import { sampleCloset, SAMPLE_IMAGES } from "@/lib/client/tutorialSamples";
+import { ReadyGate } from "@/components/ReadyGate";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { getSlot } from "@/lib/outfitRules";
@@ -46,6 +51,10 @@ type Garment = {
 type ScoreResult = {
   score: number; valid: boolean; reason: string | null; pros: string[]; cons: string[];
   serverError?: boolean;
+  // Free tier: /api/scoring/outfit returns { score: null, locked: true } — scoring is Pro-only.
+  // Without this flag the page read that as a below-threshold score ("ACCESS DENIED … scored
+  // below the ideal threshold"), which is just wrong. Same handling as the app's Builder.
+  locked?: boolean;
 };
 
 type PanelState = "hidden" | "visible" | "exiting";
@@ -54,7 +63,7 @@ type PanelState = "hidden" | "visible" | "exiting";
 
 const EXCLUSIVE_SLOTS = new Set([
   "base-top","overshirt","mid-layer","vest","outer",
-  "pants","shorts","skirt","dress","jumpsuit","shoes","sandals",
+  "pants","shorts","skirt","dress","jumpsuit","overalls","shoes","sandals",
 ]);
 
 function gSlot(g: Garment): string {
@@ -131,7 +140,7 @@ function bucketOf(g: Garment): Bucket {
   // (or silently misfile) every hat drag.
   const sub = (g.sub_type ?? "").toLowerCase();
   if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") ||
-      sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) return "head";
+      (sub.includes("bucket") && !sub.includes("bag")) || sub.includes("beret") || sub.includes("snapback")) return "head";
   if (g.category === "accessory") return "accessory";
   if (sub.includes("hoodie") || sub.includes("sweatshirt") || sub.includes("zip-up") ||
       sub.includes("zip up") || sub.includes("sweater") || sub.includes("pullover") ||
@@ -142,10 +151,12 @@ function bucketOf(g: Garment): Bucket {
 // ── Builder page ──────────────────────────────────────────────────────────────
 
 export default function BuilderPage() {
+  // Scoring is Pro-only — free users get no SCORE button (building/saving still works).
+  const { hasAI } = useEntitlements();
   const isMobile = useIsMobile();
-  const [allGarments, setAllGarments] = useState<Garment[]>([]);
+  const [allGarments, setAllGarments] = useState<Garment[]>(() => peekCache<Garment[]>("/api/garments") ?? []);
   const [outfit,      setOutfit]      = useState<Garment[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [loading,     setLoading]     = useState(() => !peekCache("/api/garments"));
   const [loadError,   setLoadError]   = useState(false);
   const [cat,         setCat]         = useState<typeof CATS[number]>("all");
   const [dragId,      setDragId]      = useState<string | null>(null);
@@ -158,6 +169,27 @@ export default function BuilderPage() {
   const [invVisible,  setInvVisible]  = useState(true);
   const [showInvBtn,  setShowInvBtn]  = useState(false);
   const [pickerBucket, setPickerBucket] = useState<Bucket | null>(null);
+
+  // First-run tutorial: the sample closet in the inventory and a sample outfit in the slots
+  // (lib/client/tutorialSamples.ts); the account's own pieces come back afterwards. Never cached.
+  const demo = useTutorialDemo();
+  const savedRef = useRef<{ all: Garment[]; outfit: Garment[] } | null>(null);
+  useEffect(() => {
+    if (demo === (savedRef.current !== null)) return;
+    if (demo) {
+      savedRef.current = { all: allGarments, outfit };
+      const sample = sampleCloset(SAMPLE_IMAGES).garments as unknown as Garment[];
+      setAllGarments(sample);
+      setOutfit(sample.filter(g => ["sample-tee", "sample-jeans", "sample-jacket"].includes(g.id)));
+      setResult(null);
+      setLoading(false);
+    } else {
+      setAllGarments(savedRef.current!.all);
+      setOutfit(savedRef.current!.outfit);
+      savedRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo]);
 
   const invRef      = useRef<HTMLDivElement>(null);
   const fadeTRef    = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -172,7 +204,13 @@ export default function BuilderPage() {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((data: Garment[]) => { setAllGarments(data); setLoading(false); })
+      .then((data: Garment[]) => {
+        rememberCache("/api/garments", data);
+        // Arrived mid-tutorial: keep it for afterwards instead of replacing the samples on screen.
+        if (savedRef.current) savedRef.current = { ...savedRef.current, all: data };
+        else setAllGarments(data);
+        setLoading(false);
+      })
       .catch(() => { setLoadError(true); setLoading(false); });
   }, []);
 
@@ -277,10 +315,14 @@ export default function BuilderPage() {
         setResult({ score: 0, valid: false, reason: null, pros: [], cons: [], serverError: true });
         return;
       }
-      const data = await res.json() as { score: number; valid: boolean; reason: string | null };
+      const data = await res.json() as { score: number | null; valid: boolean; reason: string | null; locked?: boolean };
+      if (data.locked) {
+        setResult({ score: 0, valid: false, reason: null, pros: [], cons: [], locked: true });
+        return;
+      }
       const pros = [...new Set(outfit.flatMap(g => parseProp(g.pros)))].slice(0, 4);
       const cons = [...new Set(outfit.flatMap(g => parseProp(g.cons)))].slice(0, 4);
-      setResult({ score: data.score, valid: data.valid, reason: data.reason, pros, cons });
+      setResult({ score: data.score ?? 0, valid: data.valid, reason: data.reason, pros, cons });
     } catch {
       setResult({ score: 0, valid: false, reason: null, pros: [], cons: [], serverError: true });
     }
@@ -304,7 +346,7 @@ export default function BuilderPage() {
     // never actually hold one.
     const sub = (g.sub_type ?? "").toLowerCase();
     if (sub.includes("hat") || sub.includes("cap") || sub.includes("beanie") ||
-        sub.includes("bucket") || sub.includes("beret") || sub.includes("snapback")) {
+        (sub.includes("bucket") && !sub.includes("bag")) || sub.includes("beret") || sub.includes("snapback")) {
       heads.push(g); continue;
     }
     if (g.category === "accessory") { accs.push(g); continue; }
@@ -405,6 +447,8 @@ export default function BuilderPage() {
 
     return (
       <div
+        // The first-run tutorial points at the pants slot (the middle of the outfit).
+        data-tutorial={role === "Pants" ? "builder.piece" : undefined}
         style={{
           ...BOX, gridColumn: col, gridRow: row,
           cursor: g ? "grab" : "default",
@@ -506,21 +550,8 @@ export default function BuilderPage() {
 
   // ── Loading screen ────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "#fff",
-        display: "flex", alignItems: "center", justifyContent: "center", ...FONT }}>
-        <style suppressHydrationWarning>{WAVE_CSS}</style>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 160 }}>
-          <img src="/loading-tee.png" alt="" draggable={false}
-            style={{ width: 270, height: 340, objectFit: "contain", opacity: 0.88 }} />
-          <div style={{ width: 190, height: 5, background: "#e8e8e8", overflow: "hidden", marginTop: -88 }}>
-            <div style={{ height: "100%", background: "#111", animation: "loadbar 14s ease-out forwards" }} />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Wrapped in ReadyGate (components/ReadyGate.tsx): three dots until the page is fully drawn.
+  if (loading) return <ReadyGate ready={false} />;
 
   // ── Mobile page ──────────────────────────────────────────────────────────
   // The desktop grid is a fixed 5×142px layout (710px+ wide) with native HTML5 drag-and-drop,
@@ -538,10 +569,13 @@ export default function BuilderPage() {
     };
 
     return (
+      <ReadyGate ready>
       <main style={{ minHeight: "100dvh", background: "#fff", ...FONT, display: "flex", flexDirection: "column" }}>
         <style suppressHydrationWarning>{WAVE_CSS}</style>
 
-        <div style={{ padding: "20px 20px 4px", textAlign: "center", flexShrink: 0 }}>
+        <div style={{ flex: 1, minHeight: 0 }} />
+
+        <div style={{ padding: "0 20px 4px", textAlign: "center", flexShrink: 0 }}>
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.16em", color: "#111", margin: 0 }}>BUILD OUTFIT</p>
         </div>
 
@@ -571,10 +605,12 @@ export default function BuilderPage() {
             ) : (
               <div style={{ padding: "10px 16px", background: "#fff5f5", border: "1px solid #fca5a5", textAlign: "center" }}>
                 <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c00", margin: "0 0 4px", ...FONT }}>
-                  {result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}
+                  {result.locked ? "AI SCORING LOCKED" : result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}
                 </p>
                 <p style={{ fontSize: 11, color: "#888", lineHeight: 1.6, margin: 0, ...FONT }}>
-                  {result.serverError
+                  {result.locked
+                    ? "Scoring outfits is a Pro feature. Upgrade in the MyCloset app."
+                    : result.serverError
                     ? "Couldn't score that outfit — try again."
                     : !result.valid
                     ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
@@ -585,8 +621,11 @@ export default function BuilderPage() {
           </div>
         )}
 
-        {/* Slot rows — one per category, filled items as tap-to-remove chips + a tap-to-add tile */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
+        {/* Slot rows — one per category, filled items as tap-to-remove chips + a tap-to-add tile.
+            flex: 0 1 auto so a short outfit doesn't get stretched to fill the whole screen —
+            it sizes to its content and the spacers above/below share the rest, keeping the
+            page centered instead of pinned to the top with slack dumped below. */}
+        <div style={{ flex: "0 1 auto", overflowY: "auto", padding: "16px 20px calc(24px + 48px + 60px + var(--safe-bottom))" }}>
           {BUCKET_ORDER.map(bucket => {
             const items = outfit.filter(g => bucketOf(g) === bucket);
             return (
@@ -632,12 +671,17 @@ export default function BuilderPage() {
           })}
         </div>
 
-        {/* Bottom action bar */}
+        <div style={{ flex: 1, minHeight: 0 }} />
+
+        {/* Bottom action bar — fixed above the tab bar */}
         <div style={{
-          position: "sticky", bottom: 0, background: "#fff", borderTop: "1px solid #ebebeb",
-          padding: "14px 20px calc(14px + var(--safe-bottom))",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 28, flexShrink: 0,
+          position: "fixed", bottom: "calc(60px + var(--safe-bottom))", left: 0, right: 0,
+          background: "#fff", borderTop: "1px solid #ebebeb",
+          padding: "14px 20px",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 28,
+          zIndex: 100,
         }}>
+{hasAI && (
           <button
             onClick={handleScore}
             disabled={!canScore || scoring}
@@ -649,6 +693,7 @@ export default function BuilderPage() {
           >
             {scoring ? "SCORING…" : "SCORE"}
           </button>
+          )}
           {outfit.length > 0 && !result && (
             <button
               onClick={() => { setOutfit([]); setProsState("hidden"); setConsState("hidden"); }}
@@ -662,16 +707,20 @@ export default function BuilderPage() {
         {/* Picker — full-screen so there's room to actually see items, unlike a narrow sheet */}
         {pickerBucket && (
           <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column" }}>
-            <div style={{
+            {/* On mobile: on the nav icons' center line, with CLOSE kept clear of them (the
+               nav floats above this picker in the top-right corner). See globals.css .nav-row*. */}
+            <div className="nav-row-host" style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "calc(18px + var(--safe-top)) 20px 16px", borderBottom: "1px solid #ebebeb", flexShrink: 0,
             }}>
+              <div className="nav-row nav-row-clear-right" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#111", margin: 0, ...FONT }}>
                 ADD {BUCKET_LABEL[pickerBucket].toUpperCase()}
               </p>
               <button onClick={() => setPickerBucket(null)} style={{ ...smallBtn, color: "#999", fontSize: 10 }}>
                 CLOSE
               </button>
+              </div>
             </div>
             <div style={{
               flex: 1, overflowY: "auto", padding: 16,
@@ -738,19 +787,21 @@ export default function BuilderPage() {
           </div>
         )}
       </main>
+      </ReadyGate>
     );
   }
 
   // ── Page ──────────────────────────────────────────────────────────────────
 
   return (
+    <ReadyGate ready>
     <main style={{ display: "flex", height: "100vh", overflow: "hidden", background: "#fff", ...FONT, position: "relative" }}>
       <style suppressHydrationWarning>{WAVE_CSS}</style>
 
       {/* ── Left: score button + slot grid ── */}
       <div style={{
         flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center",
-        padding: "24px 24px",
+        padding: "10px 24px 0",
         overflowY: "auto", overflowX: "auto", scrollbarWidth: "none",
       }}>
 
@@ -758,8 +809,9 @@ export default function BuilderPage() {
         <div style={{
           width: 5 * B + 4 * G,
           position: "relative", height: 28,
-          marginBottom: 20,
+          marginBottom: 6,
         }}>
+{hasAI && (
           <button
             onClick={handleScore}
             disabled={!canScore || scoring}
@@ -776,13 +828,16 @@ export default function BuilderPage() {
           >
             {scoring ? "SCORING…" : "SCORE"}
           </button>
+          )}
 
           {/* CLEAR outfit — only visible when pieces are equipped and no analysis is showing */}
           {outfit.length > 0 && !result && (
             <button
               onClick={() => { setOutfit([]); setProsState("hidden"); setConsState("hidden"); }}
               style={{
-                position: "absolute", right: 0, top: 0,
+                // top: 15.5 — level with HIDE INVENTORY across the divider (its row starts 24px
+                // down; this column's padding is 10px).
+                position: "absolute", right: 0, top: 15.5, lineHeight: "12px",
                 background: "none", border: "none", padding: 0, cursor: "pointer",
                 fontSize: 9, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase",
                 color: "#c83030", ...FONT,
@@ -868,10 +923,12 @@ export default function BuilderPage() {
               }}>
                 <p style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.14em",
                   textTransform: "uppercase", color: "#c00", margin: "0 0 4px" }}>
-                  {result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}
+                  {result.locked ? "AI SCORING LOCKED" : result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}
                 </p>
                 <p style={{ fontSize: 11, color: "#888", lineHeight: 1.6, margin: 0, whiteSpace: "nowrap" }}>
-                  {result.serverError
+                  {result.locked
+                    ? "Scoring outfits is a Pro feature. Upgrade in the MyCloset app."
+                    : result.serverError
                     ? "Couldn't score that outfit — try again."
                     : !result.valid
                     ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
@@ -884,7 +941,7 @@ export default function BuilderPage() {
         )}
 
         {/* Main slot grid */}
-        <div style={{ marginBottom: 8 }}>
+        <div data-tutorial="builder.slots" style={{ marginBottom: 8 }}>
           <div style={{
             display: "grid",
             gridTemplateColumns: `repeat(5, ${B}px)`,
@@ -1166,5 +1223,6 @@ export default function BuilderPage() {
         </div>
       )}
     </main>
+    </ReadyGate>
   );
 }

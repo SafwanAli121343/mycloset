@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 import { computeItemImpact } from "@/lib/wardrobeAnalysis";
 import type { GarmentForScoring } from "@/lib/scoring";
@@ -19,6 +20,8 @@ const FIELDS =
   "pattern, formality, aesthetic_tags, pros, cons, color_pairings, color_clashes, tags, image";
 
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "wardrobe:impact", 30, 60000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -36,7 +39,7 @@ export async function POST(req: NextRequest) {
     .select(FIELDS)
     .eq("user_id", session.userId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
 
   const wardrobe = (data ?? []) as unknown as GarmentForScoring[];
   const impact = computeItemImpact(wardrobe, body.candidate, body.currentAnalysis);

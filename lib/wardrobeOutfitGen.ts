@@ -38,7 +38,7 @@ function isOuterCapableBase(item: GarmentForScoring): boolean {
   // Keyword fallback for sub_types not in the explicit set (DB items often have
   // composite names like "Short Sleeve Button-Up Shirt" or "Striped Oxford Shirt")
   const l = (item.sub_type ?? "").toLowerCase();
-  return (
+  if (
     l.includes("flannel") || l.includes("oxford") || l.includes("camp collar") ||
     l.includes("bowling") || l.includes("western") || l.includes("chambray") ||
     l.includes("button-up") || l.includes("button up") ||
@@ -48,7 +48,23 @@ function isOuterCapableBase(item: GarmentForScoring): boolean {
     l.includes("printed shirt") || l.includes("silk shirt") ||
     l.includes("rugby") ||
     (l.includes("polo") && !l.includes("polo neck"))
-  );
+  ) return true;
+  // Generic fallback: a garment simply tagged "shirt" (sub_type or free-form title) is a
+  // woven, collared, button-front garment by default — outer-capable — UNLESS it specifically
+  // matches one of the KNOWN knit/base-layer patterns below. Without this, a plain "Long Sleeve
+  // Shirt" or "Longsleeve Button-Up" (an AI-tagged name that doesn't happen to hit any of the
+  // specific keywords above) fell through to isProperUnderlayer purely because it also matched
+  // "long sleeve" — letting a t-shirt get validated as hidden underneath an actual button-up
+  // shirt, which is never a real look (see isValidBaseCombo's own doc comment).
+  const title = (item.title ?? "").toLowerCase();
+  const looksLikeKnitBase =
+    l.includes("henley") || title.includes("henley") ||
+    l.includes("thermal") || title.includes("thermal") ||
+    l.includes("turtleneck") || title.includes("turtleneck") ||
+    l.includes("mock neck") || l.includes("mock-neck") ||
+    l.includes("tank") || l.includes("undershirt") ||
+    l.includes("t-shirt") || l.includes("tee") || title.includes("t-shirt");
+  return (l.includes("shirt") || title.includes("shirt")) && !looksLikeKnitBase;
 }
 
 // Returns true if this item is a true inner/under layer (long-sleeve base, thermal, henley, etc.)
@@ -82,28 +98,7 @@ function isBasicTee(item: GarmentForScoring): boolean {
   );
 }
 
-// Casual overshirts where a tee underneath is a valid intentional look (flannel open over
-// white tee is a classic). Distinct from structured button-ups (Oxford, dress shirt) where
-// a tee reads as an undershirt rather than intentional layering.
-function isCasualOvershirt(item: GarmentForScoring): boolean {
-  const l = (item.sub_type ?? "").toLowerCase();
-  return (
-    l.includes("flannel") || l.includes("camp collar") || l.includes("chambray") ||
-    l.includes("work shirt") || l.includes("western") || l.includes("bowling") ||
-    l.includes("linen shirt") || l.includes("denim shirt") || l.includes("shacket") ||
-    l.includes("overshirt")
-  );
-}
 
-// Structured button-ups where a visible tee underneath reads as an undershirt, not style.
-function isStructuredButtonUp(item: GarmentForScoring): boolean {
-  const l = (item.sub_type ?? "").toLowerCase();
-  return (
-    l.includes("oxford") || l.includes("dress shirt") ||
-    l.includes("printed shirt") || l.includes("silk shirt") ||
-    ((l.includes("button-up") || l.includes("button-down")) && !isCasualOvershirt(item))
-  );
-}
 
 // Light/neutral tee colors that work under any casual overshirt regardless of shirt color.
 const LIGHT_NEUTRAL_TEE = new Set([
@@ -131,22 +126,29 @@ function teeLooksGoodUnderOvershirt(tee: GarmentForScoring, shirt: GarmentForSco
 
 // Guard: is this combination of base items valid for layering?
 //   1. At most one outer-capable item (no polo+oxford, no polo+polo, etc.)
-//   2. Tee under a structured button-up (Oxford, dress shirt) = blocked entirely
-//   3. Tee under a casual overshirt (flannel, chambray, etc.) = allowed only if tee color
-//      passes the contrast check (light/neutral always OK; dark tee needs dark shirt)
+//   2-3. Tee under any outer-capable shirt (flannel, oxford, button-up…) = allowed, with or
+//      without a jacket over it, as long as the tee's color passes the contrast check
+//      (light/neutral always OK; dark tee needs dark shirt; graphic tees blocked at the collar)
 //   4. Two basic tees stacked = blocked
 //   5. For non-outer combos, require a genuine underlayer (long-sleeve, thermal, etc.)
-function isValidBaseCombo(items: GarmentForScoring[]): boolean {
+// `hasOuterLayer`: true when this specific outfit ALSO includes a real outer-slot garment (a
+// jacket/coat, not a base-layer shirt) — the outer-capable base item is then acting as a MIDDLE
+// layer, not the terminating one, which is exactly the case rule 3's "casual overshirt" carve-out
+// was already making room for; this just extends the same reasoning to ANY outer-capable shirt
+// once something genuinely covers the whole stack, rather than only the pre-listed casual ones.
+function isValidBaseCombo(items: GarmentForScoring[], hasOuterLayer: boolean = false): boolean {
   if (items.length <= 1) return true;
   const outerCapableCount = items.filter(isOuterCapableBase).length;
   if (outerCapableCount > 1) return false;
   if (items.filter(isBasicTee).length > 1) return false; // no tee-on-tee
   if (outerCapableCount > 0 && items.some(isBasicTee)) {
+    // A tee under ANY overshirt/button-up is a valid look (per the user's explicit call — e.g.
+    // a tee under an open flannel or an unbuttoned oxford), with or without a jacket over the
+    // stack. Only the visual-contrast check remains: graphic tees clutter the collar, and a dark
+    // tee needs a dark shirt over it.
     const tee   = items.find(isBasicTee)!;
     const shirt = items.find(isOuterCapableBase)!;
-    if (isStructuredButtonUp(shirt)) return false; // tee under Oxford/dress shirt = never
-    if (isCasualOvershirt(shirt)) return teeLooksGoodUnderOvershirt(tee, shirt);
-    return false; // unknown outer-capable type — block to be safe
+    return teeLooksGoodUnderOvershirt(tee, shirt);
   }
   if (outerCapableCount === 0 && !items.some(isProperUnderlayer)) return false;
   return true;
@@ -245,9 +247,12 @@ export type RankedOutfit = {
 
 export function generateAndRankAllOutfits(
   wardrobe: GarmentForScoring[],
-  options: { maxTotal?: number; tempF?: number; requireFoot?: boolean; noFloor?: boolean } = {},
+  // accessories:false → clothing combinations only (no accessory variations). For COUNTING
+  // distinct outfits (Preview): with accessories, each clothing combination was counted once per
+  // accessory variation — ~5x inflated, and every preview hit the 10,000 cap.
+  options: { maxTotal?: number; tempF?: number; requireFoot?: boolean; noFloor?: boolean; accessories?: boolean } = {},
 ): RankedOutfit[] {
-  const { maxTotal = 3000, tempF, requireFoot = true, noFloor = false } = options;
+  const { maxTotal = 3000, tempF, requireFoot = true, noFloor = false, accessories = true } = options;
 
   // Bucket wardrobe by slot
   const base:     GarmentForScoring[] = [];
@@ -318,31 +323,34 @@ export function generateAndRankAllOutfits(
     foot.length ? foot : requireFoot ? [] : [null];
   if (!footOptions.length) return [];
 
-  const results: RankedOutfit[] = [];
+  // ── Two-stage search, per-config buckets ─────────────────────────────────────────────────
+  // Stage 1 scores CORE outfits (clothes only); stage 2 tries accessory variations only on the
+  // cores that survive. Scoring every core × every accessory variation (up to 96 of them) was
+  // millions of scoreOutfit calls — ~60s for a 50-item wardrobe on the server.
+  //
+  // Each STACK_CONFIG keeps its OWN best results (bucket + floor) instead of competing in one
+  // global top-N: layered looks reliably outscore plain ones, so a single global floor pruned
+  // EVERY "Clean minimal" (tee + bottom + shoes) outfit out of the pool — and the month planner
+  // then had nothing weather-appropriate for hot days and fell back to sweatshirts at 97°F. The
+  // final pool guarantees every config a fair share, then fills the rest by score.
+  type Bucket = { items: RankedOutfit[]; floor: number };
+  const buckets = new Map<string, Bucket>();
   const seen = new Set<string>();
-  let dynamicFloor = 0; // rises as results fill up, pruning low-quality combos
+  const coreCap = Math.max(50, Math.ceil(maxTotal / 3)); // cores kept per config for stage 2
+  const bucketCap = maxTotal;                           // finished outfits kept per config
 
-  function tryAdd(configName: string, items: GarmentForScoring[]) {
-    // Hard guard: no two outer-capable base items in the same outfit.
-    // (polo+polo, polo+oxford, oxford+flannel → all rejected before scoring)
-    // This is a physical/structural rule — you cannot layer two collared or
-    // button-front tops without a collar/placket war that looks like an accident.
-    const baseItems = items.filter(i => getSlot(i.sub_type) === "base");
-    if (!isValidBaseCombo(baseItems)) return;
-
-    const key = items.map((i) => i.id).sort().join("|");
-    if (seen.has(key)) return;
-    seen.add(key);
-    const score = scoreOutfit(items, tempF, { requireFoot });
-    if (!noFloor && score <= dynamicFloor) return;
-    if (score <= 0) return; // always drop truly invalid combos
-    results.push({ items, score, configName });
-    // Every time we accumulate 2× the target, sort and trim so memory stays bounded
-    if (!noFloor && results.length >= maxTotal * 2) {
-      results.sort((a, b) => b.score - a.score);
-      results.splice(maxTotal);
-      dynamicFloor = results[results.length - 1].score;
+  function pushBounded(b: Bucket, entry: RankedOutfit, cap: number) {
+    b.items.push(entry);
+    if (!noFloor && b.items.length >= cap * 2) {
+      b.items.sort((a, c) => c.score - a.score);
+      b.items.splice(cap);
+      b.floor = b.items[b.items.length - 1].score;
     }
+  }
+  function trimmed(b: Bucket, cap: number): RankedOutfit[] {
+    b.items.sort((a, c) => c.score - a.score);
+    if (!noFloor && b.items.length > cap) b.items.splice(cap);
+    return b.items;
   }
 
   for (const cfg of STACK_CONFIGS) {
@@ -358,44 +366,77 @@ export function generateAndRankAllOutfits(
     if (cfg.vest  && !vest.length)  continue;
     if (cfg.outer && !outer.length) continue;
 
+    // Base-layer validity depends only on the base items themselves, so invalid stacks
+    // (two collared shirts, tee-on-tee, a dark tee under a light shirt…) are dropped once here
+    // instead of being rebuilt and rejected inside every inner loop.
     const baseGroups =
-      cfg.baseCount > 0
-        ? combinations(base, cfg.baseCount)
-        : [[] as GarmentForScoring[]];
+      (cfg.baseCount > 0 ? combinations(base, cfg.baseCount) : [[] as GarmentForScoring[]])
+        .filter(group => isValidBaseCombo(group));
 
     const midOpts   = cfg.mid   ? mid   : [null as GarmentForScoring | null];
     const vestOpts  = cfg.vest  ? vest  : [null as GarmentForScoring | null];
     const outerOpts = cfg.outer ? outer : [null as GarmentForScoring | null];
 
+    // Stage 1: core outfits.
+    const cores: Bucket = { items: [], floor: 0 };
     for (const basePick of baseGroups) {
       for (const botItem of bottomPool) {
         for (const footItem of footOptions) {
           for (const midItem of midOpts) {
             for (const vestItem of vestOpts) {
               for (const outerItem of outerOpts) {
-                for (const sitItem of sitAccOpts) {
-                  for (const jewSubset of jewelrySubsets) {
-                    tryAdd(cfg.name, [
-                      ...basePick,
-                      ...(midItem   ? [midItem]   : []),
-                      ...(vestItem  ? [vestItem]  : []),
-                      ...(outerItem ? [outerItem] : []),
-                      botItem,
-                      ...(footItem  ? [footItem]  : []),
-                      ...jewSubset,
-                      ...(sitItem ? [sitItem] : []),
-                    ]);
-                  }
-                }
+                const items = [
+                  ...basePick,
+                  ...(midItem   ? [midItem]   : []),
+                  ...(vestItem  ? [vestItem]  : []),
+                  ...(outerItem ? [outerItem] : []),
+                  botItem,
+                  ...(footItem  ? [footItem]  : []),
+                ];
+                const score = scoreOutfit(items, tempF, { requireFoot });
+                if (score <= 0) continue;                         // truly invalid
+                if (!noFloor && score <= cores.floor) continue;
+                pushBounded(cores, { items, score, configName: cfg.name }, coreCap);
               }
             }
           }
         }
       }
     }
+
+    // Stage 2: accessory variations of the surviving cores (the no-accessory variant included).
+    const bucket: Bucket = { items: [], floor: 0 };
+    for (const core of trimmed(cores, coreCap)) {
+      for (const sitItem of accessories ? sitAccOpts : [null]) {
+        for (const jewSubset of accessories ? jewelrySubsets : [[] as GarmentForScoring[]]) {
+          const items = [...core.items, ...jewSubset, ...(sitItem ? [sitItem] : [])];
+          const key = items.map((i) => i.id).sort().join("|");
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const score = items.length === core.items.length ? core.score : scoreOutfit(items, tempF, { requireFoot });
+          if (score <= 0) continue;
+          if (!noFloor && score <= bucket.floor) continue;
+          pushBounded(bucket, { items, score, configName: cfg.name }, bucketCap);
+        }
+      }
+    }
+    buckets.set(cfg.name, bucket);
   }
 
-  results.sort((a, b) => b.score - a.score);
-  if (results.length > maxTotal) results.splice(maxTotal);
-  return results;
+  // Final pool: every config with results first gets its top `quota`, then the remaining room
+  // is filled by global score. Sorted best-first, as every consumer expects.
+  const perConfig = [...buckets.values()].map(b => trimmed(b, bucketCap)).filter(l => l.length);
+  if (noFloor) {
+    const all = perConfig.flat().sort((a, b) => b.score - a.score);
+    if (all.length > maxTotal) all.splice(maxTotal);
+    return all;
+  }
+  const quota = perConfig.length ? Math.max(1, Math.floor(maxTotal / perConfig.length / 2)) : 0;
+  const picked: RankedOutfit[] = [];
+  const rest: RankedOutfit[] = [];
+  for (const list of perConfig) { picked.push(...list.slice(0, quota)); rest.push(...list.slice(quota)); }
+  rest.sort((a, b) => b.score - a.score);
+  for (const o of rest) { if (picked.length >= maxTotal) break; picked.push(o); }
+  picked.sort((a, b) => b.score - a.score);
+  return picked;
 }

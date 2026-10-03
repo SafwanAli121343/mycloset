@@ -21,7 +21,7 @@ export default function SignInPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black flex flex-col items-center justify-center px-4">
+    <main className="min-h-screen bg-black flex flex-col items-center justify-center px-4 center-lift">
       <div className="w-full max-w-sm" style={{ transform: "translateY(-8vh)" }}>
         <p className="text-2xl font-bold uppercase tracking-[0.04em] mb-10 text-center text-white" style={FONT}>
           LOG IN
@@ -60,9 +60,13 @@ export default function SignInPage() {
           </button>
         </form>
 
+        <p className="text-xs text-center mt-4 uppercase tracking-wide text-neutral-500" style={FONT}>
+          <Link href="/forgot-password" className="font-bold text-neutral-300">Forgot password?</Link>
+        </p>
+
         <p className="text-xs text-center mt-6 uppercase tracking-wide text-neutral-500" style={FONT}>
           No account?{" "}
-          <Link href="/sign-up" className="underline font-bold text-neutral-300">Create one</Link>
+          <Link href="/sign-up" className="font-bold text-neutral-300">Create one</Link>
         </p>
       </div>
     </main>

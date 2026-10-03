@@ -1,4 +1,4 @@
-import { apiJson } from "./api";
+import { apiJson, invalidateCache } from "./api";
 import { sameColorGroup } from "./colorGroups";
 import {
   gapTotalProgress, computeGapProgress, normAesthetic, conMatches, GAP_AES,
@@ -170,6 +170,11 @@ export async function crossNewItemAgainstWardrobe(saved: SavedGarment, formCateg
         if (unmatchedAes.includes(aName)) aiEntries.push({ category: "aesthetic", key: aName, garmentId, analysisLevel: level });
       }
       for (const c of res.color_fills ?? []) {
+        // Matches the website's own check exactly (app/add-item/page.tsx) — accept the fill when
+        // the item simply has no primary color recorded at all, not only when it has one that
+        // matches. Native previously required a matching color_primary unconditionally, so an
+        // item with no color on file could never fill a color gap even when the AI vision call
+        // (which sees the actual image) said it did.
         if (unmatchedColor.includes(c) && (!saved.color_primary || sameColorGroup(saved.color_primary, c))) {
           aiEntries.push({ category: "color", key: c, garmentId, analysisLevel: level });
         }
@@ -204,6 +209,10 @@ export async function crossNewItemAgainstWardrobe(saved: SavedGarment, formCateg
 
   const all = [...newEntries, ...aiEntries];
   if (all.length > 0) {
-    await apiJson("/api/wardrobe/state/cross", { method: "POST", body: JSON.stringify(all) }).catch(() => {});
+    await apiJson("/api/wardrobe/state/cross", { method: "POST", body: JSON.stringify(all) })
+      // Closet/Wardrobe read wardrobe state through the 45s cache — without this, a new item's
+      // crossings didn't show up there until that expired.
+      .then(() => invalidateCache("/api/wardrobe/state"))
+      .catch(() => {});
   }
 }

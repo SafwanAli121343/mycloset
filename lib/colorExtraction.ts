@@ -156,7 +156,7 @@ function initCentroids(pixels: RGB[], k: number): RGB[] {
 // returning each cluster's average color and pixel count.
 function kMeans(pixels: RGB[], k: number): { color: RGB; count: number }[] {
   let centroids = initCentroids(pixels, k);
-  let assignments: number[] = new Array(pixels.length).fill(0);
+  const assignments: number[] = new Array(pixels.length).fill(0);
 
   for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
     let changed = false;
@@ -280,7 +280,7 @@ export async function extractColors(imageUrl: string): Promise<ColorResult> {
     }
 
     if (pixels.length === 0) {
-      return { primary: null, primaryRgb: null, secondary: null, secondaryRgb: null };
+      return { primary: null, primaryRgb: null, secondary: null, secondaryRgb: null, colors: [] };
     }
 
     const clusters = kMeans(pixels, Math.min(CLUSTERS, pixels.length));

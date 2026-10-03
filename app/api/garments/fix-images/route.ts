@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 import sharp from "sharp";
 import { removeBackground } from "@imgly/background-removal-node";
@@ -28,7 +29,9 @@ async function transparencyRatio(buf: Buffer): Promise<number> {
   return transparent / (px.length / 4);
 }
 
-export async function POST() {
+export async function POST(req: Request) {
+  const rateBlock = applyApiRateLimit(req, "garments:fix-images", 20, 3600000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -39,7 +42,7 @@ export async function POST() {
     .not("image", "is", null)
     .limit(50);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
 
   let processed = 0;
   let skipped = 0;

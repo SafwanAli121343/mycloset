@@ -2,21 +2,57 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import { removeBackground } from "@imgly/background-removal-node";
+import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// 10 MB hard cap on uploads
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  // Background removal + storage upload — require auth and limit to 30/hour per IP
+  const rateBlock = applyApiRateLimit(req, "upload-image", 30, 60 * 60 * 1000);
+  if (rateBlock) return rateBlock;
+
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const formData = await req.formData();
-  const file = formData.get("file") as File | null;
+  // @types/node's undici-derived FormData type and the DOM lib's FormData type disagree on
+  // this method's shape depending on lib/tsconfig resolution order — same class of collision as
+  // the `outfit_items` casts elsewhere in this codebase (see app/api/outfits/route.ts), worked
+  // around the same way rather than fighting the global type declarations.
+  const file = (formData as unknown as { get(key: string): File | null }).get("file");
   if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
+
+  // Reject oversized uploads before reading the bytes
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json({ error: "File too large. Maximum 10 MB." }, { status: 413 });
+  }
+
+  // Accept only image MIME types
+  if (!file.type.startsWith("image/")) {
+    return NextResponse.json({ error: "Only image files are accepted." }, { status: 415 });
+  }
 
   const arrayBuffer = await file.arrayBuffer();
   const srcBuf = Buffer.from(arrayBuffer);
+
+  // Verify actual image format by magic bytes — rejects any file spoofing its Content-Type
+  const h = srcBuf.slice(0, 12);
+  const isJPEG = h[0] === 0xFF && h[1] === 0xD8 && h[2] === 0xFF;
+  const isPNG  = h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4E && h[3] === 0x47;
+  const isWebP = h[0] === 0x52 && h[1] === 0x49 && h[2] === 0x46 && h[3] === 0x46
+              && h[8] === 0x57 && h[9] === 0x45 && h[10] === 0x42 && h[11] === 0x50;
+  if (!isJPEG && !isPNG && !isWebP) {
+    return NextResponse.json({ error: "Invalid image. Only JPEG, PNG, and WebP are accepted." }, { status: 415 });
+  }
 
   let buffer: Buffer;
   try {
@@ -60,7 +96,9 @@ export async function POST(req: NextRequest) {
   }
 
   await adminClient.storage.createBucket("garment-images", { public: true }).catch(() => {});
-  const path = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.png`;
+  // Scope path to the authenticated user — prevents cross-user path collisions and makes
+  // it possible to enumerate/delete a user's own uploads at the storage level.
+  const path = `${session.userId}/uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.png`;
   const { data: uploaded, error } = await adminClient.storage
     .from("garment-images")
     .upload(path, buffer, { contentType: "image/png" });

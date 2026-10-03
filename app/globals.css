@@ -130,6 +130,34 @@
      bottom-anchored content (sticky action bars, footer buttons) from sitting underneath the
      persistent mobile tab bar. */
   --tab-bar-h: 60px;
+  /* The mobile top band's shared center line: components/Navbar.tsx's mobile icon row sits
+     --nav-row-top below the safe-area top in a --nav-row-h tall row. The .nav-row* helpers below
+     put any page's own top-band control on that exact same center line. Mirrors the app's
+     NAV_ROW_TOP / NAV_ROW_H (native/components/ShowNavButton.tsx). */
+  --nav-row-top: 16px;
+  --nav-row-h: 22px;
+}
+
+/* Mobile only (matches useIsMobile's 700px breakpoint) — on desktop the nav lives bottom-right,
+   so nothing at the top needs to line up with it. !important because these override inline
+   styles on the elements they're applied to. */
+@media (max-width: 700px) {
+  /* The page/container whose own top padding would otherwise push its first row off the line. */
+  .nav-row-host { padding-top: 0 !important; }
+  /* A first row (in normal flow) centered on the nav icons' line. */
+  .nav-row {
+    margin-top: calc(var(--safe-top) + var(--nav-row-top)) !important;
+    height: var(--nav-row-h) !important;
+    display: flex !important; align-items: center !important;
+  }
+  /* A row whose right end would sit underneath the nav icons — keeps its content clear of them. */
+  .nav-row-clear-right { padding-right: 96px !important; }
+  /* A floating corner control — top-left (the top-right corner belongs to the nav). */
+  .nav-row-corner-left {
+    position: absolute !important; top: calc(var(--safe-top) + var(--nav-row-top)) !important;
+    left: 20px !important; right: auto !important; height: var(--nav-row-h) !important;
+    display: flex !important; align-items: center !important;
+  }
 }
 
 @layer base {
@@ -160,3 +188,18 @@
 input, textarea, select {
   font-size: 16px !important;
 }
+/* First-run tutorial (components/Tutorial.tsx): the nav stays hidden until the last step. */
+body[data-tutorial-nonav="1"] [data-nav] { display: none !important; }
+
+/* Full-screen centered layouts (loading dots, empty/locked states, auth screens, forms) sit a
+   little above the true middle — dead-center reads as low, especially with the mobile tab bar.
+   One value everywhere, so content and the loading dots before it land in the same spot. */
+:root { --center-lift: 10vh; }
+.center-lift { box-sizing: border-box !important; padding-bottom: var(--center-lift) !important; }
+
+/* First-run tutorial (components/Tutorial.tsx) reads what's on the page inside #tut-stage to keep
+   its text clear of it. display:contents: the wrapper doesn't exist as far as layout goes. */
+#tut-stage { display: contents; }
+/* A page with no room for the tutorial's text slides down to open a band at the top for it. */
+body[data-tut-band] { overflow: hidden; }
+body[data-tut-band] #tut-stage { display: block; transform: translateY(var(--tut-band)); }

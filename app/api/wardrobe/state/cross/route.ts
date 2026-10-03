@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 import { computeEffectiveLevel } from "@/lib/wardrobeAnalysis";
 import type { CrossedEntry, WABackendState } from "@/lib/wardrobeAnalysis";
@@ -50,6 +51,8 @@ export async function DELETE(req: NextRequest) {
 // POST /api/wardrobe/state/cross — append CrossedEntry[] when items are added.
 // Called fire-and-forget from add-item page.
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "wardrobe:cross", 60, 60000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

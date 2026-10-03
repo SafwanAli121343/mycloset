@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BAR_CONTENT_H } from "./BottomNavBar";
 import { colors, spacing } from "../theme/theme";
 
 // The one shared "whole screen is just loading/empty/error state" treatment — used identically
@@ -15,7 +14,7 @@ import { colors, spacing } from "../theme/theme";
 export function ScreenCenter({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.center, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + BAR_CONTENT_H + spacing.lg }, style]}>
+    <View style={[styles.center, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg }, style]}>
       {children}
     </View>
   );

@@ -1,4 +1,5 @@
 "use client";
+import { ProGate } from "@/components/ProGate";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -25,7 +26,7 @@ type Garment = {
   image: string | null;
 };
 
-export default function AnalysisPage() {
+function AnalysisPageInner() {
   const { user } = useAuth();
   const [mode, setMode] = useState<Mode>("wardrobe");
   const [garments, setGarments] = useState<Garment[]>([]);
@@ -406,4 +407,9 @@ function primaryBtn(enabled: boolean): React.CSSProperties {
     cursor: enabled ? "pointer" : "default",
     fontFamily: "Arial, sans-serif",
   };
+}
+
+// Scores/AI are Pro-only — see components/ProGate.tsx.
+export default function AnalysisPage() {
+  return <ProGate feature="AI analysis"><AnalysisPageInner /></ProGate>;
 }

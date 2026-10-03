@@ -8,6 +8,8 @@ import BuilderScreen from "../screens/BuilderScreen";
 import PreviewScreen from "../screens/PreviewScreen";
 import WardrobeScreen from "../screens/WardrobeScreen";
 import SettingsScreen from "../screens/SettingsScreen";
+import UpgradeScreen from "../screens/UpgradeScreen";
+import VerifyEmailScreen from "../screens/VerifyEmailScreen";
 
 export type MainTabParamList = {
   Closet: undefined;
@@ -19,7 +21,13 @@ export type MainTabParamList = {
   Builder: { editDate?: string; editOutfitId?: string; initialIds?: string[] } | undefined;
   Preview: undefined;
   Wardrobe: undefined;
+  Upgrade: undefined;
   Settings: undefined;
+  // Not in BottomNavBar's fixed tab list (see BottomNavBar.tsx) — reachable only via Settings'
+  // "Verify Now" link during the soft-gate window. Past the 7-day grace period, App.tsx renders
+  // this screen standalone instead of MainTabs entirely, so this registration only matters
+  // while the account is still soft-gated.
+  VerifyEmail: undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -39,7 +47,7 @@ export default function MainTabs() {
       // screen's own content paints — without it, react-native-screens' native attach/detach
       // cycle during a tab switch can show through to whatever's behind (black, or another
       // screen) for a single frame, which read as the whole content area "flashing".
-      screenOptions={{ headerShown: false, lazy: true, sceneStyle: { backgroundColor: colors.bg } }}
+      screenOptions={{ headerShown: false, lazy: false, sceneStyle: { backgroundColor: colors.bg } }}
     >
       <Tab.Screen name="Closet" component={ClosetScreen} />
       <Tab.Screen name="Add" component={AddItemScreen} />
@@ -48,7 +56,9 @@ export default function MainTabs() {
       <Tab.Screen name="Builder" component={BuilderScreen} />
       <Tab.Screen name="Preview" component={PreviewScreen} />
       <Tab.Screen name="Wardrobe" component={WardrobeScreen} />
+      <Tab.Screen name="Upgrade" component={UpgradeScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen name="VerifyEmail" component={VerifyEmailScreen} />
     </Tab.Navigator>
   );
 }

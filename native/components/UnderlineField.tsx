@@ -1,4 +1,4 @@
-import { View, TextInput, Text, StyleSheet, type TextInputProps } from "react-native";
+import { View, TextInput, Text, StyleSheet, type TextInputProps, type StyleProp, type ViewStyle } from "react-native";
 import { colors, fontFamily } from "../theme/theme";
 
 // Matches the website's add-item form fields exactly (fieldInput/fieldHint in
@@ -7,10 +7,10 @@ import { colors, fontFamily } from "../theme/theme";
 // the hint's width so short values sit clear of it; once typed text runs long enough to reach
 // that reserved space, it visually meets the hint exactly like the site's version does.
 export function UnderlineField({
-  hint, required, hintWidth = 60, error, style, ...props
-}: TextInputProps & { hint: string; required?: boolean; hintWidth?: number; error?: boolean }) {
+  hint, required, hintWidth = 60, error, style, containerStyle, ...props
+}: TextInputProps & { hint: string; required?: boolean; hintWidth?: number; error?: boolean; containerStyle?: StyleProp<ViewStyle> }) {
   return (
-    <View style={[styles.wrap, error && styles.wrapError]}>
+    <View style={[styles.wrap, error && styles.wrapError, containerStyle]}>
       <TextInput {...props} style={[styles.input, { paddingRight: hintWidth }, style]} placeholderTextColor={colors.textFaint} />
       <Text style={styles.hint} pointerEvents="none">
         {hint}{required && <Text style={styles.required}> *</Text>}

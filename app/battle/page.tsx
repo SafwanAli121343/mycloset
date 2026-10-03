@@ -1,4 +1,5 @@
 "use client";
+import { ProGate } from "@/components/ProGate";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -30,7 +31,7 @@ type BotInfo = {
   bestOutfitScore: number;
 };
 
-export default function BattlePage() {
+function BattlePageInner() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("select");
 
@@ -112,7 +113,7 @@ export default function BattlePage() {
   // ── Mode: select ──────────────────────────────────────────────────────────
   if (mode === "select") {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
         <div className="max-w-sm w-full px-4 text-center">
           <button onClick={() => router.push("/dashboard")} className="text-xs uppercase tracking-widest hover:opacity-60 transition-opacity mb-12 inline-block" style={{ ...FONT, letterSpacing: "0.08em" }}>← BACK</button>
           <h1 className="text-2xl font-bold uppercase tracking-[0.06em] mb-2" style={FONT}>OUTFIT BATTLE</h1>
@@ -161,11 +162,11 @@ export default function BattlePage() {
   // ── Mode: bot battle ──────────────────────────────────────────────────────
   if (mode === "bot") {
     if (botState === "loading") {
-      return <main className="min-h-screen bg-white flex items-center justify-center" style={FONT}><p className="text-xs uppercase tracking-widest text-gray-400">LOADING…</p></main>;
+      return <main className="min-h-screen bg-white flex items-center justify-center center-lift" style={FONT}><p className="text-xs uppercase tracking-widest text-gray-400">LOADING…</p></main>;
     }
     if (botState === "error" || !botBattle) {
       return (
-        <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+        <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
           <p className="text-xs uppercase tracking-widest text-gray-400 mb-6">FAILED TO LOAD</p>
           <button onClick={() => setMode("select")} className="border border-black px-4 py-2 text-xs uppercase font-bold hover:bg-black hover:text-white transition-colors" style={FONT}>BACK</button>
         </main>
@@ -200,11 +201,11 @@ export default function BattlePage() {
   }
 
   // ── Mode: wardrobe battle ─────────────────────────────────────────────────
-  if (state === "loading") return <main className="min-h-screen bg-white flex items-center justify-center" style={FONT}><p className="text-xs uppercase tracking-widest text-gray-400">LOADING…</p></main>;
+  if (state === "loading") return <main className="min-h-screen bg-white flex items-center justify-center center-lift" style={FONT}><p className="text-xs uppercase tracking-widest text-gray-400">LOADING…</p></main>;
 
   if (state === "error") {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
         <p className="text-xs uppercase tracking-widest text-gray-400 mb-6">FAILED TO LOAD</p>
         <button onClick={() => setMode("select")} className="border border-black px-4 py-2 text-xs uppercase font-bold hover:bg-black hover:text-white transition-colors" style={FONT}>BACK</button>
       </main>
@@ -213,7 +214,7 @@ export default function BattlePage() {
 
   if (state === "done") {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
         <div className="max-w-md w-full px-4 text-center">
           <button onClick={() => setMode("select")} className="text-xs uppercase tracking-widest hover:opacity-60 transition-opacity mb-10 inline-block" style={{ ...FONT, letterSpacing: "0.08em" }}>← BACK</button>
           <h1 className="text-xl font-bold uppercase tracking-[0.06em] mb-6" style={FONT}>BATTLE COMPLETE</h1>
@@ -337,4 +338,9 @@ const COLOR_HEX: Record<string, string> = {
 function colorToHex(color: string | null | undefined): string {
   if (!color) return "#e0e0e0";
   return COLOR_HEX[color.toLowerCase()] ?? "#e0e0e0";
+}
+
+// Scores/AI are Pro-only — see components/ProGate.tsx.
+export default function BattlePage() {
+  return <ProGate feature="Outfit battle"><BattlePageInner /></ProGate>;
 }

@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProductStore } from "@/lib/stores/products";
 import { checkAdminPin } from "@/lib/auth/adminPin";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 
 // GET /api/admin/scrape — DB stats (used by admin page)
 export async function GET(req: NextRequest) {
+  // Rate-limit admin PIN routes to prevent brute-force — 10 attempts per 15 min per IP
+  const rateBlock = applyApiRateLimit(req, "admin:scrape", 10, 15 * 60 * 1000);
+  if (rateBlock) return rateBlock;
+
   if (!checkAdminPin(req.headers.get("x-admin-pin"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -21,6 +26,9 @@ export async function GET(req: NextRequest) {
 // fails visibly instead of silently/confusingly. Run scrapes via the CLI script for now:
 //   npx tsx --env-file=.env.local scripts/scrape-products.mjs <brand...>
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "admin:scrape", 10, 15 * 60 * 1000);
+  if (rateBlock) return rateBlock;
+
   if (!checkAdminPin(req.headers.get("x-admin-pin"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

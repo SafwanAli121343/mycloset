@@ -1,4 +1,5 @@
 "use client";
+import { ProGate } from "@/components/ProGate";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -14,12 +15,12 @@ type Piece = {
 };
 
 type ScoringData = {
-  wardrobeScore: number;
+  wardrobeScore: number | null;
   pieceCount: number;
   pieces: Piece[];
 };
 
-export default function ScorePage() {
+function ScorePageInner() {
   const router = useRouter();
   const [data, setData] = useState<ScoringData | null>(null);
   const [error, setError] = useState(false);
@@ -36,7 +37,7 @@ export default function ScorePage() {
 
   if (error) {
     return (
-      <main className="min-h-screen bg-white flex flex-col items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex flex-col items-center justify-center center-lift" style={FONT}>
         <p className="text-xs uppercase tracking-widest text-gray-400">FAILED TO LOAD</p>
         <button
           onClick={() => router.push("/dashboard")}
@@ -51,7 +52,7 @@ export default function ScorePage() {
 
   if (!data) {
     return (
-      <main className="min-h-screen bg-white flex items-center justify-center" style={FONT}>
+      <main className="min-h-screen bg-white flex items-center justify-center center-lift" style={FONT}>
         <p className="text-xs uppercase tracking-widest text-gray-400">ANALYZING...</p>
       </main>
     );
@@ -79,7 +80,7 @@ export default function ScorePage() {
             WARDROBE SCORE
           </p>
           <div className="flex items-baseline gap-2">
-            <span className="text-8xl font-bold text-black leading-none">{data.wardrobeScore}</span>
+            <span className="text-8xl font-bold text-black leading-none">{data.wardrobeScore ?? "—"}</span>
             <span className="text-2xl text-gray-400 font-bold">/ 100</span>
           </div>
           <p className="mt-3 text-xs uppercase tracking-widest text-gray-400" style={FONT}>
@@ -153,4 +154,9 @@ function PieceCard({ piece }: { piece: Piece }) {
       </div>
     </div>
   );
+}
+
+// Scores/AI are Pro-only — see components/ProGate.tsx.
+export default function ScorePage() {
+  return <ProGate feature="Wardrobe scoring"><ScorePageInner /></ProGate>;
 }

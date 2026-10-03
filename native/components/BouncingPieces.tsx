@@ -127,24 +127,29 @@ export function BouncingPieces({
     if (width <= 0 || height <= 0 || !active) return;
     let cancelled = false;
 
-    const corners = [
-      { x: 4, y: 4 }, { x: width - pieces[1]?.w - 4, y: 4 },
-      { x: 4, y: height - (pieces[2]?.h ?? 0) - 4 }, { x: width - (pieces[3]?.w ?? 0) - 4, y: height - (pieces[3]?.h ?? 0) - 4 },
-    ];
-    const signs = [{ sx: 1, sy: 1 }, { sx: -1, sy: 1 }, { sx: 1, sy: -1 }, { sx: -1, sy: -1 }];
-
-    balls.current = pieces.map((p, i) => {
-      const corner = corners[i % 4];
-      const sign = signs[i % 4];
-      return {
-        x: Math.max(0, corner.x + rand(-10, 10)),
-        y: Math.max(0, corner.y + rand(-10, 10)),
-        vx: speed * sign.sx * rand(0.7, 1.3),
-        vy: speed * sign.sy * rand(0.7, 1.3),
-        w: p.w, h: p.h,
-      };
-    });
-    balls.current.forEach((b, i) => positions[i].setValue({ x: b.x, y: b.y }));
+    // Resume from existing positions when toggling active (tab focus/blur) — avoids the
+    // visual "reset to corners" jump that looks like a refresh. Only start from corners on
+    // the first load or when the piece set changes (pieces dep changes).
+    const isResume = balls.current.length === pieces.length;
+    if (!isResume) {
+      const corners = [
+        { x: 4, y: 4 }, { x: width - pieces[1]?.w - 4, y: 4 },
+        { x: 4, y: height - (pieces[2]?.h ?? 0) - 4 }, { x: width - (pieces[3]?.w ?? 0) - 4, y: height - (pieces[3]?.h ?? 0) - 4 },
+      ];
+      const signs = [{ sx: 1, sy: 1 }, { sx: -1, sy: 1 }, { sx: 1, sy: -1 }, { sx: -1, sy: -1 }];
+      balls.current = pieces.map((p, i) => {
+        const corner = corners[i % 4];
+        const sign = signs[i % 4];
+        return {
+          x: Math.max(0, corner.x + rand(-10, 10)),
+          y: Math.max(0, corner.y + rand(-10, 10)),
+          vx: speed * sign.sx * rand(0.7, 1.3),
+          vy: speed * sign.sy * rand(0.7, 1.3),
+          w: p.w, h: p.h,
+        };
+      });
+      balls.current.forEach((b, i) => positions[i].setValue({ x: b.x, y: b.y }));
+    }
 
     function startLeg(i: number) {
       if (cancelled) return;

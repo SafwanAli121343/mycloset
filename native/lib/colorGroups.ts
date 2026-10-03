@@ -38,6 +38,6 @@ const NORMALIZED_COLOR_GROUPS: string[][] = COLOR_GROUPS.map(g => g.map(normaliz
 export function sameColorGroup(a: string, b: string): boolean {
   const na = normalizeColorName(a);
   const nb = normalizeColorName(b);
-  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+  if (na === nb) return true;
   return NORMALIZED_COLOR_GROUPS.some(g => g.includes(na) && g.includes(nb));
 }

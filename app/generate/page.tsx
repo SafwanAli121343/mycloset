@@ -1,4 +1,5 @@
 "use client";
+import { ReadyGate } from "@/components/ReadyGate";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const FONT = { fontFamily: "Arial, sans-serif" } as const;
@@ -218,21 +219,11 @@ export default function GeneratePage() {
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
-  if (loading) return (
-    <main style={{ ...FONT, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
-      <style suppressHydrationWarning>{KEYFRAMES}</style>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 160 }}>
-        <img src={LOADING_IMG} alt="" draggable={false}
-          style={{ width: 270, height: 340, objectFit: "contain", opacity: 0.88 }} />
-        <div style={{ width: 190, height: 5, background: "#e8e8e8", overflow: "hidden", marginTop: -88 }}>
-          <div style={{ height: "100%", background: "#111", animation: "loadbar 8s ease-out forwards" }} />
-        </div>
-      </div>
-    </main>
-  );
+  // Wrapped in ReadyGate (components/ReadyGate.tsx): three dots until the page is fully drawn.
+  if (loading) return <ReadyGate ready={false} />;
 
   if (fetchError) return (
-    <main style={{ ...FONT, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
+    <main className="center-lift" style={{ ...FONT, height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
       <style suppressHydrationWarning>{KEYFRAMES}</style>
       <p style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#bbb" }}>FAILED TO LOAD</p>
     </main>
@@ -241,12 +232,13 @@ export default function GeneratePage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <main style={{ ...FONT, minHeight: "100vh", background: "#fff" }}>
+    <ReadyGate ready>
+    <main style={{ ...FONT, minHeight: "100dvh", background: "#fff" }}>
       <style suppressHydrationWarning>{KEYFRAMES}</style>
 
       {/* Empty state */}
       {outfits.length === 0 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+        <div className="center-lift" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100dvh" }}>
           <p style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "#bbb" }}>
             GENERATE OUTFITS FROM THE CALENDAR FIRST
           </p>
@@ -521,5 +513,6 @@ export default function GeneratePage() {
         </>
       )}
     </main>
+    </ReadyGate>
   );
 }

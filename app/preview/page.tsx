@@ -1,19 +1,13 @@
 "use client";
 import dynamic from "next/dynamic";
+import { LoadingDots } from "@/components/LoadingDots";
 
-const SPIN_CSS = `@keyframes _spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`;
-
+// Same full-page three-dot loader every other page uses (components/ReadyGate.tsx's dots layer),
+// shown while the Preview bundle itself loads.
 function PageLoader() {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#fff",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: "Arial, sans-serif" }}>
-      <style suppressHydrationWarning>{SPIN_CSS}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 120 }}>
-        <div style={{ width: 17, height: 17, border: "2px solid #eee", borderTopColor: "#555",
-          borderRadius: "50%", animation: "_spin 0.8s linear infinite", flexShrink: 0 }} />
-        <span style={{ fontSize: 15, letterSpacing: "0.08em", color: "#666" }}>Loading...</span>
-      </div>
+    <div className="center-lift" style={{ position: "fixed", inset: 0, zIndex: 9000, background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <LoadingDots />
     </div>
   );
 }

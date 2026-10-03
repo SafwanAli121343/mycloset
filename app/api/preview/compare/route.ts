@@ -1,10 +1,13 @@
+import { aiChat } from "@/lib/aiGateway";
+import { getUserProfile, profileSystemMessage } from "@/lib/userAge";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
-import OpenAI from "openai";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
+import { getUserById } from "@/lib/db/users";
+import { resolveEntitlement, consumeAiCredit, consumeErrorMessage } from "@/lib/billing/entitlements";
 
 export const maxDuration = 30;
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type ItemDesc = {
   title: string;
@@ -18,8 +21,19 @@ type ItemDesc = {
 };
 
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "preview:compare", 10, 3600000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const billingUser = await getUserById(session.userId).catch(() => null);
+  if (!billingUser || !resolveEntitlement(billingUser).hasAI) {
+    return NextResponse.json({ error: "AI comparison requires an upgrade.", locked: true }, { status: 402 });
+  }
+  const consumeResult = await consumeAiCredit(billingUser);
+  if (!consumeResult.allowed) {
+    return NextResponse.json({ error: consumeErrorMessage(consumeResult.reason), capReached: true }, { status: 429 });
+  }
 
   let body: { a?: ItemDesc; b?: ItemDesc };
   try { body = await req.json(); }
@@ -67,14 +81,16 @@ Keep each point to one concise sentence. Output ONLY valid JSON.
 }`;
 
   try {
-    const completion = await openai.chat.completions.create({
+    // The user's age + gender (Settings → GENDER & AGE) tailor the analysis — lib/userAge.ts.
+    const userProfile = await getUserProfile(session.userId);
+    const completion = await aiChat("openai:chat:compare", {
       model: "gpt-4o",
-      messages: [{ role: "user", content: prompt }],
+      messages: [...profileSystemMessage(userProfile), { role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 1000,
-    });
+    }, billingUser);
 
-    const txt = completion.choices[0]?.message?.content ?? "{}";
+    const txt = completion.content ?? "{}";
     const result = JSON.parse(txt);
     return NextResponse.json(result);
   } catch (err) {

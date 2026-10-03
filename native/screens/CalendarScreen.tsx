@@ -1,38 +1,30 @@
 import { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Easing, Modal, Dimensions, unstable_batchedUpdates, Share } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Easing, Modal, Dimensions, unstable_batchedUpdates } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect, type RouteProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { apiJson, apiJsonCached } from "../lib/api";
-import { getCached, setCached } from "../lib/dataCache";
+import { apiJson, apiJsonCached, invalidateCache } from "../lib/api";
+import { getCached, setCached, invalidateCached } from "../lib/dataCache";
 
-// TEMPORARY diagnostic logger for the closing-transition timing investigation. console.log
-// does NOT reliably reach the iOS system log in this dev-client setup (it routes to Metro's
-// own remote-console connection instead, which isn't something this tool session can read) —
-// confirmed by testing: three separate live runs, zero of the console.log calls below ever
-// showed up via `xcrun simctl log show`, even filtering directly for their own literal text.
-// AsyncStorage, by contrast, persists to a plain manifest.json file inside the app's own
-// container on disk — directly readable from outside the app entirely, sidestepping whatever
-// is swallowing console output. Every call appends (never overwrites) so multiple transitions
-// across multiple test runs all land in one ordered timeline. Remove once the real slow phase
-// is identified and fixed.
-const calTimingLog: { label: string; t: number; at: string }[] = [];
-function logCalTiming(label: string, t: number) {
-  calTimingLog.push({ label, t, at: new Date().toISOString() });
-  setCached("__caltiming_log__", calTimingLog);
-}
+// Removes the timing log earlier dev builds persisted to this device's storage (the logger
+// itself is gone).
+invalidateCached("__caltiming_log__");
 import { TextButton } from "../components/TextButton";
 import { LoadingDots } from "../components/LoadingDots";
 import { LoadingMessages } from "../components/LoadingMessages";
-import { OutfitSlotGrid, BOX as DAY_BOX, type BoxRect } from "../components/OutfitSlotGrid";
+import { ScreenCenter } from "../components/ScreenCenter";
+import { ReadyGate } from "../components/ReadyGate";
+import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
+import { OutfitSlotGrid, BOX as DAY_BOX, BOX_LARGE as DAY_BOX_LARGE, type BoxRect } from "../components/OutfitSlotGrid";
 import { FocusScrollList, type FocusItem } from "../components/FocusScrollList";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
 import { bucketOf, type SlotGarment } from "../lib/garmentSlots";
 import type { MainTabParamList } from "../navigation/MainTabs";
+import { useEntitlements } from "../lib/billing/Entitlements";
 
 type Garment = SlotGarment & { title: string; brand: string | null };
 type OutfitDay = { id: string; notes: string | null; garments: Garment[]; customized?: boolean };
@@ -51,7 +43,12 @@ const MONTH_CELL_IMG = 18;
 // A real day-view box's own content size (OutfitSlotGrid's styles.img is 80% of its fixed,
 // uniform DAY_BOX square) — used to pre-size pieces to their eventual distribute size DURING the
 // resize phase, before any of them start moving to their own separate positions.
-const DAY_BOX_CONTENT = DAY_BOX * 0.8;
+// Free tier's day view uses the larger DAY_BOX_LARGE boxes (see DayOutfit) — the resize phase
+// must target whichever size the real boxes actually are, or pieces would land one size and then
+// visibly snap to another at the handoff. Same 80% content ratio either way.
+function dayBoxContent(hasAI: boolean): number {
+  return (hasAI ? DAY_BOX : DAY_BOX_LARGE) * 0.8;
+}
 
 function measureRect(target: View | null): Promise<Rect | null> {
   return new Promise(resolve => {
@@ -91,6 +88,17 @@ async function measureRectStable(target: View | null): Promise<Rect | null> {
 function stackRank(g: SlotGarment): number {
   const b = bucketOf(g);
   return b === "accessory" || b === "head" ? 0 : b === "shoes" ? 1 : b === "outer" ? 3 : b === "bottom" ? 4 : 2;
+}
+
+// The exact pieces a month cell's mini-stack shows, in the exact order it layers them. Shared by
+// the cell itself AND the month<->day ConvergeOverlay (which filters/sorts the same way and
+// fades out anything past MONTH_STACK_MAX) so the overlay's frame at the cell is pixel-identical
+// to the real cell — same pieces, same order. The cell used to include accessories while the
+// overlay excluded them, so for any outfit with an accessory the stack visibly swapped pieces
+// the instant the overlay handed off to (or took over from) the real cell.
+const MONTH_STACK_MAX = 3;
+function monthStackPieces<T extends SlotGarment>(garments: T[]): T[] {
+  return garments.filter(g => g.image && bucketOf(g) !== "accessory").sort((a, b) => stackRank(a) - stackRank(b)).slice(0, MONTH_STACK_MAX);
 }
 
 const MONTHS = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
@@ -150,6 +158,9 @@ function getCells(year: number, month: number) {
   return cells;
 }
 
+const EMPTY_NOTES: Notes = { score: null, pros: [], cons: [], aesthetic: null, analyzed: false };
+const EMPTY_WEATHER: Record<string, DayWeather> = {};
+
 function getTodayStr() {
   const t = new Date();
   return toDateStr(t.getFullYear(), t.getMonth() + 1, t.getDate());
@@ -173,7 +184,7 @@ function getTodayStr() {
 function resolveRect(spec: Map<string, Rect> | Rect, id: string): Rect | undefined {
   return spec instanceof Map ? spec.get(id) : spec;
 }
-function ConvergeOverlay({ garments, origins, targets, progress, targetContentFraction = 0.6, targetContentSize, originContentSize, opacity = 1, fanIndexOffset = false }: {
+function ConvergeOverlay({ garments, origins, targets, progress, targetContentFraction = 0.6, targetContentSize, originContentSize, opacity = 1, fan }: {
   garments: Garment[];
   origins: Map<string, Rect> | Rect;
   targets: Map<string, Rect> | Rect;
@@ -199,8 +210,11 @@ function ConvergeOverlay({ garments, origins, targets, progress, targetContentFr
   // center point, landing perfectly overlapping with zero offset. Small (1-2px), but real — the
   // instant the frozen overlay hands off to the real cell, whichever piece sits further back
   // visibly shifts to pick up an offset it never had during the animation. Only meaningful for a
-  // phase actually landing in the month cell (the shrink phase), not gather/resize.
-  fanIndexOffset?: boolean;
+  // phase that starts or ends AT the month cell: "target" (shrink) eases the fan in as it lands,
+  // "origin" (grow) starts fanned — matching the real cell it's taking over from — and eases it
+  // out. Either way, pieces past MONTH_STACK_MAX (which the real cell never shows) fade out at
+  // the cell end, so the overlay's frame there is identical to the real cell's.
+  fan?: "origin" | "target";
 }) {
   const sorted = useMemo(() => [...garments].sort((a, b) => stackRank(a) - stackRank(b)), [garments]);
   return (
@@ -219,6 +233,16 @@ function ConvergeOverlay({ garments, origins, targets, progress, targetContentFr
         const tx = progress.interpolate({ inputRange: [0, 1], outputRange: [originCenterX - targetCenterX, 0] });
         const ty = progress.interpolate({ inputRange: [0, 1], outputRange: [originCenterY - targetCenterY, 0] });
         const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [originSize / Math.min(contentW, contentH), 1] });
+        // Fan offset: full i/-i at the month-cell end of the motion, 0 at the other end.
+        const fanX = fan ? progress.interpolate({ inputRange: [0, 1], outputRange: fan === "origin" ? [i, 0] : [0, i] }) : null;
+        const fanY = fan ? progress.interpolate({ inputRange: [0, 1], outputRange: fan === "origin" ? [-i, 0] : [0, -i] }) : null;
+        // A piece the real cell never shows: invisible at the cell end, fading in/out over the
+        // first/last third of the motion so it never pops.
+        const pieceOpacity = fan && i >= MONTH_STACK_MAX
+          ? progress.interpolate(fan === "origin"
+            ? { inputRange: [0, 0.35], outputRange: [0, 1], extrapolate: "clamp" }
+            : { inputRange: [0.65, 1], outputRange: [1, 0], extrapolate: "clamp" })
+          : 1;
         return (
           <Animated.View
             key={g.id}
@@ -239,15 +263,14 @@ function ConvergeOverlay({ garments, origins, targets, progress, targetContentFr
               // stay consistent with each other AND with the one already-correct reference
               // implementation.
               position: "absolute", left: targetCenterX - contentW / 2, top: targetCenterY - contentH / 2,
-              width: contentW, height: contentH, zIndex: sorted.length - i,
-              // The fan offset is added as a SEPARATE, constant transform entry rather than
-              // folded into tx/ty's own interpolation — tx/ty go to exactly 0 at progress=1
-              // (this piece's target IS its origin-relative center by construction), so adding a
-              // flat, non-interpolated i/-i here lands at exactly the same final pixel the real
-              // cell's own transform: [{translateX:j},{translateY:-j}] does, with no risk of
-              // fighting the progress-driven animation itself.
-              transform: fanIndexOffset
-                ? [{ translateX: tx }, { translateY: ty }, { scale }, { translateX: i }, { translateY: -i }]
+              width: contentW, height: contentH, zIndex: sorted.length - i, opacity: pieceOpacity,
+              // The fan offset is its own transform entry, placed BEFORE scale so it's in plain
+              // screen pixels — after scale (where an earlier version had it) it got multiplied
+              // by the current scale, which is fine at scale 1 (shrink) but would shrink the
+              // offset to a fraction of a pixel at grow's tiny starting scale, making the
+              // overlay's first frame not match the real, fanned cell it takes over from.
+              transform: fanX && fanY
+                ? [{ translateX: tx }, { translateY: ty }, { translateX: fanX }, { translateY: fanY }, { scale }]
                 : [{ translateX: tx }, { translateY: ty }, { scale }],
             }}
           >
@@ -333,13 +356,20 @@ function DayHeader({
 // over animating the pieces toward a center stack — at that exact instant piecesHidden switches
 // the real grid's images off (they've already been measured via onBoxMeasured by then), so the
 // overlay's floating copies take over from the identical on-screen spot with no visible seam.
-function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden }: {
+function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden, loading }: {
   notes: Notes; garments: Garment[];
   chromeOpacity: Animated.Value | Animated.AnimatedInterpolation<number> | number;
   onBoxMeasured?: (id: string, rect: BoxRect) => void;
   piecesHidden?: boolean;
+  // The day's content isn't fully ready yet: the same layout renders with empty boxes, each
+  // showing three dots, and no text — then everything swaps in at once (see CalendarScreen's
+  // dayReady).
+  loading?: boolean;
 }) {
   const [showAccs, setShowAccs] = useState(false);
+  // Outfit analysis is a Pro feature — for a free user "No analysis yet" isn't a pending state,
+  // it's permanent, so saying it on every day just reads as broken.
+  const { hasAI } = useEntitlements();
   const accs = garments.filter(g => bucketOf(g) === "accessory");
   const nonAccGarments = garments.filter(g => bucketOf(g) !== "accessory");
   const focusItems: FocusItem[] = [
@@ -347,44 +377,9 @@ function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden
     ...notes.pros.map(t => ({ text: t, color: colors.good })),
     ...notes.cons.map(t => ({ text: t, color: colors.bad })),
   ];
-  return (
-    // flex:1 belongs HERE, not on the parent's justifyContent — the grid should stay anchored
-    // right where it naturally sits (directly below DayHeader, no gap), and only the leftover
-    // space BELOW it (where the pros/cons text lives) should center its own content. Giving this
-    // whole block flex:1 fills the real available height; giving ONLY the text wrapper below
-    // flex:1 + justifyContent:"center" (not this outer view) means the grid keeps its natural
-    // top-anchored position while the text centers in whatever's actually left underneath it —
-    // centering the OUTER block as one unit (an earlier version of this fix) moved the grid down
-    // too, opening a new gap between the header and the grid that was never asked for.
-    <View style={{ flex: 1, width: "100%", alignItems: "center" }}>
-      {/* No opacity here — piecesHidden used to gate this whole wrapper (frame AND image) behind
-         one hard, non-animated toggle. That hid the box FRAME too, so its own chromeOpacity fade
-         ran its full course while invisible and only became visible already-at-full-opacity the
-         instant the toggle flipped — the frame (and the grid as a whole) popped into existence
-         instead of fading in like the header/notes around it. hidePieces (passed to
-         OutfitSlotGrid below) now masks only the piece IMAGES, so the frame's own fade is real
-         and visible the whole time. */}
-      <View style={{ width: "100%", alignItems: "center", marginTop: spacing.sm }}>
-        <OutfitSlotGrid garments={nonAccGarments} frameOpacity={chromeOpacity} onBoxMeasured={onBoxMeasured} hidePieces={piecesHidden} />
-      </View>
-
-      {/* paddingBottom biases the centered content up slightly off dead-center — a small,
-         deliberate nudge per explicit feedback that exact center read as very slightly too low. */}
-      <Animated.View style={{ flex: 1, alignItems: "center", justifyContent: "center", width: "100%", opacity: chromeOpacity, paddingBottom: 20 }}>
-        {accs.length > 0 && (
-          <TextButton label="SHOW ACCESSORIES" size={10} color={colors.textMuted} onPress={() => setShowAccs(true)} style={{ marginTop: spacing.sm }} />
-        )}
-        {!notes.analyzed && (
-          <Text style={[type.body, { color: colors.textFaint, marginTop: spacing.md }]}>No analysis yet for this outfit.</Text>
-        )}
-        {focusItems.length > 0 && (
-          <View style={{ height: 195, width: "100%", marginTop: spacing.md }}>
-            <FocusScrollList items={focusItems} focal={0.5} />
-          </View>
-        )}
-      </Animated.View>
-
-      {/* Accessories popup — same bottom-sheet style as Builder's InventorySheet */}
+  // Accessories popup — same bottom-sheet style as Builder's InventorySheet. Shared by both
+  // the Pro and free layouts below.
+  const accessoriesModal = (
       <Modal visible={showAccs} transparent animationType="slide" onRequestClose={() => setShowAccs(false)}>
         <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowAccs(false)} />
@@ -407,21 +402,86 @@ function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden
           </View>
         </View>
       </Modal>
+  );
+
+  // Free tier: no pros/cons list under the grid, so the grid gets the room instead — bigger
+  // boxes (DAY_BOX_LARGE), centered vertically in the whole area, with the aesthetic as a fixed
+  // label beneath it rather than the first row of a swipeable list (there's nothing to swipe
+  // to). Box frames and the label still fade with chromeOpacity, and boxes still report their
+  // real positions via onBoxMeasured, so the open/close animations land exactly as before.
+  if (!hasAI) {
+    return (
+      // paddingBottom biases the centered group upward (76; 64 and 32 both read as low) — dead
+      // center of this area read as low on screen. The open/close animation measures the real
+      // boxes, so it follows.
+      <View style={{ flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingBottom: spacing.xl * 2 + 12 }}>
+        <OutfitSlotGrid garments={nonAccGarments} frameOpacity={chromeOpacity} onBoxMeasured={onBoxMeasured} hidePieces={piecesHidden} boxSize={DAY_BOX_LARGE} loadingDots={loading} />
+        <Animated.View style={{ alignItems: "center", opacity: chromeOpacity, marginTop: spacing.lg }}>
+          {notes.aesthetic ? <Text style={[type.label, { color: colors.textFaint }]}>{notes.aesthetic.toUpperCase()}</Text> : null}
+          {accs.length > 0 && (
+            <TextButton label="SHOW ACCESSORIES" size={10} color={colors.textMuted} onPress={() => setShowAccs(true)} style={{ marginTop: spacing.md }} />
+          )}
+        </Animated.View>
+        {accessoriesModal}
+      </View>
+    );
+  }
+
+  return (
+    // flex:1 belongs HERE, not on the parent's justifyContent — the grid should stay anchored
+    // right where it naturally sits (directly below DayHeader, no gap), and only the leftover
+    // space BELOW it (where the pros/cons text lives) should center its own content. Giving this
+    // whole block flex:1 fills the real available height; giving ONLY the text wrapper below
+    // flex:1 + justifyContent:"center" (not this outer view) means the grid keeps its natural
+    // top-anchored position while the text centers in whatever's actually left underneath it —
+    // centering the OUTER block as one unit (an earlier version of this fix) moved the grid down
+    // too, opening a new gap between the header and the grid that was never asked for.
+    <View style={{ flex: 1, width: "100%", alignItems: "center" }}>
+      {/* No opacity here — piecesHidden used to gate this whole wrapper (frame AND image) behind
+         one hard, non-animated toggle. That hid the box FRAME too, so its own chromeOpacity fade
+         ran its full course while invisible and only became visible already-at-full-opacity the
+         instant the toggle flipped — the frame (and the grid as a whole) popped into existence
+         instead of fading in like the header/notes around it. hidePieces (passed to
+         OutfitSlotGrid below) now masks only the piece IMAGES, so the frame's own fade is real
+         and visible the whole time. */}
+      <View style={{ width: "100%", alignItems: "center", marginTop: spacing.sm }}>
+        <OutfitSlotGrid garments={nonAccGarments} frameOpacity={chromeOpacity} onBoxMeasured={onBoxMeasured} hidePieces={piecesHidden} loadingDots={loading} />
+      </View>
+
+      {/* paddingBottom biases the centered content up slightly off dead-center — a small,
+         deliberate nudge per explicit feedback that exact center read as very slightly too low. */}
+      <Animated.View style={{ flex: 1, alignItems: "center", justifyContent: "center", width: "100%", opacity: chromeOpacity, paddingBottom: 20 }}>
+        {accs.length > 0 && (
+          <TextButton label="SHOW ACCESSORIES" size={10} color={colors.textMuted} onPress={() => setShowAccs(true)} style={{ marginTop: spacing.sm }} />
+        )}
+        {hasAI && !loading && !notes.analyzed && (
+          <Text style={[type.body, { color: colors.textFaint, marginTop: spacing.md }]}>No analysis yet for this outfit.</Text>
+        )}
+        {focusItems.length > 0 && (
+          <View style={{ height: 195, width: "100%", marginTop: spacing.md }}>
+            <FocusScrollList items={focusItems} focal={0.5} />
+          </View>
+        )}
+      </Animated.View>
+
+      {accessoriesModal}
     </View>
   );
 }
 
 // ── Month view body: header + grid of day cells ──────────────────────────────────────────────
-// Current opening behavior: tapping a day with an outfit fades out everything BUT that day's own
-// stack (monthChromeOpacity + revealDate — every OTHER cell's stack fades with the rest, that one
-// cell's stays pinned to full opacity). Once that fade completes, the tapped cell's rect (via
-// dayStackRefs) gets measured and GrowOverlay takes over animating toward a bigger, centered
-// stack — at that exact instant growHiddenDate switches the real cell's stack off, so the
-// overlay's floating copies take over from the identical on-screen spot with no visible seam.
+// The whole header+grid block (every cell included) fades as ONE unit via monthChromeOpacity —
+// so no single cell's stack can ever "stay behind" while the rest fades; a child can't be more
+// opaque than its faded parent. Whenever a transition needs one cell's stack to stay put
+// (month->day: the tapped cell; day->month: the destination cell), a ConvergeOverlay copy of
+// that stack sits on top of it, OUTSIDE this faded block, and growHiddenDate/closingHiddenDate
+// mask the real one underneath. The overlay's resting frame at the cell is pixel-identical to
+// the real stack (same pieces via monthStackPieces, same size, same fan), so swapping between
+// the two is invisible.
 const MonthBody = memo(function MonthBody({
   year, month, cells, outfits, weather, todayStr, generating, onRegenClick,
-  onPrevMonth, onNextMonth, onOpenDay, onSelectDay, monthChromeOpacity, revealDate, growHiddenDate, closingHiddenDate, dayStackRefs,
-  monthBlockTranslateY, monthOpacity, onBlockLayout, onAreaLayout, loading,
+  onPrevMonth, onNextMonth, onOpenDay, onSelectDay, monthChromeOpacity, growHiddenDate, closingHiddenDate, dayStackRefs,
+  monthBlockTranslateY, monthOpacity, onBlockLayout, onAreaLayout, loading, contentReady,
 }: {
   year: number; month: number; cells: { day: number; current: boolean }[];
   outfits: OutfitMap; weather: Record<string, DayWeather>; todayStr: string;
@@ -429,13 +489,10 @@ const MonthBody = memo(function MonthBody({
   onPrevMonth: () => void; onNextMonth: () => void;
   onOpenDay: (ds: string) => void; onSelectDay: (ds: string) => void;
   monthChromeOpacity: Animated.Value | Animated.AnimatedInterpolation<number> | number;
-  revealDate: string | null;
   growHiddenDate: string | null;
-  // The day->month counterpart to growHiddenDate — see its own cell-render comment for why this
-  // needs to exist at all: without it, the destination cell's image is gated by monthChromeOpacity
-  // (unlike the day view's own images, which are NEVER gated by dayChromeOpacity), which is what
-  // forced the closing transition to keep its overlay frozen for the whole chrome fade instead of
-  // swapping atomically the way the opening transition already does.
+  // The day->month counterpart to growHiddenDate: masks the destination cell's real stack while
+  // the closing overlay moves into it AND sits frozen on top of it through the month chrome
+  // fade-in (see startClosingTransition's shrink completion).
   closingHiddenDate: string | null;
   dayStackRefs: React.RefObject<Record<string, View | null>>;
   monthBlockTranslateY: Animated.Value | Animated.AnimatedInterpolation<number> | number;
@@ -443,6 +500,10 @@ const MonthBody = memo(function MonthBody({
   onBlockLayout?: (e: { nativeEvent: { layout: { height: number } } }) => void;
   onAreaLayout?: (e: { nativeEvent: { layout: { height: number } } }) => void;
   loading: boolean;
+  // False while this month's outfits + weather aren't both in (or it's being generated): the grid
+  // still renders in full, but each day shows three dots in its stack slot and no temperature —
+  // then temperatures and stacks appear together, never one before the other.
+  contentReady: boolean;
 }) {
   // Measured, not estimated: the clip below used to compute its own height from a static
   // formula (screen width minus assumed padding, divided into 7 assumed-equal columns) — a
@@ -455,7 +516,7 @@ const MonthBody = memo(function MonthBody({
   // collapsable={false} below is load-bearing, not decoration — a bare flex:1 View with no other
   // visual style is exactly the kind of wrapper React Native is allowed to flatten out of the
   // native view hierarchy entirely (a performance optimization). Once flattened, there's no real
-  // native view left to ever dispatch onLayout from — confirmed directly via logCalTiming's state
+  // native view left to ever dispatch onLayout from — confirmed directly via a diagnostic state
   // dump: monthBlockH (the child below, which has real visual content and was never flattened)
   // reliably measured 319, while monthAreaH (this exact view) stayed 0 for the entire session,
   // every single time, from the very first frame onward. monthMeasured requires BOTH to be
@@ -531,46 +592,29 @@ const MonthBody = memo(function MonthBody({
               const ds = toDateStr(year, month, cell.day);
               const outfit = outfits[ds];
               const isToday = ds === todayStr;
-              // Sorted by the SAME stackRank the grow/shrink ConvergeOverlay uses for its own
-              // z-order (see openDaySpread/startClosingTransition) — this array's order directly
-              // controls each image's zIndex (j) below. Left unsorted, the overlay's frozen final
-              // frame (stackRank order) and this real cell (natural/unsorted garment order) could
-              // stack their pieces in a DIFFERENT front-to-back arrangement, so the instant the
-              // overlay handed off to this real cell the pile visibly "reoriented" itself.
-              const stackPieces = outfit ? [...outfit.garments].filter(g => g.image).sort((a, b) => stackRank(a) - stackRank(b)).slice(0, 3) : [];
+              // Same pieces, same order as the grow/shrink ConvergeOverlay (see monthStackPieces)
+              // — this array's order directly controls each image's zIndex (j) below, so the
+              // overlay's resting frame at this cell and this real stack are pixel-identical.
+              const stackPieces = outfit && contentReady ? monthStackPieces(outfit.garments) : [];
               const w = weather[ds];
-              // Everything about a cell fades with the rest of the month EXCEPT the one
-              // revealDate cell's own stack, which stays pinned at full opacity while literally
-              // everything else (including that same cell's day-number/temp) fades away — until
-              // growHiddenDate flips to that same date, at which point GrowOverlay has taken over
-              // and this real stack must disappear so the two don't render on top of each other.
-              // isSpecialCell cells render a plain View with a literal opacity number, NEVER
-              // Animated.View bound to monthChromeOpacity — a style prop that's bound to an
-              // Animated node on some renders and a flat literal on others is exactly the pattern
-              // that left the real stack still visible ("a copy") while the overlay animated away
-              // from it: React Native's native-driven Animated bridge doesn't reliably tear down
-              // its own binding just because a later render's JS value looks like a plain number.
-              // Keeping this one cell permanently OFF that binding avoids the whole class of bug.
-              // closingHiddenDate is this same treatment for the OPPOSITE (day->month) direction:
-              // masked (specialOpacity 0) for as long as the closing overlay is doing its own
-              // gather/resize/shrink motion above it, then unmasked in the exact same batch the
-              // overlay clears — an atomic swap, matching openDaySpread's own handoff exactly,
-              // which only works because this image is excluded from monthChromeOpacity's fade.
-              const isSpecialCell = revealDate === ds || growHiddenDate === ds || closingHiddenDate === ds;
-              const specialOpacity = (growHiddenDate === ds || closingHiddenDate === ds) ? 0 : 1;
+              // Masked while a transition's overlay copy of this exact stack sits on top of it
+              // (see MonthBody's header comment) — the overlay is outside monthChromeOpacity's
+              // fade, this real stack isn't.
+              const stackMasked = growHiddenDate === ds || closingHiddenDate === ds;
               return (
                 <TouchableOpacity
                   key={ds}
                   style={styles.cell}
                   // activeOpacity=1 disables TouchableOpacity's own default press-dim — this
                   // cell's visibility is already fully and deliberately driven by
-                  // monthChromeOpacity/stackOpacity above, and that separate, automatic dimming
+                  // monthChromeOpacity (and the transition overlay), and that separate, automatic dimming
                   // effect was compounding with them in a way that read as the tapped stack
                   // "staying lit up" well after the actual tap/touch had ended.
                   activeOpacity={1}
                   // A day with an actual outfit opens the full gather/distribute animation; a
                   // day with nothing planned has no stack to animate, so it keeps the existing
                   // lightweight "select day, show detail panel below" behavior.
+                  disabled={!contentReady}
                   onPress={() => (stackPieces.length > 0 ? onOpenDay(ds) : onSelectDay(ds))}
                 >
                   <View style={{ alignItems: "center", gap: 4 }}>
@@ -586,50 +630,46 @@ const MonthBody = memo(function MonthBody({
                       <View style={styles.dayNum}>
                         <Text style={[styles.dayNumText, isToday && styles.dayNumTextToday]}>{cell.day}</Text>
                       </View>
-                      {w && <Text style={styles.cellTemp}>{w.tempF}°</Text>}
+                      {/* Always rendered — invisible until ready (or with no data) — so the cell's
+                         layout never shifts when temperatures arrive. */}
+                      <Text style={[styles.cellTemp, !(contentReady && w) && { opacity: 0 }]}>{contentReady && w ? `${w.tempF}°` : "00°"}</Text>
                     </View>
                     {/* A small stack of the day's actual pieces (mirrors the Outfits grid's card
                        stacks) instead of a plain dot. */}
-                    {stackPieces.length > 0 && (
-                      isSpecialCell ? (
-                        <View ref={r => { dayStackRefs.current[ds] = r; }} style={styles.cellStack}>
-                          {stackPieces.map((g, j) => (
-                            <Image
-                              key={g.id}
-                              source={{ uri: g.image! }}
-                              // zIndex: stackPieces.length - j — small items (accessories/shoes,
-                              // lowest stackRank, lowest j since stackPieces is ascending-sorted)
-                              // sit frontmost, matching OutfitsScreen's own stack (and this same
-                              // file's ConvergeOverlay, fixed the same way — see its comment).
-                              style={[styles.cellStackImg, { transform: [{ translateX: j }, { translateY: -j }], zIndex: stackPieces.length - j }]}
-                              contentFit="contain"
-                              cachePolicy="memory-disk"
-                              transition={0}
-                            />
-                          ))}
-                          {/* A flat color mask, not opacity on the images themselves — exactly
-                             OutfitsScreen's own OutfitCard technique (see its comment there):
-                             toggling opacity on the Image views directly risks a native
-                             recomposite the instant they reappear, reading as the stack
-                             "refreshing" right when the overlay hands off back to this real
-                             cell. zIndex is required, not decorative, once any sibling image
-                             carries its own explicit zIndex. */}
-                          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: specialOpacity === 0 ? 1 : 0, zIndex: 1000 }]} />
-                        </View>
-                      ) : (
-                        <View ref={r => { dayStackRefs.current[ds] = r; }} style={styles.cellStack}>
-                          {stackPieces.map((g, j) => (
-                            <Image
-                              key={g.id}
-                              source={{ uri: g.image! }}
-                              style={[styles.cellStackImg, { transform: [{ translateX: j }, { translateY: -j }], zIndex: stackPieces.length - j }]}
-                              contentFit="contain"
-                              cachePolicy="memory-disk"
-                              transition={0}
-                            />
-                          ))}
-                        </View>
-                      )
+                    {/* The stack slot is reserved on every day (loading dots → stack, or empty) so
+                       every day number sits on the same line and nothing moves as content lands. */}
+                    {!contentReady ? (
+                      // Nudged up 3pt: the slot's dead center read as low, since a real stack
+                      // fans upward (translateY -j) and the slot's visual space sits higher.
+                      <View style={styles.cellStack}><LoadingDots size={3} style={{ transform: [{ translateY: -3 }] }} /></View>
+                    ) : stackPieces.length === 0 ? (
+                      <View style={styles.cellStack} />
+                    ) : (
+                      <View ref={r => { dayStackRefs.current[ds] = r; }} style={styles.cellStack}>
+                        {stackPieces.map((g, j) => (
+                          <Image
+                            key={g.id}
+                            source={{ uri: g.image! }}
+                            // zIndex: stackPieces.length - j — small items (shoes, lowest
+                            // stackRank, lowest j since stackPieces is ascending-sorted) sit
+                            // frontmost, matching OutfitsScreen's own stack (and this same file's
+                            // ConvergeOverlay, fixed the same way — see its comment).
+                            style={[styles.cellStackImg, { transform: [{ translateX: j }, { translateY: -j }], zIndex: stackPieces.length - j }]}
+                            contentFit="contain"
+                            cachePolicy="memory-disk"
+                            transition={0}
+                          />
+                        ))}
+                        {/* A flat color mask, not opacity on the images themselves — exactly
+                           OutfitsScreen's own OutfitCard technique (see its comment there):
+                           toggling opacity on the Image views directly risks a native
+                           recomposite the instant they reappear, reading as the stack
+                           "refreshing" right when the overlay hands off back to this real cell.
+                           Always mounted (only its literal opacity toggles) so the cell's view
+                           tree never changes shape mid-transition. zIndex is required once any
+                           sibling image carries its own explicit zIndex. */}
+                        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: stackMasked ? 1 : 0, zIndex: 1000 }]} />
+                      </View>
                     )}
                   </View>
                 </TouchableOpacity>
@@ -664,6 +704,7 @@ const MonthBody = memo(function MonthBody({
 });
 
 export default function CalendarScreen() {
+  const { hasAI } = useEntitlements();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const route = useRoute<RouteProp<MainTabParamList, "Calendar">>();
   const insets = useSafeAreaInsets();
@@ -673,19 +714,27 @@ export default function CalendarScreen() {
   const [focusDate, setFocusDate] = useState(todayStr);
   const [year, setYear] = useState(todayDate.getFullYear());
   const [month, setMonth] = useState(todayDate.getMonth() + 1);
-  const [outfits, setOutfits] = useState<OutfitMap>({});
-  const [loading, setLoading] = useState(true);
+  // Seeded from this month's saved copy (any age) — stale-while-revalidate: the calendar opens with
+  // what's on the device instantly, and load() quietly refreshes it (skipping identical data).
+  const initialMonthKey = `${todayDate.getFullYear()}-${todayDate.getMonth() + 1}`;
+  const cachedInitialOutfits = getCached<OutfitMap>(`/api/outfits?year=${todayDate.getFullYear()}&month=${todayDate.getMonth() + 1}`);
+  const cachedInitialWeather = getCached<Record<string, DayWeather>>(`/api/weather?year=${todayDate.getFullYear()}&month=${todayDate.getMonth() + 1}`);
+  const [outfits, setOutfits] = useState<OutfitMap>(() => cachedInitialOutfits ?? {});
+  const [loading, setLoading] = useState(!cachedInitialOutfits);
   const [generating, setGenerating] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [userLoc, setUserLoc] = useState<{ lat: number; lon: number } | null>(null);
-  const [weather, setWeather] = useState<Record<string, DayWeather>>({});
+  // Weather is kept PER MONTH (like outfits), not just for the month on screen — revisiting a
+  // month shows its temperatures instantly instead of re-fetching them while its outfits (already
+  // on hand) sit waiting. `weather` below is the current month's slice.
+  const [weatherByMonth, setWeatherByMonth] = useState<Record<string, Record<string, DayWeather>>>(() => (cachedInitialWeather ? { [initialMonthKey]: cachedInitialWeather } : {}));
   // Separate from `loading` (which only tracks the /api/outfits fetch) on purpose — weather text
   // (tempF/condition next to each day) was popping in visibly AFTER the loading dots had already
   // disappeared and the real boxes were showing, because nothing gated the dots on the weather
   // fetch too. Reset to false at the START of each weather fetch (not just left true from a
   // previous month) so switching months re-shows the dots until the NEW month's weather is
   // actually in, rather than briefly showing empty/mismatched weather text for the new dates.
-  const [weatherReady, setWeatherReady] = useState(false);
+  const [weatherReady, setWeatherReady] = useState(!!cachedInitialWeather);
   const [regenConfirm, setRegenConfirm] = useState(false);
   // `loading`/`weatherReady` both intentionally reset on EVERY fetch, including a silent
   // background refresh of a month whose data is already sitting on screen (apiJsonCached's own
@@ -698,9 +747,14 @@ export default function CalendarScreen() {
   // two sets track which (year, month) keys have ever loaded successfully at least once; once a
   // month's real content has been shown, a later background refresh of that SAME month no longer
   // gets to hide it behind a spinner again — only a genuinely new, never-before-loaded month does.
-  const loadedOutfitMonthsRef = useRef(new Set<string>());
-  const loadedWeatherMonthsRef = useRef(new Set<string>());
+  const loadedOutfitMonthsRef = useRef(new Set<string>(cachedInitialOutfits ? [initialMonthKey] : []));
+  const loadedWeatherMonthsRef = useRef(new Set<string>(cachedInitialWeather ? [initialMonthKey] : []));
   const monthKey = `${year}-${month}`;
+  // Which month the `outfits` and `weather` currently on hand were last loaded for. A month's
+  // grid only shows its contents once BOTH match it — outfits and temperatures appear together
+  // instead of the outfits landing first and the temperatures popping in after.
+  const [outfitMonthsLoaded, setOutfitMonthsLoaded] = useState<Set<string>>(() => new Set(cachedInitialOutfits ? [initialMonthKey] : []));
+  const weather = useMemo(() => weatherByMonth[monthKey] ?? {}, [weatherByMonth, monthKey]);
   const monthEverLoaded = loadedOutfitMonthsRef.current.has(monthKey) && loadedWeatherMonthsRef.current.has(monthKey);
   const showLoadingUI = (loading || !weatherReady) && !monthEverLoaded;
 
@@ -714,7 +768,6 @@ export default function CalendarScreen() {
   // dimming, which is untouched here and always ends exactly when the touch itself does.
   const dayChromeOpacity = useRef(new Animated.Value(1)).current;
   const monthChromeOpacity = useRef(new Animated.Value(1)).current;
-  const [revealDate, setRevealDate] = useState<string | null>(null);
   const transitioningRef = useRef(false);
   // Counter-keyed, commit-guaranteed fade triggers for both chrome fade-ins (month->day and
   // day->month) — the SAME "entranceKey" pattern already proven for Preview's own entrance
@@ -738,34 +791,9 @@ export default function CalendarScreen() {
   // the signal, with no shared-state reuse to race against.
   const [monthFadeKey, setMonthFadeKey] = useState(0);
   const monthFadeDoneRef = useRef<(() => void) | null>(null);
-  // Optional async step that runs AFTER the real month view has committed (this effect only
-  // fires once that's true) but BEFORE the fade itself starts — used by the closing transition's
-  // shrink-completion handoff to re-measure the destination cell against the now-real mount and
-  // correct shrinkTarget, so any positional correction lands on an otherwise-idle frame instead
-  // of surfacing as a jump once everything else has already faded in and settled.
-  const monthFadeBeforeRef = useRef<(() => Promise<void>) | null>(null);
   useEffect(() => {
     if (monthFadeKey === 0) return;
-    // TEMPORARY diagnostic logging — this is the one effect in the whole closing-transition
-    // chain (see logCalTiming's own header comment) that had none, despite being the exact spot
-    // reported stuck: "stack lands in the right position, then the whole screen goes white and
-    // stays." If `before()` never resolves or throws, .start() below never runs and
-    // monthChromeOpacity stays at 0 forever — which is exactly white-and-stuck. Remove once the
-    // real cause is confirmed from a real run's log (long-press TODAY/MONTH VIEW to retrieve it).
-    logCalTiming("monthFadeKey effect fired", 0);
     (async () => {
-      const before = monthFadeBeforeRef.current;
-      monthFadeBeforeRef.current = null;
-      try {
-        if (before) {
-          logCalTiming("monthFadeKey: awaiting before()", 0);
-          await before();
-          logCalTiming("monthFadeKey: before() resolved", 0);
-        }
-      } catch (e) {
-        logCalTiming(`monthFadeKey: before() THREW: ${e instanceof Error ? e.message : String(e)}`, 0);
-      }
-      logCalTiming("monthFadeKey: starting chrome fade-in", 0);
       // Fixed-duration setTimeout instead of this animation's own .start() completion callback —
       // a useNativeDriver:true callback is not reliable on this device/RN setup (proven
       // independently in PreviewScreen's own equivalent transition chain, same symptom: gating
@@ -775,11 +803,9 @@ export default function CalendarScreen() {
       // matched to the animation's own configured duration doesn't depend on that callback at all.
       Animated.timing(monthChromeOpacity, { toValue: 1, duration: 280, easing: Easing.bezier(0.4, 0, 0.2, 1), useNativeDriver: true }).start();
       setTimeout(() => {
-        logCalTiming("monthFadeKey: chrome fade-in (timer) fired", 0);
         const done = monthFadeDoneRef.current;
         monthFadeDoneRef.current = null;
         done?.();
-        logCalTiming("monthFadeKey: monthFadeDoneRef done() called", 0);
       }, 280);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -812,6 +838,13 @@ export default function CalendarScreen() {
   // quick tap-to-open. Still slow enough to see each phase, just not sluggish.
   const TRANSITION_FADE_MS = 300;
   const CONVERGE_MS = 260;
+  // Month->day (open) pacing only — per feedback that the open read as a bit too fast. The stack
+  // now sits still for OPEN_HOLD_MS once the month has faded out (before it starts growing),
+  // each grow/resize/distribute phase runs a little slower, and a short OPEN_BEAT_MS pause
+  // separates consecutive phases so each reads as its own step. Day->month is unchanged.
+  const OPEN_PHASE_MS = 340;
+  const OPEN_HOLD_MS = 280;
+  const OPEN_BEAT_MS = 110;
   // Roughly OutfitsScreen's own card-stack size — "appropriate" for something that's about to
   // distribute back out into day-view boxes in a later step, though the exact number is still
   // tunable once that step exists.
@@ -990,7 +1023,11 @@ export default function CalendarScreen() {
   // this value has ever actually applied — real feedback so far: 0.3 too high, 0.5 too low, 0.4
   // and 0.37 both still slightly too low, 0.34 overshot back too high, 0.36 still slightly too
   // low again. Narrowing tightly between 0.34 and 0.36.
-  const monthCenterOffset = Math.max(0, (monthAreaH - monthBlockH) * 0.35);
+  // 0.28: centers the block on the SCREEN (the area starts below the TODAY row, so exact area-
+  // center, 0.5, 0.44, 0.35, 0.32, 0.30 and 0.29 all read as too low). (Earlier tuning
+  // rounds were largely no-ops: handleAreaLayout's loading gate often left monthAreaH at 0,
+  // which clamps this to 0 whatever the multiplier — see its comment.)
+  const monthCenterOffset = Math.max(0, (monthAreaH - monthBlockH) * 0.28);
   // Memoized — MonthBody is wrapped in memo() (see its own comment) specifically so it can skip
   // re-rendering when nothing it displays actually changed, but .interpolate() creates a brand
   // new AnimatedInterpolation object every time it's called. Calling it inline in the render body
@@ -1043,8 +1080,12 @@ export default function CalendarScreen() {
     const height = e.nativeEvent.layout.height;
     setMonthBlockH(prev => (prev > 0 ? prev : height));
   }, []);
+  // NOT gated on loading, unlike handleBlockLayout above — this wrapper is flex:1, so its height
+  // is the same whether or not outfits have loaded, and onLayout only fires when that height
+  // CHANGES. Gating it meant a cold start (still loading at mount) ignored the one and only
+  // onLayout this view would ever fire, leaving monthAreaH stuck at 0 forever — which clamps
+  // monthCenterOffset to 0 and pins the calendar to the top regardless of the multiplier.
   const handleAreaLayout = useCallback((e: { nativeEvent: { layout: { height: number } } }) => {
-    if (loadingRef.current) return;
     const height = e.nativeEvent.layout.height;
     setMonthAreaH(prev => (prev > 0 ? prev : height));
   }, []);
@@ -1059,23 +1100,6 @@ export default function CalendarScreen() {
   const monthMeasured = monthAreaH > 0 && monthBlockH > 0;
   const panelOpacity = centerAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const panelTranslateY = centerAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 16] });
-
-  // TEMPORARY diagnostic — the timing log (logCalTiming) already proved the closing-transition
-  // state machine completes fully even in a run that visually never clears, which rules out a
-  // stuck callback. What it can't show is whether the variables that actually CONTROL what's
-  // rendered are correct at that moment. This dumps every one of them the instant `view` changes
-  // (the exact moment the visual swap is supposed to happen) so a real repro's log shows not just
-  // "did the code run" but "what would it have actually painted." Long-press TODAY/MONTH VIEW to
-  // retrieve, same as the timing log. Remove once the real cause is confirmed.
-  useEffect(() => {
-    logCalTiming(
-      `VIEW CHANGED to "${view}" | monthMeasured=${monthMeasured} (areaH=${monthAreaH}, blockH=${monthBlockH}) | ` +
-      `gathering=${gathering} shrinkTarget=${shrinkTarget ? "set" : "null"} | selectedDate=${selectedDate} panelMounted=${panelMounted} | ` +
-      `loading=${loading} weatherReady=${weatherReady}`,
-      0
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
 
   // Resolve location once per mount (this tab stays mounted across the whole session), not on
   // every generate tap — so weather can be fetched proactively too, matching the website.
@@ -1095,11 +1119,14 @@ export default function CalendarScreen() {
 
   useEffect(() => {
     setWeatherReady(false);
+    const key = `${year}-${month}`;
     const params = new URLSearchParams({ year: String(year), month: String(month) });
     if (userLoc) { params.set("lat", String(userLoc.lat)); params.set("lon", String(userLoc.lon)); }
     apiJsonCached<Record<string, DayWeather>>(`/api/weather?${params}`, 300_000)
-      .then(setWeather)
-      .catch(() => {})
+      // Stored under its own month key — a slower response for a month the user already left can
+      // never overwrite the month on screen.
+      .then(w => setWeatherByMonth(prev => ({ ...prev, [key]: w })))
+      .catch(() => setWeatherByMonth(prev => (prev[key] ? prev : { ...prev, [key]: {} })))
       // Marked ready on failure too — a dead weather endpoint shouldn't spin the loading dots
       // forever; the day cells already render fine with no weather text via the existing
       // `weather[date] &&` guards, which is the correct degraded state, not an infinite wait.
@@ -1110,16 +1137,25 @@ export default function CalendarScreen() {
   }, [year, month, userLoc]);
 
   const calRetryCount = useRef(0);
-  const loadRef = useRef<(y: number, m: number) => Promise<void>>(async () => {});
+  const loadRef = useRef<(y: number, m: number, fresh?: boolean) => Promise<void>>(async () => {});
   // Tracks the last JSON actually applied to `outfits` per path — see the equality check below.
-  const lastLoadedJsonRef = useRef<Record<string, string>>({});
-  const load = useCallback(async (y: number, m: number) => {
+  // Seeded with the saved copy the screen opened with, so the first background refresh skips its
+  // re-render entirely when nothing changed.
+  const lastLoadedJsonRef = useRef<Record<string, string>>(
+    cachedInitialOutfits ? { [`/api/outfits?year=${todayDate.getFullYear()}&month=${todayDate.getMonth() + 1}`]: JSON.stringify(cachedInitialOutfits) } : {}
+  );
+  // fresh: bypass the 5-minute cache — required after anything that changed this month's outfits
+  // server-side (REGEN, a Builder save). Without it, load() after a regen just returned the
+  // cached PRE-regen month, so REGEN looked like it did nothing and a Builder edit didn't show up
+  // for up to 5 minutes.
+  const load = useCallback(async (y: number, m: number, fresh = false) => {
     // Skip the loading state entirely when the data is already in the in-memory cache — but the
     // ttl here MUST match the ttl the actual fetch below uses. Calling getCached(path) with no
     // ttl treats ANY prior entry as fresh forever, regardless of age — so any time this tab had
     // been open more than 5 minutes, the loading indicator was suppressed for what was actually
     // about to be a real network round trip (apiJsonCached's own 300_000 ttl had already expired).
     const path = `/api/outfits?year=${y}&month=${m}`;
+    if (fresh) invalidateCache(path);
     if (!getCached(path, 300_000)) setLoading(true);
     try {
       const data = await apiJsonCached<OutfitMap>(path, 300_000);
@@ -1135,10 +1171,19 @@ export default function CalendarScreen() {
       const json = JSON.stringify(data);
       if (lastLoadedJsonRef.current[path] !== json) {
         lastLoadedJsonRef.current[path] = json;
-        setOutfits(prev => ({ ...prev, ...data }));
+        // This month's keys are REPLACED, not merged over — a plain {...prev, ...data} kept any
+        // day the server no longer has (e.g. outfits deleted along with a removed item) on
+        // screen forever. Other months' entries are left alone.
+        const monthPrefix = `${y}-${String(m).padStart(2, "0")}-`;
+        setOutfits(prev => {
+          const next: OutfitMap = {};
+          for (const [k, v] of Object.entries(prev)) if (!k.startsWith(monthPrefix)) next[k] = v;
+          return { ...next, ...data };
+        });
       }
       calRetryCount.current = 0;
       setLoading(false);
+      setOutfitMonthsLoaded(prev => (prev.has(`${y}-${m}`) ? prev : new Set(prev).add(`${y}-${m}`)));
       loadedOutfitMonthsRef.current.add(`${y}-${m}`);
     } catch {
       // Retry up to 3 times — server cold-starts can take several seconds.
@@ -1155,16 +1200,24 @@ export default function CalendarScreen() {
         // attempt failing is genuinely common right at cold start (auth/network not fully up
         // yet), matching exactly what was reported: a false "no outfit" message on first entering
         // the app that self-corrects once the real data arrives.
-        setTimeout(() => loadRef.current(y, m), delay);
+        setTimeout(() => loadRef.current(y, m, fresh), delay);
         return;
       }
       // Retries exhausted — genuinely done trying, whatever's already cached is what will show.
       setLoading(false);
+      setOutfitMonthsLoaded(prev => (prev.has(`${y}-${m}`) ? prev : new Set(prev).add(`${y}-${m}`)));
     }
   }, []);
   loadRef.current = load;
 
   useEffect(() => { load(year, month); }, [load, year, month]);
+  // Re-check on every return to this tab. Other screens change this data (deleting an item in
+  // Closet removes the calendar days that used it and invalidates the cache), and this tab
+  // stays mounted, so without this it kept showing the deleted piece until the month changed.
+  // Cheap when nothing changed: a cache hit, and load() skips setState on identical data.
+  useFocusEffect(useCallback(() => {
+    if (!transitioningRef.current) loadRef.current(year, month);
+  }, [year, month]));
 
   // Prefetches every month-cell garment image the instant outfits load — the month grid sits
   // invisible behind day view for as long as a day is open (it's "always mounted," but mounted
@@ -1178,21 +1231,35 @@ export default function CalendarScreen() {
   // bug — there was nothing to actually observe improving. Now that reveal is fixed, this can
   // genuinely be judged.)
   const prefetchedMonthImagesRef = useRef(new Set<string>());
+  // Which piece images are actually downloaded (not just requested) — the day view only shows a
+  // day once all of its pieces are in (see dayReady), so tracking completion here is what keeps
+  // already-loaded days instant to flip between. One prefetch call (and one re-render) per batch.
+  const readyImagesRef = useRef(new Set<string>());
+  const [, setImagesVersion] = useState(0);
+  const prefetchTracked = useCallback((urls: string[]) => {
+    const fresh = urls.filter(u => !prefetchedMonthImagesRef.current.has(u));
+    if (fresh.length === 0) return;
+    fresh.forEach(u => prefetchedMonthImagesRef.current.add(u));
+    Promise.race([
+      Image.prefetch(fresh, "memory-disk").catch(() => false),
+      new Promise(res => setTimeout(res, 6000)), // a dead URL must not hold a day's dots forever
+    ]).then(() => {
+      fresh.forEach(u => readyImagesRef.current.add(u));
+      setImagesVersion(v => v + 1);
+    });
+  }, []);
   useEffect(() => {
+    const urls: string[] = [];
     for (const outfit of Object.values(outfits)) {
-      for (const g of outfit.garments) {
-        if (g.image && bucketOf(g) !== "accessory" && !prefetchedMonthImagesRef.current.has(g.image)) {
-          prefetchedMonthImagesRef.current.add(g.image);
-          Image.prefetch(g.image).catch(() => {});
-        }
-      }
+      for (const g of outfit.garments) if (g.image && bucketOf(g) !== "accessory") urls.push(g.image);
     }
-  }, [outfits]);
+    prefetchTracked(urls);
+  }, [outfits, prefetchTracked]);
 
   // Builder's SAVE (after editing a day's outfit there) sends us back here with a fresh
   // timestamp so this already-mounted tab knows to refetch instead of showing stale data.
   useEffect(() => {
-    if (route.params?.refreshAt) load(year, month);
+    if (route.params?.refreshAt) load(year, month, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.refreshAt]);
 
@@ -1211,7 +1278,7 @@ export default function CalendarScreen() {
         method: "POST",
         body: JSON.stringify({ year, month, lat: userLoc?.lat, lon: userLoc?.lon, overwrite: overwriteAll || hasBrokenOutfits }),
       });
-      await load(year, month);
+      await load(year, month, true);
     } catch {
       // generation can legitimately take a while (AI analysis per day) — silent on failure,
       // the REGEN button remains available to retry
@@ -1240,6 +1307,31 @@ export default function CalendarScreen() {
 
   const selected = selectedDate ? outfits[selectedDate] : null;
   const selectedNotes = useMemo(() => parseNotes(selected?.notes ?? null), [selected]);
+
+  // ── Calendar activation ───────────────────────────────────────────────────────────────────
+  // Whether the wardrobe can form even one valid outfit — the exact check outfit generation
+  // itself applies (see /api/outfits/readiness). If it can't, there's nothing a calendar can
+  // show, so the whole screen becomes a single "add more items" message instead of a month of
+  // "No outfit for this day". Seeded from cache so a known answer paints on the first frame;
+  // re-checked on every focus, and Add Item / Closet removal invalidate it (they clear the whole
+  // /api/outfits* cache), so it flips the moment the wardrobe crosses the line either way.
+  const READINESS_PATH = "/api/outfits/readiness";
+  const [calReady, setCalReady] = useState<boolean | null>(() => getCached<{ ready: boolean }>(READINESS_PATH, 60_000)?.ready ?? null);
+  const checkReadiness = useCallback(() => {
+    apiJsonCached<{ ready: boolean }>(READINESS_PATH, 60_000).then(r => setCalReady(!!r?.ready)).catch(() => {});
+  }, []);
+  useFocusEffect(checkReadiness);
+  // Activation: once ready, any month that still has empty days is generated automatically —
+  // once per month per session (same rule as the website's calendar), instead of waiting for the
+  // user to find REGEN. A failed attempt isn't retried until the next app session.
+  const autoGenTriedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!calReady || loading || !monthEverLoaded || generating || transitioningRef.current) return;
+    if (!needsGeneration || autoGenTriedRef.current.has(monthKey)) return;
+    autoGenTriedRef.current.add(monthKey);
+    handleGenerate(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calReady, loading, monthEverLoaded, needsGeneration, monthKey]);
 
   // dayChromeOpacity is reset here — on every entry into day view — rather than at the end of
   // startClosingTransition's own animation. Animated.Value.setValue() is an immediate, direct
@@ -1281,7 +1373,8 @@ export default function CalendarScreen() {
   // native thread before the overlay component existed to display it, so by the time it finally
   // appeared a chunk of the animation had already silently played out — reading as a "teleport"
   // straight to a near-final frame instead of a smooth, fully-visible motion.
-  function runConvergeAfterMount(progress: Animated.Value, onDone: () => void) {
+  function sleep(ms: number) { return new Promise<void>(res => setTimeout(res, ms)); }
+  function runConvergeAfterMount(progress: Animated.Value, onDone: () => void, duration = CONVERGE_MS) {
     // Reset happens immediately (synchronously, same tick as the setState that mounts the
     // overlay) — the overlay's very first rendered frame must already read progress=0, which is
     // exactly the origin position, or it would flash whatever value was left over from a
@@ -1290,15 +1383,16 @@ export default function CalendarScreen() {
     progress.setValue(0);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       Animated.timing(progress, {
-        toValue: 1, duration: CONVERGE_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+        toValue: 1, duration, easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }).start(onDone);
     }));
   }
 
-  // Month->day transition: (1) fade out everything in month view EXCEPT the tapped day's own
-  // stack; (2) measure that stack's real rect and grow it into a bigger, centered stack;
-  // (3) distribute from there out to where the real day-view boxes will land; (4) cut to day
-  // view once that completes.
+  // Month->day transition: (1) measure the tapped day's stack and put a ConvergeOverlay copy of it
+  // exactly on top (real stack masked underneath); (2) fade out everything in month view — the
+  // overlay copy lives outside that fade, so the stack stays fully visible; (3) grow it into a
+  // bigger, centered stack; (4) distribute from there out to where the real day-view boxes will
+  // land; (5) cut to day view once that completes.
   function openDaySpread(ds: string) {
     if (transitioningRef.current) return;
     const outfit = outfits[ds];
@@ -1315,70 +1409,59 @@ export default function CalendarScreen() {
     // by the time distribute's own ~1s of grow/resize/move animation has played out, a prefetch
     // started right now has had that whole window to finish, so the swap actually gets the
     // already-decoded image it assumes.
-    nonAcc.forEach(g => { if (g.image) Image.prefetch(g.image).catch(() => {}); });
-    setRevealDate(ds);
-    // The actual fade-and-everything-after now lives in the useEffect below, keyed on
-    // revealDate — see that effect's own comment for why. openDaySpread itself just requests
-    // the transition; it doesn't drive it.
+    prefetchTracked(nonAcc.map(g => g.image).filter((u): u is string => !!u));
+    // Measured BEFORE the fade, not after — the overlay has to take over the stack before
+    // anything starts fading. The whole month grid (this cell's stack included) fades as one
+    // unit under monthChromeOpacity, and a child can never be more opaque than its faded parent,
+    // so the ONLY way for this stack to stay visible through that fade is for a copy outside it
+    // (the grow overlay, held at progress 0 — pixel-identical to the real cell, see
+    // monthStackPieces / fan="origin") to be standing in for it first. The previous version
+    // tried to keep the real cell "pinned" at full opacity instead, which stopped working the
+    // moment the grid moved inside the faded block — the stack faded to white with everything
+    // else.
+    measureRectStable(dayStackRefs.current[ds]).then(origin => {
+      if (!origin) {
+        goToDay(ds);
+        transitioningRef.current = false;
+        return;
+      }
+      // growP reset BEFORE the overlay mounts, so its very first frame is progress 0 (sitting
+      // exactly on the real stack), never a leftover value from a previous run.
+      growP.setValue(0);
+      // Batched — mounting the overlay (setGrowing) and masking the real stack (growHiddenDate,
+      // derived from growing) must land in the SAME commit, or there's a frame with two stacks
+      // or none. Promise continuations aren't auto-batched.
+      unstable_batchedUpdates(() => {
+        setGrowPhase("grow");
+        setGrowing({ date: ds, origin });
+      });
+      // The fade and everything after lives in the useEffect below, keyed on `growing`, so it
+      // only starts once the overlay's takeover commit has really landed.
+    });
   }
 
-  // Runs the month->day open sequence once React has ACTUALLY committed a render reflecting the
-  // new revealDate — replaces a double-requestAnimationFrame defer that used to sit here,
-  // guessing 2 frames was always enough time for that commit to land before starting the fade.
-  // The ORIGINAL comment on that defer explained exactly why it existed: starting the fade in
-  // the same tick as setRevealDate(ds) left the tapped cell's stack still bound to
-  // monthChromeOpacity from the PREVIOUS render for the fade's first several frames — fading
-  // along with everything else, then snapping back full-opacity once the real re-render finally
-  // landed, before the grow animation proper. Two rAFs was a fix for that — but a fixed frame
-  // count is a guess that usually, not always, holds, and this exact class of bug (a
-  // requestAnimationFrame defer standing in for a real "did React commit yet" signal) is what
-  // was already found and replaced with a commit-guaranteed useEffect elsewhere in this codebase
-  // this session (Preview's entrance, Preview's gallery navigation) — never here, despite this
-  // being the oldest and most heavily-patched instance of exactly that problem. If the commit
-  // sometimes took longer than 2 frames — very plausible on a screen this size, with everything
-  // else this component re-renders — the fade could still start early relative to the real
-  // stack's re-bound opacity, reading as a hard cut/"disappear" rather than a smooth 300ms fade,
-  // intermittently and without a clean reproduction, exactly matching how long this has resisted
-  // a fix.
+  // Runs the rest of the month->day sequence once React has ACTUALLY committed the render that
+  // mounted the grow overlay over the tapped stack (and masked the real one) — a commit-
+  // guaranteed signal, not a guessed frame count, so the fade can never start while the real
+  // stack is still the one on screen.
   useEffect(() => {
-    if (!revealDate) return;
-    const ds = revealDate;
+    if (!growing) return;
+    const ds = growing.date;
     const outfit = outfits[ds];
     const nonAcc = outfit ? outfit.garments.filter(g => bucketOf(g) !== "accessory" && g.image) : [];
     // Deferred by the same double-rAF this file already uses in runConvergeAfterMount, and for
-    // the same reason: this effect fires right after React commits a render where revealDate
-    // just changed — which, for this specific commit, means the WHOLE month grid (30+ cells,
-    // each with its own Animated.View wrapper) just reconciled, real synchronous work. Calling
-    // .start() immediately in that same tick risked the native side's own animation setup
-    // landing late relative to when the JS call fired — useNativeDriver:true hands the actual
-    // ticking to the native thread, but the INITIAL bridge call that configures it still needs
-    // the JS thread to be free to process promptly, and a delayed setup can mean the animation's
-    // own internal clock has already run down before its first frame is visibly on screen —
-    // exactly what reads as the fade being skipped rather than smoothly playing out. Two rAFs
-    // guarantees the JS thread has had a couple of genuinely free frames first.
+    // the same reason: calling .start() in the same tick as a big commit risks the native
+    // animation's setup landing late, so its first frames are already past by the time anything
+    // is visibly on screen — reading as the fade being skipped rather than smoothly playing out.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-    Animated.timing(monthChromeOpacity, {
-      toValue: 0, duration: TRANSITION_FADE_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-    }).start(async () => {
-        const origin = await measureRectStable(dayStackRefs.current[ds]);
-        if (!origin) {
-          unstable_batchedUpdates(() => { goToDay(ds); setRevealDate(null); });
-          transitioningRef.current = false;
-          return;
-        }
-        // Batched — this whole callback runs from the Animated native-driver's completion
-        // callback, which (unlike a JS-originated event) is NOT automatically batched by React.
-        // setGrowPhase and setGrowing landing as two separate renders left one frame where
-        // growPhase had already flipped to "grow" but growing was still null — nothing visibly
-        // wrong on ITS own, but a real gap in what should be one atomic "start growing" moment,
-        // and exactly the class of bug behind the "slight refresh/disappears" symptom elsewhere
-        // in this same transition (see OutfitsScreen's own closeSpread, which batches for the
-        // identical reason).
-        unstable_batchedUpdates(() => {
-          setGrowPhase("grow");
-          setGrowing({ date: ds, origin });
-        });
+      Animated.timing(monthChromeOpacity, {
+        toValue: 0, duration: TRANSITION_FADE_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }).start(async () => {
+        // Hold: the stack sits alone, stationary, on the now-empty screen for a beat before it
+        // starts to grow.
+        await sleep(OPEN_HOLD_MS);
         runConvergeAfterMount(growP, async () => {
+          await sleep(OPEN_BEAT_MS);
           // Phase 3: resize IN PLACE (still centered, one shared point) from the grown size down
           // to the exact size each piece will be inside a real day-view box — before any of them
           // start moving toward their own separate positions. Runs at the same time as waiting
@@ -1386,8 +1469,8 @@ export default function CalendarScreen() {
           // `growing` is set), since neither depends on the other.
           setGrowPhase("resize");
           const boxRectsReady = waitForBoxRects(nonAcc.map(g => g.id));
-          await new Promise<void>(resolve => runConvergeAfterMount(growResizeP, resolve));
-          await boxRectsReady;
+          await new Promise<void>(resolve => runConvergeAfterMount(growResizeP, resolve, OPEN_PHASE_MS));
+          await Promise.all([boxRectsReady, sleep(OPEN_BEAT_MS)]);
           // Phase 4: distribute — pieces are already at the correct final size, so this is a
           // pure position move with no further scale change.
           setGrowPhase("distribute");
@@ -1411,27 +1494,25 @@ export default function CalendarScreen() {
             // (frame included) behind one hard, non-animated opacity toggle. That's fixed at the
             // source now (hidePieces only masks the image), so there's nothing left to wait for.
             unstable_batchedUpdates(() => {
-              setRevealDate(null);
               setGrowing(null);
               goToDay(ds, {
                 fadeInChrome: true,
                 onChromeFadeDone: () => { transitioningRef.current = false; },
               });
             });
-          });
-        });
+          }, OPEN_PHASE_MS);
+        }, OPEN_PHASE_MS);
       });
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealDate]);
+  }, [growing]);
 
   // Day->month transition: (1) fade out everything in day view EXCEPT the actual piece images
   // (box frames fade too); (2) once dayBoxRects has each piece's real box position, converge them
   // into one shared, centered stack; (3) shrink that stack into the destination month cell;
   // (4) cut to month view once that completes.
   function startClosingTransition() {
-    if (transitioningRef.current) { logCalTiming("startClosingTransition called but already transitioning, ignored", Date.now()); return; }
-    logCalTiming("startClosingTransition invoked", Date.now());
+    if (transitioningRef.current) return;
     // Entering month view here in both branches below — safe to reset monthChromeOpacity
     // unconditionally right now, before month is even mounted (day view is what's on screen),
     // for the same race reason goToDay resets dayChromeOpacity on ITS way in rather than
@@ -1446,16 +1527,6 @@ export default function CalendarScreen() {
     const closingDate = focusDate;
     const closingGarments = focusOutfit.garments.filter(g => bucketOf(g) !== "accessory" && g.image);
     transitioningRef.current = true;
-    // TEMPORARY timing instrumentation — every prior attempt to find where the multi-second
-    // gap in this transition actually comes from has relied on inferring timing from a screen
-    // recording (imprecise, and everything native-driven ticks with zero JS-visible output, so a
-    // recording can't tell "a native animation is genuinely running" apart from "the JS thread
-    // is stuck"). console.log calls DO show up in the OS log, timestamped, regardless of which
-    // of those is true — this pins the real answer down to a specific phase instead of another
-    // guess. Remove once the actual slow phase is identified and fixed.
-    const t0 = Date.now();
-    const dt = () => Date.now() - t0;
-    logCalTiming("tap received", 0);
     // Waited on BEFORE the fade-out even starts, not just left to whatever's already in
     // dayBoxRectsRef by the time gather reads it — a day reached via prev/next (goToDay's own
     // fadeInChrome path, not through openDaySpread's own distribute) never runs
@@ -1466,7 +1537,6 @@ export default function CalendarScreen() {
     // everything was ready yet" symptom. Waiting here first means gather always has a real
     // measured rect for every piece before it ever animates anything.
     waitForBoxRects(closingGarments.map(g => g.id)).then(() => {
-    logCalTiming(`waitForBoxRects resolved`, dt());
     // Deferred by the same double-rAF used everywhere else in this transition (see
     // runConvergeAfterMount's own comment for the full reasoning) — this specific fade-out was
     // the one spot in the whole chain that called .start() immediately, straight out of a
@@ -1481,15 +1551,25 @@ export default function CalendarScreen() {
     Animated.timing(dayChromeOpacity, {
       toValue: 0, duration: TRANSITION_FADE_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true,
     }).start(() => {
-      logCalTiming(`fade-out done, gather starting`, dt());
       // Batched for the same reason as openDaySpread's grow-phase start — this fires from a
       // native Animated completion callback, which React does not auto-batch.
+      //
+      // setView("month") happens HERE, the moment the day chrome has faded away — not at the
+      // end once the stack has landed (where it used to be). monthChromeOpacity is already 0
+      // (set at the top of this function), so the month view is swapped in fully transparent
+      // underneath the moving overlay, and every bit of React/native work that swap costs lands
+      // during gather/resize/shrink instead of on the exact frame the month fade begins. By the
+      // time the stack lands, the month view is already sitting there, committed and laid out,
+      // and all that's left is animating one opacity value — nothing to re-render, nothing to
+      // "refresh". The day view going to its inactive 0.001 opacity in this same commit is
+      // invisible: its chrome is already at 0 and its pieces are masked (gathering) in this
+      // same batch, with the gather overlay mounting on top of exactly where they were.
       unstable_batchedUpdates(() => {
         setClosingPhase("gather");
         setGathering(true);
+        setView("month");
       });
       runConvergeAfterMount(gatherP, async () => {
-        logCalTiming(`gather done, resize starting`, dt());
         // Phase 3: resize IN PLACE (still centered, one shared point) from the gathered size
         // down to MONTH_CELL_IMG — the exact size the piece will be inside the destination month
         // cell — before it starts moving toward that cell at all. Measuring the destination
@@ -1497,9 +1577,7 @@ export default function CalendarScreen() {
         const destReady = measureDestinationCell(closingDate);
         setClosingPhase("resize");
         await new Promise<void>(resolve => runConvergeAfterMount(shrinkResizeP, resolve));
-        logCalTiming(`resize done`, dt());
         const rect = await destReady;
-        logCalTiming(`measureDestinationCell resolved (rect=${rect ? "ok" : "null"})`, dt());
         // A deliberate beat at the gathered/resized center before the diagonal move to the
         // destination cell starts — per explicit feedback that resize-then-immediately-shrink
         // read as one motion happening too fast to register as two separate, purposeful steps
@@ -1510,9 +1588,8 @@ export default function CalendarScreen() {
         // slow-measurement path, making the pacing inconsistent depending on how fast the
         // measurement happened to be.
         await new Promise<void>(resolve => setTimeout(resolve, 180));
-        logCalTiming(`pause done, shrink starting`, dt());
         if (!rect) {
-          unstable_batchedUpdates(() => { setView("month"); setGathering(false); setMonthFadeKey(k => k + 1); });
+          unstable_batchedUpdates(() => { setGathering(false); setMonthFadeKey(k => k + 1); });
           transitioningRef.current = false;
           return;
         }
@@ -1527,44 +1604,32 @@ export default function CalendarScreen() {
           setClosingPhase("shrink");
           setShrinkTarget(rect);
         });
-        // Reverted the concurrent-reveal restructuring attempted here — two variants both broke
-        // the shrink motion itself (the piece stayed frozen at its gathered/centered position and
-        // never visibly moved to the destination cell), even with the reveal's setView deferred by
-        // the same double-rAF this file uses elsewhere: the concurrent re-measurement polling in
-        // monthFadeBeforeRef (measureDestinationCell, up to 400ms of its own rAF-driven loop)
-        // overlapping with shrinkP's own active animation was still enough contention to break it,
-        // not just which one got the first frame. Back to sequential — reveal begins only once the
-        // piece has actually landed. The "refresh" this was meant to fix is a real, separate
-        // problem still worth solving, but not at the cost of the one animation this transition
-        // actually revolves around.
         runConvergeAfterMount(shrinkP, () => {
-          logCalTiming(`shrink done, atomic swap to month view`, dt());
-          // Atomic swap — mirrors openDaySpread's own month->day handoff exactly (see its
-          // distribute-completion comment: "clearing growing HERE, immediately... swaps the
-          // frozen overlay for the real images in one atomic batch with no visible change").
-          // That handoff only works there because the day view's piece images are NEVER gated
-          // by dayChromeOpacity — only the frame/chrome around them fades. The month grid's own
-          // cell images WERE gated by monthChromeOpacity, which is exactly why this direction
-          // couldn't do the same atomic swap and instead kept the overlay frozen for the entire
-          // 280ms chrome fade as a workaround — the two transitions were structurally different,
-          // not just visually. closingHiddenDate (passed to MonthBody below) now excludes the
-          // destination cell's own image from monthChromeOpacity's fade the same way
-          // growHiddenDate already does for the opening direction, so this can clear the overlay
-          // in the SAME batch as setView instead of waiting out the whole fade first.
-          unstable_batchedUpdates(() => {
-            setView("month");
-            setGathering(false);
-            setShrinkTarget(null);
-            setMonthFadeKey(k => k + 1);
-          });
-          // transitioningRef stays true until the chrome fade for the REST of the month view
-          // (header, day-labels, every other cell) actually finishes — same timing discipline
-          // openDaySpread's own onChromeFadeDone already uses, so a new transition can't start
-          // mid-fade even though the overlay itself already handed off immediately above.
-          monthFadeDoneRef.current = () => {
-            logCalTiming(`monthChromeOpacity fade-in done, FULLY SETTLED`, dt());
+          // The stack has landed exactly on the destination cell, and the month view has been
+          // committed (transparent) underneath since gather started — so nothing React-side
+          // changes here at all: just fade monthChromeOpacity in. The overlay stays frozen on
+          // top the whole time (its resting frame is pixel-identical to the real cell — see
+          // monthStackPieces / fan="target"), because the real cell's stack sits INSIDE the
+          // faded month block: clearing the overlay now (what an earlier version did) swapped the
+          // fully-visible landed stack for a real one at opacity 0, so the stack vanished and
+          // faded back in with everything else — the "refresh".
+          //
+          // Started directly rather than via monthFadeKey: that path bumps state, which is a
+          // re-render of this whole screen on the exact frame the fade starts — the one moment
+          // that most needs to be idle.
+          Animated.timing(monthChromeOpacity, { toValue: 1, duration: 280, easing: Easing.bezier(0.4, 0, 0.2, 1), useNativeDriver: true }).start();
+          // Fixed-duration timer, not the .start() callback — same unreliable-native-callback
+          // reasoning as the monthFadeKey effect above. Once the fade is done, the real cell is
+          // at full opacity right under the identical overlay, so unmasking it and removing the
+          // overlay in one batch is invisible. transitioningRef stays true until then, so a new
+          // transition can't start mid-fade.
+          setTimeout(() => {
+            unstable_batchedUpdates(() => {
+              setGathering(false);
+              setShrinkTarget(null);
+            });
             transitioningRef.current = false;
-          };
+          }, 280);
         });
       });
     });
@@ -1572,7 +1637,44 @@ export default function CalendarScreen() {
     });
   }
 
+  // Whole-screen ReadyGate (components/ReadyGate.tsx). Both views stay mounted underneath at all
+  // times (the transitions depend on that), so this only decides when the dots come off: once
+  // readiness is known, the month's outfits + weather are in, nothing is about to be (or being)
+  // generated for an empty focus day, and the focus day's piece images are decoded. Before this,
+  // the header painted immediately while the grid area below still showed its own dots — the
+  // top of the screen arriving before the bottom.
+  const autoGenPending = !!calReady && !loading && monthEverLoaded && needsGeneration && !autoGenTriedRef.current.has(monthKey);
+  // This month's outfits AND weather are both in for the month on screen, and nothing is being
+  // generated for it — until then the month grid shows per-day loading dots (MonthBody).
+  const monthDataReady = outfitMonthsLoaded.has(monthKey) && monthKey in weatherByMonth;
+  const monthContentReady = monthDataReady && !generating && !autoGenPending;
+  // Month view handles its own loading in-grid (layout stays, each stack is dots), so switching
+  // months there never falls back to full-screen dots; day view still gates on the whole screen.
+  // Day ("card") view readiness: this month's outfits + weather are in, nothing is being generated
+  // for an empty day, and every one of the day's piece images is downloaded. Until then the day
+  // view keeps its layout — date header, the real box grid — with three dots in each box, and
+  // everything (pieces, weather, score, notes) swaps in at once. Always true mid-transition, so
+  // the open/close animations never hand off to the loading version.
+  const focusImageUris = focusOutfit ? focusOutfit.garments.filter(g => bucketOf(g) !== "accessory" && g.image).map(g => g.image!) : [];
+  const dayReady = !!growing || gathering || (
+    monthDataReady && !((generating || autoGenPending) && !focusOutfit) && focusImageUris.every(u => readyImagesRef.current.has(u))
+  );
+  // Full-screen dots only until readiness is known (calReady) — after that, both views show their
+  // own layout with in-place dots while content loads (month: per day; day: per box).
+  const calendarReady = calReady === true;
+
+  if (calReady === false) {
+    return (
+      <ReadyGate ready>
+      <ScreenCenter>
+        <Text style={[type.label, { fontSize: 12, textAlign: "center" }]}>Add more items to activate your calendar!</Text>
+      </ScreenCenter>
+      </ReadyGate>
+    );
+  }
+
   return (
+    <ReadyGate ready={calendarReady}>
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       {/* Nothing else lives in the top-right corner — that's always ShowNavButton's spot (see
          useSuppressNavButton usage elsewhere / the app-wide button-collision policy). REGEN
@@ -1582,21 +1684,11 @@ export default function CalendarScreen() {
           label={view === "day" ? "MONTH VIEW" : "TODAY"}
           size={10}
           color={colors.textMuted}
+          style={styles.topRowBtn}
           // openDaySpread already falls back to a plain goToDay when there's no stack to
           // animate (today has no outfit yet) — same rule the month grid's own cells use, so
           // TODAY behaves exactly like tapping today's cell directly.
           onPress={() => (view === "day" ? startClosingTransition() : openDaySpread(todayStr))}
-          // TEMPORARY (__DEV__ only) — long-press dumps logCalTiming's AsyncStorage-backed
-          // timeline (see its own header comment for why console.log doesn't work here) via the
-          // share sheet, for diagnosing the white-screen repro. A long-press on this existing
-          // button rather than a separate one placed nearby — the previous version sat close
-          // enough to the floating bottom nav bar's own button to register as a double-tap on
-          // both. onLongPress and onPress are mutually exclusive per gesture in React Native, so
-          // this can't interfere with the button's real short-tap behavior. Remove once fixed.
-          onLongPress={__DEV__ ? () => {
-            const log = getCached<{ label: string; t: number; at: string }[]>("__caltiming_log__") ?? [];
-            Share.share({ message: log.map(e => `[${e.at}] +${e.t}ms  ${e.label}`).join("\n") || "no log entries yet" }).catch(() => {});
-          } : undefined}
         />
       </View>
 
@@ -1637,9 +1729,11 @@ export default function CalendarScreen() {
         <View style={{ flex: 1 }}>
           <DayHeader
             focusDate={focusDate}
-            focusOutfit={focusOutfit}
-            notes={focusNotes}
-            weather={weather}
+            // Until the day is ready: date + arrows only — no weather/score/EDIT that would land
+            // before (or after) the outfit itself.
+            focusOutfit={dayReady ? focusOutfit : undefined}
+            notes={dayReady ? focusNotes : EMPTY_NOTES}
+            weather={dayReady ? weather : EMPTY_WEATHER}
             generating={generating}
             onRegenClick={onRegenClick}
             onEdit={() => focusOutfit && openEdit(focusOutfit, focusDate)}
@@ -1654,17 +1748,15 @@ export default function CalendarScreen() {
              much idle space to begin with; glaring on a taller one (iPhone 17e) where centering
              actually splits that idle space evenly instead of stacking it all below. */}
           <View style={{ flex: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, alignItems: "center", justifyContent: "center" }}>
-            {showLoadingUI && !focusOutfit ? (
-              // paddingBottom biases the dots up off dead-center of this LEFTOVER space (below
-              // DayHeader's own nav/REGEN/score rows) — centering exactly within what's left
-              // after the header reads as noticeably low relative to the screen as a whole,
-              // since the header itself isn't part of this flex area at all. Same nudge
-              // technique already used a few lines down for DayOutfit's own pros/cons centering.
-              <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: spacing.xl * 2 }}>
-                <LoadingDots />
-              </View>
+            {/* Also shows the dots (not "No outfit for this day") while readiness is still
+               unknown or a month is being generated — both resolve into real outfits. */}
+            {!dayReady ? (
+              // The day's real layout with three dots in each box (see dayReady).
+              <DayOutfit notes={EMPTY_NOTES} garments={[]} chromeOpacity={dayChromeOpacity} loading />
             ) : !focusOutfit || focusOutfit.garments.length === 0 ? (
-              <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+              // Same upward nudge as the loading dots above (same spot, same reason) — dead
+              // center of this leftover area reads as low relative to the whole screen.
+              <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: spacing.xl * 2 }}>
                 <Text style={[type.body, { color: colors.textFaint }]}>No outfit for this day.</Text>
               </View>
             ) : (
@@ -1700,9 +1792,10 @@ export default function CalendarScreen() {
             onPrevMonth={() => { if (transitioningRef.current) return; setSelectedDate(null); setMonth(m => (m === 1 ? (setYear(y => y - 1), 12) : m - 1)); }}
             onNextMonth={() => { if (transitioningRef.current) return; setSelectedDate(null); setMonth(m => (m === 12 ? (setYear(y => y + 1), 1) : m + 1)); }}
             onOpenDay={openDaySpread}
-            onSelectDay={ds => setSelectedDate(d => (d === ds ? null : ds))}
+            // Guarded like onOpenDay — the month view is now live (though transparent) from the
+            // start of the day->month gather, so a tap could otherwise land mid-transition.
+            onSelectDay={ds => { if (!transitioningRef.current) setSelectedDate(d => (d === ds ? null : ds)); }}
             monthChromeOpacity={monthChromeOpacity}
-            revealDate={revealDate}
             growHiddenDate={growing?.date ?? null}
             // focusDate is stable for the entire closing sequence (nothing else changes it until
             // goToDay is called, which doesn't happen here) — gathering is exclusively driven by
@@ -1714,7 +1807,7 @@ export default function CalendarScreen() {
             // of monthChromeOpacity's own fade, meant only to hide the brief top-aligned-before-
             // centering flash on the very first-ever month-view mount (see monthCenterOffset's
             // comment). But monthAreaH specifically (one of monthMeasured's two required
-            // measurements) could fail to ever go positive — confirmed directly via logCalTiming:
+            // measurements) could fail to ever go positive — confirmed directly via diagnostic logging:
             // monthBlockH measured 319 while monthAreaH stayed 0 for the entire session, session
             // after session — permanently pinning this at 0 regardless of whether
             // monthChromeOpacity had already finished fading to 1. That's the actual white-screen
@@ -1732,7 +1825,10 @@ export default function CalendarScreen() {
             // to know weather exists at all. showLoadingUI additionally suppresses the spinner
             // once this exact month has ever loaded before, so a background refresh landing mid-
             // transition can't swap the already-correct grid out for a spinner and back again.
-            loading={showLoadingUI}
+            // Never the old full-area loading state — the grid always shows, with per-day dots
+            // while the month's content loads (contentReady).
+            loading={false}
+            contentReady={monthContentReady}
           />
 
           {panelMounted && (
@@ -1836,7 +1932,7 @@ export default function CalendarScreen() {
             garments={closingGarments} origins={centerRect(CONVERGE_TARGET)} targets={shrinkTarget ?? centerRect(CONVERGE_TARGET)}
             originContentSize={{ width: MONTH_CELL_IMG, height: MONTH_CELL_IMG }}
             targetContentSize={{ width: MONTH_CELL_IMG, height: MONTH_CELL_IMG }} progress={shrinkP}
-            fanIndexOffset
+            fan="target"
           />
         );
       })()}
@@ -1846,7 +1942,13 @@ export default function CalendarScreen() {
         const growGarments = growOutfit ? growOutfit.garments.filter(g => bucketOf(g) !== "accessory" && g.image) : [];
         if (growPhase === "grow") {
           return (
-            <ConvergeOverlay garments={growGarments} origins={growing.origin} targets={centerRect(CONVERGE_TARGET)} progress={growP} />
+            // originContentSize + fan="origin": the overlay's progress-0 frame has to match the real cell's
+            // stack exactly (18px pieces, fanned), since it takes over from that stack BEFORE the
+            // month fade and sits there, visible, the whole time the rest fades out.
+            <ConvergeOverlay
+              garments={growGarments} origins={growing.origin} targets={centerRect(CONVERGE_TARGET)} progress={growP}
+              originContentSize={{ width: MONTH_CELL_IMG, height: MONTH_CELL_IMG }} fan="origin"
+            />
           );
         }
         // Resize: same center point on both ends (origins===targets), only the CONTENT size
@@ -1857,7 +1959,7 @@ export default function CalendarScreen() {
             <ConvergeOverlay
               garments={growGarments} origins={centerRect(CONVERGE_TARGET)} targets={centerRect(CONVERGE_TARGET)}
               originContentSize={{ width: CONVERGE_CONTENT, height: CONVERGE_CONTENT }}
-              targetContentSize={{ width: DAY_BOX_CONTENT, height: DAY_BOX_CONTENT }} progress={growResizeP}
+              targetContentSize={{ width: dayBoxContent(hasAI), height: dayBoxContent(hasAI) }} progress={growResizeP}
             />
           );
         }
@@ -1868,7 +1970,7 @@ export default function CalendarScreen() {
         return (
           <ConvergeOverlay
             garments={growGarments} origins={centerRect(CONVERGE_TARGET)} targets={dayBoxRects}
-            originContentSize={{ width: DAY_BOX_CONTENT, height: DAY_BOX_CONTENT }}
+            originContentSize={{ width: dayBoxContent(hasAI), height: dayBoxContent(hasAI) }}
             targetContentFraction={0.8} progress={distributeP}
           />
         );
@@ -1891,12 +1993,18 @@ export default function CalendarScreen() {
         </View>
       )}
     </SafeAreaView>
+    </ReadyGate>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  topRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  // The button is pinned to the SAME vertical center as ShowNavButton's chevron (absolute at
+  // insets.top + 10, 22pt tall → center at insets.top + 21), so the two top-corner controls line
+  // up. The row keeps its old natural height (8pt padding + ~12pt label) so nothing below it —
+  // the day view, or the month block's tuned centering — moves.
+  topRow: { height: spacing.sm + 12, paddingHorizontal: spacing.lg },
+  topRowBtn: { position: "absolute", left: spacing.lg, top: NAV_ROW_TOP, height: NAV_ROW_H, justifyContent: "center" },
   dayNav: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xl, width: "100%" },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.lg, paddingTop: spacing.sm },
   dayLabels: { flexDirection: "row", paddingHorizontal: spacing.sm, marginTop: spacing.sm },

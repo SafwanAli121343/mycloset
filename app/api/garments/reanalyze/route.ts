@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { inferGarmentAttributes, inferGarmentAttributesTextOnly } from "@/lib/aiInference";
 import { revalidateGarmentCrossings } from "@/lib/db/wardrobeState";
+import { getUserById } from "@/lib/db/users";
+import { consumeAiCredit } from "@/lib/billing/entitlements";
+import { aiErrorMessage } from "@/lib/aiGateway";
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,8 +20,19 @@ export const maxDuration = 30;
 // Re-runs AI inference on an existing garment to refresh pros, cons, aesthetic_tags,
 // color_pairings, and color_clashes using the current prompt (fragment/note style).
 export async function POST(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "garments:reanalyze", 10, 3600000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Same AI entitlement gate every other OpenAI-backed route applies (see
+  // /api/garments/analyze): free/lapsed users, and Pro users over their monthly cap, never
+  // trigger a paid model call. This endpoint had no gate at all — only a rate limit.
+  const billingUser = await getUserById(session.userId).catch(() => null);
+  // Pro only (within its monthly budget). A free user's purchased scores are spent only through
+  // "Use score?" (/api/jobs), never here.
+  const aiAllowed = billingUser ? (await consumeAiCredit(billingUser)).allowed : false;
+  if (!aiAllowed || !billingUser) return NextResponse.json({ error: "AI analysis requires MyCloset Pro." }, { status: 403 });
 
   let body: { garmentId?: string };
   try { body = await req.json(); }
@@ -55,7 +70,9 @@ export async function POST(req: NextRequest) {
           material:       garment.material ?? null,
           image:          garment.image,
         },
-        FIELDS
+        FIELDS,
+        billingUser,
+        { fresh: true }, // an explicit re-analysis: don't hand back the stored answer
       );
       values = result.values;
     } else {
@@ -68,12 +85,14 @@ export async function POST(req: NextRequest) {
         colorPrimary: garment.color_primary ?? null,
         material:    garment.material ?? null,
         formality:   garment.formality ?? null,
-      });
+      }, billingUser, { fresh: true });
       values = result.values;
     }
   } catch (err) {
+    const msg = aiErrorMessage(err);
+    if (msg) return NextResponse.json({ error: msg }, { status: 403 });
     console.error("[reanalyze] inference failed:", err);
-    return NextResponse.json({ error: "Analysis failed — try again" }, { status: 500 });
+    return NextResponse.json({ error: "Analysis failed. Try again." }, { status: 500 });
   }
 
   const updates: Record<string, unknown> = {};
@@ -94,7 +113,7 @@ export async function POST(req: NextRequest) {
     .eq("id", garmentId)
     .eq("user_id", session.userId);
 
-  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  if (updateErr) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
 
   // aesthetic_tags is the only field here that wardrobe-analysis crossings depend on — if it
   // changed, re-validate this item's existing aesthetic crossings against the new tags so a

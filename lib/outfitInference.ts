@@ -3,11 +3,10 @@
 // Unlike piece analysis there is no color-pairing (outfit is already assembled)
 // and no style_pairings (no cross-piece suggestions for a complete look).
 
-import OpenAI from "openai";
+import { getUserProfile, profileSystemMessage } from "@/lib/userAge";
 import type { GarmentForScoring } from "./scoring";
 import { getSlot } from "./scoring";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { aiChat, type AiActor, type AiCallOpts } from "./aiGateway";
 
 // ── Tag vocabulary ────────────────────────────────────────────────────────────
 
@@ -64,7 +63,10 @@ export async function analyzeOutfit(
     aesthetic?: string;
     tempF?: number;
     condition?: string;
-  }
+  },
+  // Who pays (lib/aiGateway.ts): the user, or "system" for maintenance scripts.
+  billingUser: AiActor,
+  ai: AiCallOpts = {},
 ): Promise<OutfitAnalysisResult> {
   const { score, configName, tempF, condition } = opts;
   const aesthetic = opts.aesthetic ?? deriveOutfitAesthetic(items);
@@ -132,9 +134,11 @@ Return JSON:
   "outfit_tags": ["<3-6 from exactly: ${ALL_OUTFIT_TAGS.join(", ")}>"]
 }`;
 
-  const completion = await openai.chat.completions.create({
+  // The user's age + gender (Settings → GENDER & AGE) tailor the analysis — lib/userAge.ts.
+  const userProfile = await getUserProfile(billingUser === "system" ? null : billingUser.id);
+  const completion = await aiChat("openai:chat:outfit", {
     model: "gpt-4o",
-    messages: [
+    messages: [...profileSystemMessage(userProfile), 
       {
         role: "system",
         content:
@@ -168,9 +172,9 @@ Return JSON:
       { role: "user", content: prompt },
     ],
     response_format: { type: "json_object" },
-  });
+  }, billingUser, ai);
 
-  const parsed = JSON.parse(completion.choices[0].message.content ?? "{}") as Record<string, unknown>;
+  const parsed = JSON.parse(completion.content || "{}") as Record<string, unknown>;
   return {
     pros:        Array.isArray(parsed.pros)        ? (parsed.pros as string[])        : [],
     cons:        Array.isArray(parsed.cons)        ? (parsed.cons as string[])        : [],

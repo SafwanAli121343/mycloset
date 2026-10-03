@@ -23,7 +23,7 @@ export default function SignUpPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black flex flex-col items-center justify-center px-4">
+    <main className="min-h-screen bg-black flex flex-col items-center justify-center px-4 center-lift">
       <div className="w-full max-w-sm" style={{ transform: "translateY(-8vh)" }}>
         <p className="text-2xl font-bold uppercase tracking-[0.04em] mb-10 text-center text-white" style={FONT}>
           CREATE AN ACCOUNT
@@ -82,7 +82,7 @@ export default function SignUpPage() {
 
         <p className="text-xs text-center mt-4 uppercase tracking-wide text-neutral-500" style={FONT}>
           Already have an account?{" "}
-          <Link href="/sign-in" className="underline font-bold text-neutral-300">Log in</Link>
+          <Link href="/sign-in" className="font-bold text-neutral-300">Log in</Link>
         </p>
       </div>
     </main>

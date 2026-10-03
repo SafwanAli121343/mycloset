@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 
 const adminClient = createClient(
@@ -41,7 +42,9 @@ function parseNotes(notes: string | null) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const rateBlock = applyApiRateLimit(req, "outfits:gallery", 60, 60000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -56,7 +59,7 @@ export async function GET() {
     .eq("user_id", session.userId)
     .order("date", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
 
   const mapped = (data as unknown as DbOutfit[])
     .map(o => {

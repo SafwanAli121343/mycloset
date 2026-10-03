@@ -20,6 +20,8 @@ export const colors = {
   mid: "#c88800",
   bad: "#c83030",
   gold: "#c8a800",
+  // Used for the Outfits PIECES filter's "all of these together" (AND) mode.
+  blue: "#2563eb",
 };
 
 export function scoreColor(score: number | null | undefined): string {

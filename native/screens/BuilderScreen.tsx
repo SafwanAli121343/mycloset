@@ -1,20 +1,22 @@
 import { useEffect, useState, useCallback, useRef, forwardRef } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Animated, Easing, PanResponder, Dimensions, type GestureResponderEvent, type PanResponderGestureState,
 } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import { apiJson, ApiError } from "../lib/api";
+import { apiJson, apiJsonCached, ApiError, invalidateCache } from "../lib/api";
+import { getCached } from "../lib/dataCache";
 import { TextButton } from "../components/TextButton";
-import { LoadingDots } from "../components/LoadingDots";
-import { ScreenCenter } from "../components/ScreenCenter";
+import { ReadyGate } from "../components/ReadyGate";
 import { FocusScrollList, type FocusItem } from "../components/FocusScrollList";
-import { BAR_CONTENT_H } from "../components/BottomNavBar";
 import { bucketOf, sortTops, type Bucket, type SlotGarment } from "../lib/garmentSlots";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
+import { useEntitlements } from "../lib/billing/Entitlements";
+import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
 import type { MainTabParamList } from "../navigation/MainTabs";
 
 type Garment = SlotGarment & {
@@ -22,7 +24,7 @@ type Garment = SlotGarment & {
   pros: string[] | null; cons: string[] | null;
 };
 
-type ScoreResult = { score: number; valid: boolean; reason: string | null; serverError?: boolean };
+type ScoreResult = { score: number | null; valid: boolean; reason: string | null; serverError?: boolean; locked?: boolean };
 const IDEAL_THRESHOLD = 75;
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -34,10 +36,15 @@ const MAX_PER_BUCKET: Record<Bucket, number> = {
   head: 1, outer: 1, top: 3, mid: 1, bottom: 1, shoes: 1, accessory: Infinity,
 };
 
-const { height: SCREEN_H } = Dimensions.get("window");
+const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get("window");
 const SHEET_H = SCREEN_H * 0.5;
 const SHEET_TOP = SCREEN_H - SHEET_H;
 const ITEM_SIZE = 76;
+// Dynamic slot widths so the silhouette never overflows on narrow devices (iPhone SE = 320pt).
+// silhouette padding is spacing.lg (24pt) each side → inner content area = SCREEN_W - 48.
+const SLOT_INNER_W = SCREEN_W - spacing.lg * 2;
+const SLOT_WIDE_W = SLOT_INNER_W;
+const SLOT_TORSO_W = Math.floor((SLOT_INNER_W - 16) / 3); // 3 slots + 2 gaps of 8pt
 
 function measureView(ref: React.RefObject<View | null>): Promise<Rect | null> {
   return new Promise(resolve => {
@@ -53,35 +60,33 @@ const Slot = forwardRef<View, {
   label: string; items: Garment[]; single: boolean; onTap: () => void; onRemove: (id: string) => void; style?: object;
 }>(function Slot({ label, items, single, onTap, onRemove, style }, ref) {
   const showSingle = single && items.length > 0;
+  const isEmpty = items.length === 0;
   return (
     <View ref={ref} collapsable={false} style={[styles.slot, style]}>
-      <TouchableOpacity onPress={onTap} style={StyleSheet.absoluteFill} activeOpacity={items.length ? 1 : 0.6} />
-      {items.length === 0 ? (
-        <View pointerEvents="none">
-          <Text style={{ fontSize: 20, color: colors.textFaint, textAlign: "center" }}>+</Text>
-          <Text style={[type.label, { fontSize: 7.5, marginTop: 2 }]}>{label}</Text>
-        </View>
-      ) : showSingle ? (
-        <>
-          {items[0].image ? (
-            <Image source={{ uri: items[0].image }} style={styles.singleImg} resizeMode="contain" />
-          ) : null}
-          {/* Only one possible occupant here (pants/shoes/etc — anything but Top or
-             Accessories), so the remove control belongs to the whole box, not a per-item chip. */}
-          <TouchableOpacity onPress={() => onRemove(items[0].id)} style={styles.singleRemove} hitSlop={8}>
-            <Text style={styles.singleRemoveText}>✕</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
+      <TouchableOpacity onPress={onTap} style={StyleSheet.absoluteFill} activeOpacity={isEmpty ? 0.6 : 1} />
+      {/* Always-mounted empty placeholder — opacity-switched so the Image (if present) mounts
+         once and stays mounted, never triggering a remount/reload flash when an item is added. */}
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", opacity: isEmpty ? 1 : 0 }]}>
+        <Text style={{ fontSize: 20, color: colors.textFaint, textAlign: "center" }}>+</Text>
+        <Text style={[type.label, { fontSize: 7.5, marginTop: 2 }]}>{label}</Text>
+      </View>
+      {showSingle && items[0].image ? (
+        <Image source={{ uri: items[0].image }} style={styles.singleImg} contentFit="contain" cachePolicy="memory-disk" transition={0} />
+      ) : null}
+      {showSingle ? (
+        <TouchableOpacity onPress={() => onRemove(items[0].id)} style={styles.singleRemove} hitSlop={8}>
+          <Text style={styles.singleRemoveText}>✕</Text>
+        </TouchableOpacity>
+      ) : !isEmpty ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ alignItems: "center" }}>
           {items.map(g => (
             <TouchableOpacity key={g.id} onPress={() => onRemove(g.id)} style={styles.slotChip}>
-              {g.image ? <Image source={{ uri: g.image }} style={styles.slotChipImg} resizeMode="contain" /> : null}
+              {g.image ? <Image source={{ uri: g.image }} style={styles.slotChipImg} contentFit="contain" cachePolicy="memory-disk" transition={0} /> : null}
               <Text style={styles.slotChipRemove}>✕</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
-      )}
+      ) : null}
     </View>
   );
 });
@@ -92,7 +97,7 @@ const Slot = forwardRef<View, {
 // cut off at the sheet's edge.
 function DraggableItem({ g, isDragging, onGrant, onMove, onRelease }: {
   g: Garment; isDragging: boolean;
-  onGrant: (g: Garment, pageX: number, pageY: number) => void;
+  onGrant: (g: Garment, pageX: number, pageY: number, origin: Rect | null) => void;
   onMove: (pageX: number, pageY: number) => void;
   onRelease: (pageX: number, pageY: number) => void;
 }) {
@@ -103,7 +108,21 @@ function DraggableItem({ g, isDragging, onGrant, onMove, onRelease }: {
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: (evt: GestureResponderEvent) => onGrant(g, evt.nativeEvent.pageX, evt.nativeEvent.pageY),
+      // Origin is computed SYNCHRONOUSLY from the touch point now, not from an async
+      // measureInWindow callback — that callback could still be unresolved by the time a very
+      // fast grab-and-release gesture already reached onPanResponderRelease (measureInWindow is
+      // a real native-bridge round trip, not free), leaving dragOriginRef pointed at whatever
+      // the PREVIOUS drag left there (it's never reset between drags) instead of this one's real
+      // origin — a stale, wrong "home" for the one path (onDragRelease's sheetOpenRef+origin
+      // branch) specifically meant to prevent a miss from flying all the way off the bottom of
+      // the screen. Approximating the origin as an ITEM_SIZE box centered on the touch point
+      // (exactly how dragPos itself is initialized two lines below, in onDragGrant) is a few
+      // pixels less precise than the real measured rect if the finger wasn't dead-center on the
+      // item, but it can never be null or stale, which matters far more here than a few pixels.
+      onPanResponderGrant: (evt: GestureResponderEvent) => {
+        const { pageX, pageY } = evt.nativeEvent;
+        onGrant(g, pageX, pageY, { x: pageX - ITEM_SIZE / 2, y: pageY - ITEM_SIZE / 2, width: ITEM_SIZE, height: ITEM_SIZE });
+      },
       onPanResponderMove: (_evt, gesture: PanResponderGestureState) => onMove(gesture.moveX, gesture.moveY),
       onPanResponderRelease: (_evt, gesture: PanResponderGestureState) => onRelease(gesture.moveX, gesture.moveY),
       onPanResponderTerminate: (_evt, gesture: PanResponderGestureState) => onRelease(gesture.moveX, gesture.moveY),
@@ -112,7 +131,7 @@ function DraggableItem({ g, isDragging, onGrant, onMove, onRelease }: {
 
   return (
     <View {...responder.panHandlers} style={styles.sheetItem}>
-      {!isDragging && g.image ? <Image source={{ uri: g.image }} style={styles.sheetItemImg} resizeMode="contain" /> : null}
+      {g.image ? <Image source={{ uri: g.image }} style={[styles.sheetItemImg, { opacity: isDragging ? 0 : 1 }]} contentFit="contain" cachePolicy="memory-disk" transition={0} /> : null}
     </View>
   );
 }
@@ -126,7 +145,7 @@ function InventorySheet({
   visible, forceHidden, items, draggingId, onGrant, onMove, onRelease, onClose,
 }: {
   visible: boolean; forceHidden: boolean; items: Garment[]; draggingId: string | null;
-  onGrant: (g: Garment, pageX: number, pageY: number) => void;
+  onGrant: (g: Garment, pageX: number, pageY: number, origin: Rect | null) => void;
   onMove: (pageX: number, pageY: number) => void;
   onRelease: (pageX: number, pageY: number) => void;
   onClose: () => void;
@@ -145,6 +164,7 @@ function InventorySheet({
         <Ionicons name="close" size={20} color={colors.textMuted} />
       </TouchableOpacity>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         scrollEnabled={!draggingId}
         contentContainerStyle={[styles.sheetGrid, { paddingBottom: insets.bottom + spacing.lg }]}
       >
@@ -164,11 +184,12 @@ function InventorySheet({
 
 export default function BuilderScreen() {
   const insets = useSafeAreaInsets();
+  const { hasAI } = useEntitlements();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const route = useRoute<RouteProp<MainTabParamList, "Builder">>();
-  const [allGarments, setAllGarments] = useState<Garment[]>([]);
+  const [allGarments, setAllGarments] = useState<Garment[]>(() => getCached<Garment[]>("/api/garments") ?? []);
   const [outfit, setOutfit] = useState<Garment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!getCached("/api/garments"));
   const [sheetOpen, setSheetOpen] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [result, setResult] = useState<ScoreResult | null>(null);
@@ -182,7 +203,21 @@ export default function BuilderScreen() {
 
   const [dragGarment, setDragGarment] = useState<Garment | null>(null);
   const dragGarmentRef = useRef<Garment | null>(null);
+  const dragOriginRef = useRef<Rect | null>(null);
   const [sheetForceHidden, setSheetForceHidden] = useState(false);
+  // Mirrors of sheetOpen/sheetForceHidden that onDragRelease reads instead of the raw state.
+  // DraggableItem's PanResponder is built once via useRef(PanResponder.create({...})).current,
+  // so its onPanResponderRelease handler permanently closes over whatever onRelease (and
+  // everything IT closes over) was on that item's very FIRST render — and since inventory items
+  // are populated well before the sheet is ever opened for the first time, that first render
+  // always has sheetOpen=false baked in, forever, for every item. A plain `if (sheetOpen …)` read
+  // inside onDragRelease would therefore always see stale, permanently-false state no matter how
+  // many times the real sheet opens and closes afterward. Refs sidestep this entirely: dereferencing
+  // `.current` always reads the live value regardless of which render's closure is doing the reading.
+  const sheetOpenRef = useRef(false);
+  const sheetForceHiddenRef = useRef(false);
+  sheetOpenRef.current = sheetOpen;
+  sheetForceHiddenRef.current = sheetForceHidden;
   const dragPos = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
 
   const slotRefs = useRef<Record<Bucket, React.RefObject<View | null>>>({
@@ -210,16 +245,36 @@ export default function BuilderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
 
+  const lastGarmentsJsonRef = useRef<string | null>(null);
   const load = useCallback(async () => {
     try {
-      const data = await apiJson<Garment[]>("/api/garments");
-      setAllGarments(data);
+      const data = await apiJsonCached<Garment[]>("/api/garments");
+      // Same class of bug found and fixed in Calendar/Outfits: this refetches on every tab
+      // FOCUS (see the focus listener below), on a 45s ttl, with no check that anything actually
+      // changed. The common real usage pattern here is "switch to Builder, immediately grab an
+      // inventory item" — meaning this background refetch is very plausibly still in flight
+      // exactly while a drag is starting, handing the inventory sheet a brand-new (but usually
+      // identical) `allGarments` array — and therefore a brand-new `sheetItems` — mid-gesture.
+      // Skipping the update when nothing actually changed removes that churn entirely rather
+      // than relying on the drag machinery being provably unaffected by it.
+      const json = JSON.stringify(data);
+      if (lastGarmentsJsonRef.current !== json) {
+        lastGarmentsJsonRef.current = json;
+        setAllGarments(data);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reload garments on focus so items added in AddItem are immediately visible without restart.
+  useEffect(() => {
+    const unsub = navigation.addListener("focus", () => { load(); });
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation]);
 
   // Consumes Calendar's edit hand-off exactly once per navigate() call: params only carry
   // useful data right after Calendar sends them, so they're cleared immediately after being
@@ -248,6 +303,9 @@ export default function BuilderScreen() {
       } else {
         await apiJson("/api/outfits", { method: "POST", body: JSON.stringify({ date: editCtx.date, garment_ids }) });
       }
+      // Also drops all-combos/other months that include this outfit; Calendar itself does a
+      // fresh load on refreshAt.
+      invalidateCache("/api/outfits");
       setEditCtx(null);
       setOutfit([]);
       setResult(null);
@@ -260,6 +318,13 @@ export default function BuilderScreen() {
   }
   function cancelEdit() {
     setEditCtx(null);
+    setOutfit([]);
+    setResult(null);
+    setShowProsCons(false);
+  }
+  // Plain reset (not tied to an edit hand-off) — clears the outfit-in-progress and its score so
+  // you can start a fresh combination without leaving the tab.
+  function resetBuilder() {
     setOutfit([]);
     setResult(null);
     setShowProsCons(false);
@@ -294,8 +359,9 @@ export default function BuilderScreen() {
     setShowProsCons(false);
   }
 
-  function onDragGrant(g: Garment, pageX: number, pageY: number) {
+  function onDragGrant(g: Garment, pageX: number, pageY: number, origin: Rect | null) {
     dragGarmentRef.current = g;
+    dragOriginRef.current = origin;
     setDragGarment(g);
     setSheetForceHidden(false);
     dragPos.setValue({ x: pageX - ITEM_SIZE / 2, y: pageY - ITEM_SIZE / 2 });
@@ -315,7 +381,15 @@ export default function BuilderScreen() {
     dragGarmentRef.current = null;
     const bucket = bucketOf(g);
     const rect = await measureView(slotRefs[bucket]);
-    if (rect && inRect(pageX, pageY, rect)) {
+    // A slot the inventory sheet is STILL covering (open, not yet forced away by this drag
+    // crossing above its top edge) shouldn't count as a valid target even if its geometric rect
+    // technically overlaps the release point — measureView reports the real position regardless
+    // of what's drawn on top of it, but the user can't see that slot to aim for it, so scoring a
+    // "hit" there reads as the piece vanishing into an invisible target. Slots that sit above
+    // where the sheet visually starts (HEAD/TOP/OUTER/MID, typically) are never covered even
+    // while the sheet is shown, so this only blocks the ones actually sitting behind it.
+    const sheetCovering = sheetOpenRef.current && !sheetForceHiddenRef.current && !!rect && rect.y >= SHEET_TOP;
+    if (rect && !sheetCovering && inRect(pageX, pageY, rect)) {
       // Slower, gentler settle instead of a quick linear-ish snap — 160ms at ease-out quad read
       // as a "jump" straight to the target rather than actually dropping in.
       Animated.timing(dragPos, {
@@ -325,6 +399,29 @@ export default function BuilderScreen() {
         useNativeDriver: true,
       }).start(() => {
         addItem(g);
+        setDragGarment(null);
+        setSheetForceHidden(false);
+      });
+      return;
+    }
+    // A miss while the sheet is open has an actual visible "home" to return to — flying it all
+    // the way off the bottom and then popping back into the grid never made sense while that grid
+    // was right there. This checks sheetOpenRef ALONE, not also requiring the sheet to be
+    // currently visible on screen: reaching for a top-row slot (HEAD/TOP/OUTER/MID) means
+    // dragging above SHEET_TOP, which sets sheetForceHidden and slides the sheet away for the
+    // rest of the gesture — checking !sheetForceHiddenRef here (an earlier version of this fix
+    // did) meant every miss anywhere near the top row fell through to the off-screen branch
+    // instead, which is exactly what "still goes all the way down" was describing. The sheet
+    // reappears the instant this gesture ends regardless (setSheetForceHidden(false) below), so
+    // sheetOpen is the only thing that actually needs to be true for "there's a home to return to."
+    const origin = dragOriginRef.current;
+    if (sheetOpenRef.current && origin) {
+      Animated.timing(dragPos, {
+        toValue: { x: origin.x, y: origin.y },
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
         setDragGarment(null);
         setSheetForceHidden(false);
       });
@@ -359,7 +456,7 @@ export default function BuilderScreen() {
     }
   }
 
-  const isEligible = !!result?.valid && result.score >= IDEAL_THRESHOLD;
+  const isEligible = !!result?.valid && result.score != null && result.score >= IDEAL_THRESHOLD;
 
   // Auto-fade a non-eligible result (invalid combo, server error, or a valid-but-low score) —
   // exactly like the website: fade starts at 3.2s, result clears at 3.9s, so the box doesn't
@@ -373,8 +470,9 @@ export default function BuilderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result]);
 
+  // Wrapped in ReadyGate (components/ReadyGate.tsx): dots until the whole builder is drawn.
   if (loading) {
-    return <ScreenCenter><LoadingDots /></ScreenCenter>;
+    return <ReadyGate ready={false} />;
   }
 
   // Top gets the same base-layer-first sort the website's Builder applies (isOuterCapableTop) —
@@ -396,6 +494,7 @@ export default function BuilderScreen() {
   ];
 
   return (
+    <ReadyGate ready>
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       {editCtx && (
         <View style={styles.editBanner}>
@@ -410,24 +509,32 @@ export default function BuilderScreen() {
       <View style={styles.topRow}>
         {result ? (
           isEligible ? (
-            <Text style={{ fontSize: 24, fontWeight: "700", color: scoreColor(result.score) }}>{result.score}</Text>
+            // On the nav chevron's exact center line (see ShowNavButton's NAV_ROW_*).
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: NAV_ROW_TOP, height: NAV_ROW_H }}>
+              <Text style={{ fontSize: 24, fontWeight: "700", color: scoreColor(result.score) }}>{result.score}</Text>
+              <TextButton label="RESET" size={9} color={colors.bad} onPress={resetBuilder} />
+            </View>
           ) : (
             <Animated.View style={[styles.resultError, { opacity: resultFade }]}>
-              <Text style={styles.resultErrorTitle}>{result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}</Text>
+              <Text style={styles.resultErrorTitle}>{result.locked ? "AI SCORING LOCKED" : result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}</Text>
               <Text style={styles.resultErrorBody}>
-                {result.serverError
-                  ? "Couldn't score that outfit — try again."
+                {result.locked
+                  ? "Upgrade to score outfits with AI."
+                  : result.serverError
+                  ? "Couldn't score that outfit. Try again."
                   : !result.valid
                   ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
-                  : "This outfit scored below the ideal threshold — try a different combination."}
+                  : "This outfit scored below the ideal threshold. Try a different combination."}
               </Text>
             </Animated.View>
           )
-        ) : <View style={{ height: 30 }} />}
+        ) : null}
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.silhouette, { paddingBottom: BAR_CONTENT_H + insets.bottom + spacing.lg }]}
+        showsVerticalScrollIndicator={false}
+        style={styles.silhouetteScroll}
+        contentContainerStyle={[styles.silhouette, { paddingBottom: insets.bottom + spacing.lg }]}
         scrollEnabled={!dragGarment}
       >
         <Slot ref={slotRefs.head} label="HEAD" single items={inBucket("head")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotHead} />
@@ -442,7 +549,19 @@ export default function BuilderScreen() {
         <Slot ref={slotRefs.shoes} label="SHOES" single items={inBucket("shoes")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotWide} />
         <Slot ref={slotRefs.accessory} label="ACCESSORIES" single={false} items={inBucket("accessory")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotWide} />
 
-        <TextButton label={sheetOpen ? "CLOSE INVENTORY" : "OPEN INVENTORY"} size={10} color={colors.textMuted} onPress={() => setSheetOpen(v => !v)} style={{ marginTop: spacing.md }} />
+        {/* Always mounted, hidden via opacity rather than conditionally rendered — a
+           conditional {!sheetOpen && ...} removes this from layout the instant sheetOpen
+           flips true, which is a synchronous, unanimated reflow: everything below it jumps up
+           to fill the gap immediately, well before the sheet's own ~300ms spring animation
+           has moved anywhere. Keeping it mounted (same reserved layout space always) means
+           tapping "open inventory" is followed by exactly one thing changing on screen — the
+           sheet sliding up — instead of an instant text-disappear-then-reflow-then-sheet-
+           arrives sequence that read as jittery. disabled prevents a tap landing on it while
+           it's invisible. */}
+        <TextButton
+          label="OPEN INVENTORY" size={10} color={colors.textMuted} onPress={() => setSheetOpen(true)}
+          disabled={sheetOpen} style={{ marginTop: spacing.md, opacity: sheetOpen ? 0 : 1 }}
+        />
 
         {isEligible && prosConsFocus.length > 0 && (
           <TextButton
@@ -459,13 +578,17 @@ export default function BuilderScreen() {
           </View>
         )}
 
-        <TextButton
-          label={scoring ? "SCORING..." : "SCORE"}
-          loading={scoring}
-          disabled={!canScore || scoring}
-          onPress={handleScore}
-          style={{ marginTop: spacing.lg }}
-        />
+        {/* Scoring is Pro-only — free users get no SCORE button at all (rather than one that
+           only ever answers "AI SCORING LOCKED"); building and saving outfits still works. */}
+        {hasAI && (
+          <TextButton
+            label={scoring ? "SCORING..." : "SCORE"}
+            loading={scoring}
+            disabled={!canScore || scoring}
+            onPress={handleScore}
+            style={{ marginTop: spacing.xs }}
+          />
+        )}
       </ScrollView>
 
       <InventorySheet
@@ -481,16 +604,17 @@ export default function BuilderScreen() {
 
       {dragGarment && (
         <Animated.View pointerEvents="none" style={[styles.ghost, { transform: dragPos.getTranslateTransform() }]}>
-          {dragGarment.image ? <Image source={{ uri: dragGarment.image }} style={styles.sheetItemImg} resizeMode="contain" /> : null}
+          {dragGarment.image ? <Image source={{ uri: dragGarment.image }} style={styles.sheetItemImg} contentFit="contain" cachePolicy="memory-disk" transition={0} /> : null}
         </Animated.View>
       )}
     </SafeAreaView>
+    </ReadyGate>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  topRow: { alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs },
+  topRow: { alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.lg, paddingTop: 0, paddingBottom: 0 },
   resultError: { backgroundColor: "#fff5f5", borderWidth: 1, borderColor: "#fca5a5", paddingVertical: 10, paddingHorizontal: 16, width: "100%" },
   resultErrorTitle: { fontSize: 9, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", color: colors.bad, textAlign: "center", marginBottom: 4 },
   resultErrorBody: { fontSize: 11, color: colors.textMuted, lineHeight: 17, textAlign: "center" },
@@ -499,15 +623,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg, paddingTop: spacing.sm,
     borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.sm,
   },
-  silhouette: { flexGrow: 1, alignItems: "center", justifyContent: "flex-start", padding: spacing.lg, paddingTop: spacing.sm, gap: 16 },
+  // Without an explicit style={flex:1} on the ScrollView, it sizes to its content and never
+  // fills the screen — leaving flexGrow:1 below inert and a short outfit pinned to the top with
+  // the rest of the screen blank underneath SCORE. silhouetteScroll makes the ScrollView itself
+  // fill the remaining space so flexGrow:1 + center below actually has room to center into.
+  silhouetteScroll: { flex: 1, width: "100%" },
+  silhouette: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg, paddingTop: spacing.xs, gap: 16 },
   torsoRow: { flexDirection: "row", gap: 8 },
   slot: {
     minHeight: 84, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg,
     alignItems: "center", justifyContent: "center", paddingVertical: 6, paddingHorizontal: 4,
   },
   slotHead: { width: 100 },
-  slotTorso: { width: 96, minHeight: 100 },
-  slotWide: { width: 288 },
+  slotTorso: { width: SLOT_TORSO_W, minHeight: 100 },
+  slotWide: { width: SLOT_WIDE_W },
   slotChip: { width: 66, height: 66, marginHorizontal: 4 },
   slotChipImg: { width: "100%", height: "100%" },
   slotChipRemove: { position: "absolute", top: -2, right: -2, color: colors.bad, fontSize: 10, fontWeight: "700" },

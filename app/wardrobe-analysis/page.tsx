@@ -1,10 +1,18 @@
 ﻿"use client";
-import { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { useEntitlements } from "@/contexts/EntitlementsContext";
+import { ReadyGate } from "@/components/ReadyGate";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { WardrobeAnalysis, WABackendState, CrossedEntry } from "@/lib/wardrobeAnalysis";
 import { computeEffectiveLevel, gapTotalProgress, computeGapProgress, getFunctionalSlot, resolveSubTypeFromTitle } from "@/lib/wardrobeAnalysis";
 import { sameColorGroup } from "@/lib/constants/colors";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import { AnalysisOverlay } from "@/components/AnalysisOverlay";
+import { useTutorialDemo } from "@/lib/client/tutorialState";
+import { sampleWardrobeReport, SAMPLE_IMAGES } from "@/lib/client/tutorialSamples";
+import {
+  fetchJobs, startJob, waitForJob, ackJobs, jobFailureMessage, WARDROBE_STAGES, type JobsStatus,
+} from "@/lib/client/analysisJobs";
 
 const FONT = { fontFamily: "Arial, sans-serif" };
 const LOADING_IMG = "/loading-tee.png";
@@ -28,7 +36,7 @@ function scoreColor(s: number) {
 function impactColor(i: string) {
   return i === "high" ? "#c83030" : i === "medium" ? "#c88800" : "#999";
 }
-// Progress 1â€"99 → color spectrum red → orange → yellow → yellow-green
+// Progress 1—99 → color spectrum red → orange → yellow → yellow-green
 function gapProgressColor(progress: number): string {
   if (progress >= 75) return "#88aa00";
   if (progress >= 50) return "#b8a000";
@@ -84,7 +92,7 @@ type Phase = "loading" | "counting" | "lifting" | "settled";
 type PieceImg = { id: string; image: string | null; sub_type: string | null };
 type Ball = { x: number; y: number; vx: number; vy: number };
 
-// â"€â"€ Cache helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Cache helpers ──────────────────────────────────────────────────────────────
 interface WACache {
   pieceCount: number;
   backendState: WABackendState;
@@ -98,11 +106,11 @@ function saveWACache(c: WACache): void {
 }
 
 // A con is "resolved" at a given level iff a crossing entry exists for it AND either:
-//  - that entry is tied to a real item (garmentId set) â€" its lifecycle is already kept
+//  - that entry is tied to a real item (garmentId set) — its lifecycle is already kept
 //    accurate by the delete cascade, which strips entries by garmentId when an item is
 //    removed, so existence alone is trustworthy; or
 //  - it's one of the garmentId-less entries created by initial auto-crossing at
-//    analysis-generation time (see the Level 1 auto-cross block below) â€" these can never
+//    analysis-generation time (see the Level 1 auto-cross block below) — these can never
 //    be removed by the delete cascade, so we must live-check the linked gap instead.
 // Single source of truth used everywhere a con's resolution status matters, so the display
 // (crossed indices, ghost cons), the score, and the level-advancement check can never disagree.
@@ -119,7 +127,7 @@ function isConResolved(
   return linkedGap ? gapTotalProgress(crossed, linkedGap, level) >= 100 : true;
 }
 
-// â"€â"€ Sub-components â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
 function SectionLabel({ label }: { label: string }) {
   return (
@@ -143,7 +151,7 @@ function ShowMoreBtn({ showing, total, limit, onToggle }: { showing: boolean; to
     </button>
   );
 }
-// â"€â"€ Scroll column wrapper (same pattern as preview comparison panels) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Scroll column wrapper (same pattern as preview comparison panels) ──────────
 
 function ScrollCol({ atTop, atBot, scrollRef, onScroll, children, mobile }: {
   atTop: boolean;
@@ -216,9 +224,10 @@ function ScrollCol({ atTop, atBot, scrollRef, onScroll, children, mobile }: {
   );
 }
 
-// â"€â"€ Main page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function WardrobeAnalysisPage() {
+  const { hasAI, ready: entitlementsReady, refresh: refreshEntitlements } = useEntitlements();
   const router = useRouter();
   const isMobile = useIsMobile();
   const [phase, setPhase]               = useState<Phase>("loading");
@@ -254,19 +263,48 @@ export default function WardrobeAnalysisPage() {
   const imgRefs        = useRef<(HTMLImageElement | null)[]>([]);
   const balls          = useRef<Ball[]>([]);
   const rafId          = useRef(0);
-  const fetchedRef     = useRef(false);
+  // Which load already ran (plan + report access + reload count) — a purchase or plan change
+  // re-runs it; anything else never loads twice.
+  const fetchedRef     = useRef<string | null>(null);
+  // Free tier: purchased Full Wardrobe Analyses and the report's status (same as the app).
+  const [wj, setWj]                 = useState<JobsStatus | null>(null);
+  const [analyzing, setAnalyzing]   = useState(false);
+  const [awaitingReveal, setAwaitingReveal] = useState(false);
+  const [jobMsg, setJobMsg]         = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const demo = useTutorialDemo();
+  const sampleReport = useMemo(() => sampleWardrobeReport() as WardrobeAnalysis, []);
+  const unmounted = useRef(false);
+  useEffect(() => () => { unmounted.current = true; }, []);
+  const canView = hasAI || wj?.wardrobe.report === "purchased";
   const animStarted    = useRef(false);
   const physicsStarted = useRef(false);
 
-  // Fetch analysis â€" backend state is authoritative; localStorage v7 is a session-level perf cache.
+  // Fetch analysis — backend state is authoritative; localStorage v7 is a session-level perf cache.
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (!entitlementsReady) return;
+    // Free tier: wait for the purchase status before deciding what this page shows.
+    if (!hasAI && !wj) return;
+    const key = `${hasAI}|${canView}|${reloadNonce}`;
+    if (fetchedRef.current === key) return;
+    fetchedRef.current = key;
+    // Only Pro may ask the server for a NEW level; a free user viewing a report they bought sees
+    // it as it stands (the next level comes from another purchase).
+    const allowFresh = hasAI;
+    // Free tier without a purchased report: the prompt / locked view below — nothing to load.
+    if (!canView) {
+      setAnalysis(null);
+      setPhase("settled");
+      return;
+    }
+    setPhase("loading");
 
     (async () => {
       type GarmentAttr = { id: string; sub_type: string | null; category: string | null; color_primary: string | null; aesthetic_tags: string[] | null };
       const sData: { pieceCount?: number; pieces?: PieceImg[]; wardrobeScore?: number; garmentAttrs?: GarmentAttr[] } | null =
-        await fetch("/api/scoring").then(r => r.ok ? r.json() : null).catch(() => null);
+        // skipOutfits=1: this page only reads pieces/pieceCount/garmentAttrs, never topOutfits —
+        // the expensive outfit search behind it was pure wasted work here (the app already skips it).
+        await fetch("/api/scoring?skipOutfits=1").then(r => r.ok ? r.json() : null).catch(() => null);
 
       const currentCount = sData?.pieceCount ?? (sData?.pieces?.length ?? 0);
       if (sData?.pieces) setPieces(sData.pieces.filter(p => p.image));
@@ -417,7 +455,7 @@ export default function WardrobeAnalysisPage() {
       }
 
       // Fast path: v7 localStorage matches current piece count
-      // Skip cache if everything is resolved â€" must hit backend to trigger level advancement
+      // Skip cache if everything is resolved — must hit backend to trigger level advancement
       const cache = readWACache();
       if (cache && cache.pieceCount === currentCount && currentCount > 0) {
         const bs       = cache.backendState;
@@ -433,7 +471,7 @@ export default function WardrobeAnalysisPage() {
             (displayA.cons.length === 0 || displayA.cons.every((_, i) => isConResolved(bs.crossed, displayA.conGapLinks, i, effLevel))) &&
             (displayA.colors.missing.length === 0 || displayA.colors.missing.every(c => atL.some((e: CrossedEntry) => e.category === "color" && e.key === c))) &&
             (displayA.aesthetics.missing.length === 0 || displayA.aesthetics.missing.every(ae => atL.some((e: CrossedEntry) => e.category === "aesthetic" && e.key === ae)));
-          if (!allResolved) { applyState(bs, effLevel, displayA); return; }
+          if (!allResolved || !allowFresh) { applyState(bs, effLevel, displayA); return; }
           // Everything resolved — fall through to backend to trigger next level
         }
       }
@@ -459,7 +497,7 @@ export default function WardrobeAnalysisPage() {
           return;
         }
 
-        // Merge backend crosses with cache crosses â€" backend may be missing entries
+        // Merge backend crosses with cache crosses — backend may be missing entries
         // saved locally before a state row existed, or during cache-key transitions.
         const crossKey = (e: CrossedEntry) => `${e.category}|${e.key}|${e.garmentId ?? ""}|${e.analysisLevel}`;
         const backendKeys = new Set(state.crossed.map(crossKey));
@@ -474,8 +512,8 @@ export default function WardrobeAnalysisPage() {
           (displayA.colors.missing.length === 0 || displayA.colors.missing.every(c => _atL.some((e: CrossedEntry) => e.category === "color" && e.key === c))) &&
           (displayA.aesthetics.missing.length === 0 || displayA.aesthetics.missing.every(ae => _atL.some((e: CrossedEntry) => e.category === "aesthetic" && e.key === ae)));
 
-        if (allCrossed) {
-          // All current-level items crossed â€" fetch fresh analysis for the next level.
+        if (allCrossed && allowFresh) {
+          // All current-level items crossed — fetch fresh analysis for the next level.
           // Pass prior history so GPT finds NEW gaps/aesthetics/colors/weaknesses, not repeats.
           let freshA;
           try { freshA = await fetchFreshAnalysis(state.analysisHistory, mergedCrossed); }
@@ -518,7 +556,7 @@ export default function WardrobeAnalysisPage() {
           saveWACache({ pieceCount: currentCount, backendState: mergedState });
         }
       } else if ((fetchFailed || !state) && cache?.backendState?.analysisHistory?.length) {
-        // Backend unavailable or no state, but localStorage has valid state â€" use cache.
+        // Backend unavailable or no state, but localStorage has valid state — use cache.
         // Also run level-advancement check here so a backend outage doesn't block progression.
         if (fetchFailed) console.warn("[WA] backend state fetch failed (500?) - using cache for level check");
         const bs = cache.backendState;
@@ -532,7 +570,7 @@ export default function WardrobeAnalysisPage() {
             (displayA.cons.length === 0 || displayA.cons.every((_, i) => isConResolved(bs.crossed, displayA.conGapLinks, i, effLevel))) &&
             (displayA.colors.missing.length === 0 || displayA.colors.missing.every(c => atL.some((e: CrossedEntry) => e.category === "color" && e.key === c))) &&
             (displayA.aesthetics.missing.length === 0 || displayA.aesthetics.missing.every(ae => atL.some((e: CrossedEntry) => e.category === "aesthetic" && e.key === ae)));
-          if (allResolved) {
+          if (allResolved && allowFresh) {
             let freshA;
             try { freshA = await fetchFreshAnalysis(bs.analysisHistory, bs.crossed); }
             catch (e) { console.error("[WA] fetchFreshAnalysis failed:", e); applyState(bs, effLevel, displayA); return; }
@@ -568,8 +606,12 @@ export default function WardrobeAnalysisPage() {
             saveWACache({ pieceCount: currentCount, backendState: bs });
           }
         }
+      } else if (!allowFresh) {
+        // Free tier and the report couldn't be read: show the purchase prompt instead.
+        setAnalysis(null);
+        setPhase("settled");
       } else {
-        // No valid state â€" rebuild crossing state from current wardrobe.
+        // No valid state — rebuild crossing state from current wardrobe.
         // Always advance to Level 2: this path only runs as recovery (the user had history
         // that got lost), so gap-crossing gates are skipped. Gaps remain open for the user
         // to fill manually; only colors, aesthetics, and cons are auto-crossed.
@@ -641,7 +683,95 @@ export default function WardrobeAnalysisPage() {
       setError(typeof err === "string" ? err : "Failed to load");
       setPhase("settled");
     });
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entitlementsReady, hasAI, canView, reloadNonce, wj]);
+
+  // A purchased analysis finished: drop the local copy, reload the report from the server, and
+  // keep the loading screen up until it's on the page (then it all appears at once).
+  function revealReport() {
+    try { localStorage.removeItem("wa_cache_v20"); } catch {}
+    animStarted.current = false;
+    setAwaitingReveal(true);
+    setReloadNonce(n => n + 1);
+  }
+  useEffect(() => {
+    if (awaitingReveal && phase !== "loading" && (analysis || error)) {
+      setAwaitingReveal(false);
+      setAnalyzing(false);
+    }
+  }, [awaitingReveal, phase, analysis, error]);
+
+  const followingRef = useRef<string | null>(null);
+  async function followJob(jobId: string) {
+    // One watcher per job — revisiting the tab while it runs must not start a second one.
+    if (followingRef.current === jobId) return;
+    followingRef.current = jobId;
+    setAnalyzing(true);
+    const job = await waitForJob(jobId, () => unmounted.current);
+    if (unmounted.current) return;
+    ackJobs([jobId]);
+    followingRef.current = null;
+    refreshEntitlements();
+    const s = await fetchJobs().catch(() => null);
+    if (s && !unmounted.current) setWj(s);
+    if (job.status === "done") { revealReport(); return; }
+    if (job.status === "failed") setJobMsg(jobFailureMessage(job));
+    setAnalyzing(false);
+  }
+
+  // Free tier: purchase status, plus an analysis that was running (or finished/failed) while the
+  // page was closed.
+  useEffect(() => {
+    if (!entitlementsReady || hasAI) return;
+    let cancelled = false;
+    fetchJobs().then(s => {
+      if (cancelled) return;
+      setWj(s);
+      const mine = s.jobs.filter(j => j.kind === "wardrobe");
+      const running = mine.find(j => j.status === "running");
+      if (running) followJob(running.id);
+      const finished = mine.filter(j => j.status !== "running");
+      if (finished.some(j => j.status === "done")) { try { localStorage.removeItem("wa_cache_v20"); } catch {} }
+      const failed = finished.find(j => j.status === "failed");
+      if (failed) setJobMsg(jobFailureMessage(failed));
+      ackJobs(finished.map(j => j.id));
+    }).catch(() => setWj({ jobs: [], credits: { item: 0, wardrobe: 0, itemBalance: 0, wardrobeBalance: 0 }, wardrobe: { enoughPieces: false, report: "none", canAdvance: false } }));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entitlementsReady, hasAI]);
+
+  async function performAnalysis() {
+    if (analyzing) return;
+    setJobMsg(null);
+    setAnalyzing(true);
+    try {
+      const job = await startJob("wardrobe");
+      await followJob(job.id);
+    } catch (e) {
+      setAnalyzing(false);
+      setJobMsg(e instanceof Error ? e.message : "Couldn't start the analysis. Nothing was used — please try again.");
+      fetchJobs().then(setWj).catch(() => {});
+    }
+  }
+  const credits = wj?.credits.wardrobe ?? 0;
+  const promptText = `You have ${credits} wardrobe ${credits === 1 ? "analysis" : "analyses"} available. Perform analysis?`;
+  const overlay = <AnalysisOverlay visible={analyzing} stages={WARDROBE_STAGES} />;
+
+  // Tutorial: the bouncing box shows the sample pieces; the account's own come back afterwards.
+  const savedPiecesRef = useRef<PieceImg[] | null>(null);
+  useEffect(() => {
+    if (demo === (savedPiecesRef.current !== null)) return;
+    cancelAnimationFrame(rafId.current);
+    physicsStarted.current = false;
+    if (demo) {
+      savedPiecesRef.current = pieces;
+      setPieces(Object.entries(SAMPLE_IMAGES).map(([k, image]) => ({ id: `sample-${k}`, image, sub_type: null })));
+    } else {
+      setPieces(savedPiecesRef.current ?? []);
+      savedPiecesRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo]);
 
   // Count-up animation (once)
   useEffect(() => {
@@ -669,7 +799,7 @@ export default function WardrobeAnalysisPage() {
     requestAnimationFrame(animate);
   }, [analysis]);
 
-  // Physics â€" starts as soon as the rect is rendered (during "counting", behind the blanket).
+  // Physics — starts as soon as the rect is rendered (during "counting", behind the blanket).
   // Pieces are already moving when the blanket fades out.
   useEffect(() => {
     if (phase === "loading" || physicsStarted.current || pieces.length === 0) return;
@@ -760,23 +890,40 @@ export default function WardrobeAnalysisPage() {
     });
   }, [phase]);
 
-  // â"€â"€ Loading screen â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // ── Loading screen ─────────────────────────────────────────────────────────────
 
-  if (phase === "loading") {
+  // Every return is wrapped in ReadyGate (components/ReadyGate.tsx): three dots until the page
+  // (piece images included) is fully drawn, then everything at once.
+  if (!demo && (phase === "loading" || (!hasAI && !wj && entitlementsReady))) return <>{overlay}<ReadyGate ready={false} /></>;
+
+  // ── Free tier without a purchased report: the purchase prompt, or the lock ─────
+
+  if (!demo && !hasAI && !canView) {
+    const enough = !!wj?.wardrobe.enoughPieces;
     return (
-      <main style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
-        <style>{KEYFRAMES}</style>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 160 }}>
-          <img src={LOADING_IMG} alt="" draggable={false} style={{ width: 270, height: 340, objectFit: "contain", opacity: 0.88 }} />
-          <div style={{ width: 190, height: 5, background: "#e8e8e8", overflow: "hidden", marginTop: -88 }}>
-            <div style={{ height: "100%", background: "#111", animation: "loadbar 8s ease-out forwards" }} />
-          </div>
-        </div>
+      <ReadyGate ready>
+      {overlay}
+      <main className="center-lift" style={{ minHeight: "100dvh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", textAlign: "center" }}>
+        <p style={{ ...FONT, fontSize: 12, fontWeight: 700, letterSpacing: ".16em", textTransform: "uppercase", margin: 0 }}>Wardrobe</p>
+        <p style={{ ...FONT, fontSize: 13, color: "#555", maxWidth: 420, lineHeight: 1.6, margin: "10px 0 18px" }}>
+          {credits > 0 && enough
+            ? promptText
+            : credits > 0
+            ? `You have ${credits} wardrobe ${credits === 1 ? "analysis" : "analyses"} available. Add a few more pieces first: a wardrobe analysis needs at least 5 items that make a complete outfit (a top, bottoms and shoes).`
+            : "Wardrobe analysis, gap tracking, and leveling all require AI. Upgrade, or buy a Full Wardrobe Analysis, in the MyCloset app."}
+        </p>
+        {credits > 0 && enough && (
+          <button onClick={performAnalysis} disabled={analyzing} style={{ ...FONT, border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, letterSpacing: ".14em" }}>
+            YES
+          </button>
+        )}
+        {jobMsg && <p style={{ ...FONT, fontSize: 11, color: "#c83030", marginTop: 14, maxWidth: 420 }}>{jobMsg}</p>}
       </main>
+      </ReadyGate>
     );
   }
 
-  // â"€â"€ Setup required screen â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // ── Setup required screen ─────────────────────────────────────────────────────
 
   if (tableMissing) {
     const sql = `CREATE TABLE IF NOT EXISTS wardrobe_analysis_state (
@@ -791,7 +938,8 @@ CREATE POLICY "Service role manages wardrobe analysis state"
   ON wardrobe_analysis_state FOR ALL
   USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');`;
     return (
-      <main style={{ minHeight: "100vh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
+      <ReadyGate ready>
+      <main className="center-lift" style={{ minHeight: "100dvh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
         <p style={{ ...FONT, fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", color: "#c83030", marginBottom: 16 }}>
           Setup Required
         </p>
@@ -805,14 +953,16 @@ CREATE POLICY "Service role manages wardrobe analysis state"
           {"< BACK"}
         </button>
       </main>
+      </ReadyGate>
     );
   }
 
-  // â"€â"€ Error screen â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // ── Error screen ───────────────────────────────────────────────────────────────
 
-  if (error || !analysis) {
+  if (!demo && (error || !analysis)) {
     return (
-      <main style={{ minHeight: "100vh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <ReadyGate ready>
+      <main className="center-lift" style={{ minHeight: "100dvh", background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
         <p style={{ ...FONT, fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", color: "#c83030" }}>
           {error ?? "No wardrobe found"}
         </p>
@@ -820,10 +970,20 @@ CREATE POLICY "Service role manages wardrobe analysis state"
           {"< BACK"}
         </button>
       </main>
+      </ReadyGate>
     );
   }
 
-  const a           = analysis;
+  // First-run tutorial: the sample report (lib/client/tutorialSamples.ts), nothing crossed off yet
+  // — display only.
+  const v_crossedGaps = demo ? [] : crossedGaps;
+  const v_crossedColors = demo ? [] : crossedColors;
+  const v_crossedAesthetics = demo ? [] : crossedAesthetics;
+  const v_crossedConIndices = demo ? [] : crossedConIndices;
+  const v_ghostCons = demo ? [] : ghostCons;
+  const v_gapProgress: Record<string, number> = demo ? {} : gapProgress;
+  const v_displayScore = demo ? sampleReport.score : displayScore;
+  const a           = demo ? sampleReport : analysis!;
   const isAnimating = phase === "counting" || phase === "lifting";
 
   const scoreTransform = phase === "counting"
@@ -835,26 +995,26 @@ CREATE POLICY "Service role manages wardrobe analysis state"
   const covAes     = showAllAes       ? a.aesthetics.covered : a.aesthetics.covered.slice(0, AES_LIMIT);
   const missAes    = showAllMissAes   ? a.aesthetics.missing : a.aesthetics.missing.slice(0, AES_LIMIT);
 
-  const crossedGapSet = new Set(crossedGaps);
-  const crossedColorSet = new Set(crossedColors);
-  const crossedAesSet   = new Set(crossedAesthetics);
+  const crossedGapSet = new Set(v_crossedGaps);
+  const crossedColorSet = new Set(v_crossedColors);
+  const crossedAesSet   = new Set(v_crossedAesthetics);
 
   const allGapsCrossed   = a.gaps.length === 0 || a.gaps.every(g => crossedGapSet.has(g.description));
   const allColorsCrossed = a.colors.missing.length === 0 || a.colors.missing.every(c => crossedColorSet.has(c));
   const allAesCrossed    = a.aesthetics.missing.length === 0 || a.aesthetics.missing.every(ae => crossedAesSet.has(ae));
-  // crossedConIndices is already computed via the authoritative isConResolved check
+  // v_crossedConIndices is already computed via the authoritative isConResolved check
   // (applyState above) — no need to re-derive resolution here.
-  const allConsCrossed   = a.cons.length === 0 || a.cons.every((_, i) => crossedConIndices.includes(i));
+  const allConsCrossed   = a.cons.length === 0 || a.cons.every((_, i) => v_crossedConIndices.includes(i));
 
-  function gapsLabel()       { return allGapsCrossed       ? "Gaps: Complete"               : `Gaps: Level ${gapsLevel}`; }
-  function colorsLabel()     { return allColorsCrossed     ? "Missing Colors: Complete"     : `Missing Colors: Level ${colorsLevel}`; }
-  function aesLabel()        { return allAesCrossed        ? "Missing Aesthetics: Complete" : `Missing Aesthetics: Level ${aestheticsLevel}`; }
-  function weaknessesLabel() { return allConsCrossed       ? "Weaknesses: Complete"         : `Weaknesses: Level ${weaknessesLevel}`; }
+  function gapsLabel()       { return allGapsCrossed       ? "Gaps: Complete"               : `Gaps: Level ${(demo ? 1 : gapsLevel)}`; }
+  function colorsLabel()     { return allColorsCrossed     ? "Missing Colors: Complete"     : `Missing Colors: Level ${(demo ? 1 : colorsLevel)}`; }
+  function aesLabel()        { return allAesCrossed        ? "Missing Aesthetics: Complete" : `Missing Aesthetics: Level ${(demo ? 1 : aestheticsLevel)}`; }
+  function weaknessesLabel() { return allConsCrossed       ? "Weaknesses: Complete"         : `Weaknesses: Level ${(demo ? 1 : weaknessesLevel)}`; }
 
   // Gaps: split into active vs crossed-in-analysis vs crossed-ghosts (filled, no longer in analysis)
   const crossedInAnalysis = a.gaps.filter(g => crossedGapSet.has(g.description));
   const activeGaps        = a.gaps.filter(g => !crossedGapSet.has(g.description));
-  const crossedGhosts     = crossedGaps.filter(d => !a.gaps.find(g => g.description === d));
+  const crossedGhosts     = v_crossedGaps.filter(d => !a.gaps.find(g => g.description === d));
 
   function makeScrollHandler(idx: number) {
     return (e: React.UIEvent<HTMLDivElement>) => {
@@ -866,13 +1026,29 @@ CREATE POLICY "Service role manages wardrobe analysis state"
     };
   }
 
-  // â"€â"€ Main render â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // ── Main render ────────────────────────────────────────────────────────────────
 
   return (
-    <main style={{ height: "100vh", overflow: "hidden", background: "#fff" }}>
+    <ReadyGate ready images={pieces.map(p => p.image)}>
+    <main style={{ height: "100dvh", overflow: "hidden", background: "#fff" }}>
       <style>{KEYFRAMES}</style>
+      {overlay}
 
-      {/* White blanket â€" covers everything while counting/lifting */}
+      {/* A purchased report whose current level is finished can be taken further with another
+          purchase (same prompt as the app). */}
+      {!demo && !hasAI && (jobMsg || (wj?.wardrobe.canAdvance && credits > 0)) && (
+        <div style={{ position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)", zIndex: 30, textAlign: "center", background: "#fff", padding: "6px 14px", maxWidth: "90vw" }}>
+          {wj?.wardrobe.canAdvance && credits > 0 && (
+            <>
+              <p style={{ ...FONT, fontSize: 12, color: "#555", margin: 0 }}>{promptText}</p>
+              <button onClick={performAnalysis} disabled={analyzing} style={{ ...FONT, border: "none", background: "none", cursor: "pointer", fontSize: 11, fontWeight: 700, letterSpacing: ".14em", marginTop: 4 }}>YES</button>
+            </>
+          )}
+          {jobMsg && <p style={{ ...FONT, fontSize: 11, color: "#c83030", margin: "4px 0 0" }}>{jobMsg}</p>}
+        </div>
+      )}
+
+      {/* White blanket — covers everything while counting/lifting */}
       {isAnimating && (
         <div style={{
           position: "fixed", inset: 0, background: "#fff", zIndex: 10, pointerEvents: "none",
@@ -881,17 +1057,17 @@ CREATE POLICY "Service role manages wardrobe analysis state"
         }} />
       )}
 
-      {/* Score â€" positioned above the bouncing box */}
+      {/* Score — positioned above the bouncing box */}
       <div style={{
         position: "fixed", top: "30vh", left: "50%",
         transform: scoreTransform,
         transition: "transform 0.72s cubic-bezier(0.4, 0, 0.2, 1)",
         zIndex: 20, pointerEvents: "none",
-        color: scoreColor(displayScore),
+        color: scoreColor(v_displayScore),
         fontSize: 48, fontWeight: 700, lineHeight: 1, textAlign: "center",
         ...FONT,
       }}>
-        {displayScore}
+        {v_displayScore}
       </div>
 
 
@@ -946,19 +1122,19 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                   </div>
                 )}
                 {/* Newly-covered colors (were missing, now filled by a new piece) */}
-                {crossedColors.length > 0 && (
+                {v_crossedColors.length > 0 && (
                   <div style={{ marginTop: 8, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "6px 14px" }}>
-                    {crossedColors.map(c => (
+                    {v_crossedColors.map(c => (
                       <p key={c} style={{ ...FONT, fontSize: 15, color: "#ccc", margin: 0, textAlign: "center", textDecoration: "line-through" }}>{c}</p>
                     ))}
                   </div>
                 )}
               </div>
             )}
-            {(a.aesthetics.covered.length > 0 || crossedAesthetics.length > 0) && (
+            {(a.aesthetics.covered.length > 0 || v_crossedAesthetics.length > 0) && (
               <div style={{ marginBottom: 28 }}>
                 <SectionLabel label="Covered Aesthetics" />
-                {a.aesthetics.covered.length <= 2 && crossedAesthetics.length === 0 ? (
+                {a.aesthetics.covered.length <= 2 && v_crossedAesthetics.length === 0 ? (
                   <div style={{ display: "flex", justifyContent: "center", gap: "0 18px" }}>
                     {covAes.map(({ name, count }) => (
                       <p key={name} style={{ ...FONT, fontSize: 15, color: "#222", margin: 0, textAlign: "center", lineHeight: 1.4 }}>
@@ -975,7 +1151,7 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                         <span style={{ display: "block", fontSize: 10, color: "#bbb" }}>{count}pc</span>
                       </p>
                     ))}
-                    {crossedAesthetics.map(a => (
+                    {v_crossedAesthetics.map(a => (
                       <p key={a} style={{ ...FONT, fontSize: 15, color: "#ccc", margin: 0, textAlign: "center", lineHeight: 1.4, textDecoration: "line-through" }}>{a}</p>
                     ))}
                   </div>
@@ -1008,6 +1184,8 @@ CREATE POLICY "Service role manages wardrobe analysis state"
           }}>
             <div
               ref={rectRef}
+              data-tutorial="wardrobe.box"
+              data-tut-moving
               style={{
                 width: "100%",
                 height: isMobile ? "clamp(240px, 42vh, 380px)" : "clamp(340px, 52vh, 500px)",
@@ -1047,7 +1225,7 @@ CREATE POLICY "Service role manages wardrobe analysis state"
               color: "#999",
               ...FONT,
             }}>
-              LEVEL {gapsLevel}
+              LEVEL {(demo ? 1 : gapsLevel)}
             </div>
 
           </div>
@@ -1064,8 +1242,8 @@ CREATE POLICY "Service role manages wardrobe analysis state"
               <div style={{ marginBottom: 28 }}>
                 <SectionLabel label={weaknessesLabel()} />
                 {a.cons.map((text, i) => {
-                  const isDuplicate = ghostCons.some(g => g.trim().toLowerCase() === text.trim().toLowerCase());
-                  const isCrossed = isDuplicate || crossedConIndices.includes(i);
+                  const isDuplicate = v_ghostCons.some(g => g.trim().toLowerCase() === text.trim().toLowerCase());
+                  const isCrossed = isDuplicate || v_crossedConIndices.includes(i);
                   if (isCrossed) return null;
                   return <ItemText key={i} text={text} color="#c00" />;
                 })}
@@ -1073,10 +1251,10 @@ CREATE POLICY "Service role manages wardrobe analysis state"
             )}
             <div style={{ marginBottom: 28 }}>
                 <SectionLabel label={colorsLabel()} />
-                {a.colors.missing.length === 0 && crossedColors.length === 0 ? (
+                {a.colors.missing.length === 0 && v_crossedColors.length === 0 ? (
                   <p style={{ ...FONT, fontSize: 15, color: "#bbb", margin: 0, textAlign: "center" }}>None</p>
                 ) : (() => {
-                  const extraCrossed = crossedColors.filter(c => !a.colors.missing.includes(c));
+                  const extraCrossed = v_crossedColors.filter(c => !a.colors.missing.includes(c));
                   // A fixed 3-column grid mis-centers when only 1-2 cells are actually
                   // filled (justifyContent centers the whole 3-track structure, not the
                   // content within it) - fall back to a centered flex row in that case,
@@ -1108,10 +1286,10 @@ CREATE POLICY "Service role manages wardrobe analysis state"
               </div>
             <div style={{ marginBottom: 28 }}>
                 <SectionLabel label={aesLabel()} />
-                {a.aesthetics.missing.length === 0 && crossedAesthetics.length === 0 ? (
+                {a.aesthetics.missing.length === 0 && v_crossedAesthetics.length === 0 ? (
                   <p style={{ ...FONT, fontSize: 15, color: "#bbb", margin: 0, textAlign: "center" }}>None</p>
                 ) : (() => {
-                  const extraCrossed = crossedAesthetics.filter(ae => !a.aesthetics.missing.includes(ae));
+                  const extraCrossed = v_crossedAesthetics.filter(ae => !a.aesthetics.missing.includes(ae));
                   // Same fixed-3-column-grid mis-centering fix as missing colors above.
                   const total = missAes.length + extraCrossed.length;
                   const items = [
@@ -1144,9 +1322,9 @@ CREATE POLICY "Service role manages wardrobe analysis state"
                   <p style={{ ...FONT, fontSize: 15, color: "#bbb", margin: 0, textAlign: "center" }}>None</p>
                 ) : (
                   <>
-                    {/* Active gaps â€" not yet fully resolved */}
+                    {/* Active gaps — not yet fully resolved */}
                     {activeGaps.map((gap, i) => {
-                      const prog = gapProgress[gap.description] ?? 0;
+                      const prog = v_gapProgress[gap.description] ?? 0;
                       const isInProgress = prog > 0 && prog < 100;
                       const descColor = isInProgress ? gapProgressColor(prog) : impactColor(gap.impact);
                       return (
@@ -1209,5 +1387,6 @@ CREATE POLICY "Service role manages wardrobe analysis state"
         </div>
       </div>
     </main>
+    </ReadyGate>
   );
 }

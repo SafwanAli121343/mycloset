@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { checkAdminPin } from "@/lib/auth/adminPin";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,12 +9,17 @@ const sb = createClient(
 );
 
 function auth(req: NextRequest) {
-  return checkAdminPin(req.headers.get("x-admin-pin"));
+  // Rate-limit before PIN check — 10 attempts per 15 min per IP to prevent brute force
+  const rateBlock = applyApiRateLimit(req, "admin:tag", 10, 15 * 60 * 1000);
+  if (rateBlock) return rateBlock;
+  return checkAdminPin(req.headers.get("x-admin-pin")) ? null : "unauthorized";
 }
 
 // GET /api/admin/tag?brand=Nike&offset=0
 export async function GET(req: NextRequest) {
-  if (!auth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authResult = auth(req);
+  if (authResult instanceof Response) return authResult;
+  if (authResult === "unauthorized") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const brand  = searchParams.get("brand") || "";
@@ -60,7 +66,9 @@ export async function GET(req: NextRequest) {
 
 // PATCH /api/admin/tag  — save tags for one item
 export async function PATCH(req: NextRequest) {
-  if (!auth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authResult = auth(req);
+  if (authResult instanceof Response) return authResult;
+  if (authResult === "unauthorized") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
   const { id, features, colors, pattern_detail, ...fields } = body;

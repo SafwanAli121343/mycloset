@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 
 const adminClient = createClient(
@@ -9,7 +10,9 @@ const adminClient = createClient(
 
 // DELETE /api/outfits/reset — wipes every outfit for the authenticated user.
 // Used during the initial 3-month setup flow so the page starts fresh.
-export async function DELETE() {
+export async function DELETE(req: Request) {
+  const rateBlock = applyApiRateLimit(req, "outfits:reset", 10, 3600000);
+  if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

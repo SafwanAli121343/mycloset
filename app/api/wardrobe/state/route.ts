@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 import { computeEffectiveLevel } from "@/lib/wardrobeAnalysis";
+import { getUserById } from "@/lib/db/users";
+import { resolveEntitlement } from "@/lib/billing/entitlements";
 import type { WABackendState, CrossedEntry } from "@/lib/wardrobeAnalysis";
 
 const sb = createClient(
@@ -23,21 +26,30 @@ async function tableExists(): Promise<boolean> {
   return true; // other errors: assume table exists, let the caller handle
 }
 
-async function loadState(userId: string): Promise<{ state: WABackendState | null; missing: boolean }> {
+// The report is AI output: visible to Pro, or on the free tier only when it was paid for with a
+// Full Wardrobe Analysis (wardrobe_analysis_state.purchased). A report made while subscribed is
+// kept (not deleted) after a lapse, just not served, and comes straight back on resubscribing.
+async function canSeeReport(userId: string, purchased: boolean): Promise<boolean> {
+  if (purchased) return true;
+  const user = await getUserById(userId).catch(() => null);
+  return !!user && resolveEntitlement(user).hasAI;
+}
+
+async function loadState(userId: string): Promise<{ state: WABackendState | null; missing: boolean; purchased: boolean }> {
   const { data, error } = await sb
     .from("wardrobe_analysis_state")
-    .select("analysis_history, crossed, current_level")
+    .select("analysis_history, crossed, current_level, purchased")
     .eq("user_id", userId)
     .single();
 
   if (error) {
-    if (TABLE_MISSING_CODES.has(error.code ?? "")) return { state: null, missing: true };
+    if (TABLE_MISSING_CODES.has(error.code ?? "")) return { state: null, missing: true, purchased: false };
     // PGRST116 = no rows — table exists but user has no state yet (first visit)
     // Other errors (e.g. column not found after partial migration) also return null gracefully
-    if (error.code !== "PGRST116") return { state: null, missing: false };
-    return { state: null, missing: false };
+    if (error.code !== "PGRST116") return { state: null, missing: false, purchased: false };
+    return { state: null, missing: false, purchased: false };
   }
-  if (!data) return { state: null, missing: false };
+  if (!data) return { state: null, missing: false, purchased: false };
   return {
     state: {
       analysisHistory: (data.analysis_history as WABackendState["analysisHistory"]) ?? [],
@@ -45,6 +57,7 @@ async function loadState(userId: string): Promise<{ state: WABackendState | null
       currentLevel:    (data.current_level as number) ?? 1,
     },
     missing: false,
+    purchased: !!(data as { purchased?: boolean }).purchased,
   };
 }
 
@@ -52,12 +65,16 @@ async function loadState(userId: string): Promise<{ state: WABackendState | null
 // Returns 503 { error: "table_missing" } when the SQL migration hasn't been run.
 // Returns 200 null when table exists but no state yet (first-time user).
 // Returns 200 WABackendState when state exists.
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const rateBlock = applyApiRateLimit(req, "wardrobe:state", 60, 60 * 1000);
+  if (rateBlock) return rateBlock;
+
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json(null, { status: 401 });
 
-  const { state, missing } = await loadState(session.userId);
+  const { state, missing, purchased } = await loadState(session.userId);
   if (missing) return NextResponse.json({ error: "table_missing" }, { status: 503 });
+  if (state && !(await canSeeReport(session.userId, purchased))) return NextResponse.json(null);
   return NextResponse.json(state);
 }
 
@@ -65,6 +82,9 @@ export async function GET() {
 export async function DELETE() {
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Pro only: on the free tier a report can't be regenerated, so wiping it would lose a purchase.
+  const user = await getUserById(session.userId).catch(() => null);
+  if (!user || !resolveEntitlement(user).hasAI) return NextResponse.json({ error: "Not allowed" }, { status: 403 });
   await sb.from("wardrobe_analysis_state").delete().eq("user_id", session.userId);
   return NextResponse.json({ success: true });
 }
@@ -83,6 +103,10 @@ export async function PUT(req: NextRequest) {
   if (!(await tableExists())) {
     return NextResponse.json({ error: "table_missing" }, { status: 503 });
   }
+
+  // Only someone who can see the report may write it (Pro, or a purchased report's owner).
+  const { purchased } = await loadState(session.userId);
+  if (!(await canSeeReport(session.userId, purchased))) return NextResponse.json({ error: "Not allowed" }, { status: 403 });
 
   const body = (await req.json()) as WABackendState;
 
@@ -112,6 +136,6 @@ export async function PUT(req: NextRequest) {
     },
     { onConflict: "user_id" }
   );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
   return NextResponse.json({ success: true });
 }

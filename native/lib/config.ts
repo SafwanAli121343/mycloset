@@ -10,4 +10,16 @@
 //     phone and Mac on the same Wi-Fi, and run the Next.js server with
 //     `npm run dev -- -H 0.0.0.0` so it accepts non-localhost connections.
 //   - Once the site is deployed: your real https:// production URL.
-export const API_BASE_URL = "http://10.0.0.31:3000"; // your Mac's current LAN IP — for a physical phone on the same Wi-Fi
+// __DEV__-gated so a store build can never silently ship pointing at your own Mac — a build
+// with EAS's "production" profile has __DEV__ false, so this falls through to the placeholder
+// below instead of localhost. Simulator/emulator/physical-device dev URL swapping (see the
+// comment above) still means editing the __DEV__ branch by hand, exactly as before.
+export const API_BASE_URL = __DEV__
+  ? "http://localhost:3000" // iOS Simulator shares the Mac's network stack directly — localhost just works
+  : "https://REPLACE_WITH_PRODUCTION_DOMAIN"; // TODO before any App Store/Play Store submission — fill in your real deployed https:// domain once the site is live.
+
+// Legal docs (Terms/Privacy/EULA/Cookies) render in-app via GET /api/legal/[doc] — see
+// components/LegalModal.tsx — not by opening the website. The website's own /terms, /privacy
+// etc. pages still need to be live at a real production domain regardless: App Store Connect
+// and Google Play Console both require a working, publicly reachable privacy policy URL in the
+// store listing metadata, separate from what the app itself shows.
