@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.mycloset.app",
+      "bundleIdentifier": "com.myclosetapp.mycloset",
       "infoPlist": {
         "NSCameraUsageDescription": "MYCLOSET uses your camera to photograph clothing items you add to your wardrobe.",
         "NSPhotoLibraryUsageDescription": "MYCLOSET lets you choose existing photos of clothing items to add to your wardrobe.",
@@ -21,7 +21,7 @@
       }
     },
     "android": {
-      "package": "com.mycloset.app",
+      "package": "com.myclosetapp.mycloset",
       "adaptiveIcon": {
         "backgroundColor": "#111111",
         "foregroundImage": "./assets/android-icon-foreground.png",

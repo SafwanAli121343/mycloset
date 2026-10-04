@@ -37,7 +37,7 @@ two flags. This is everything needed to turn paid features on.
 
 ## 2. RevenueCat (free up to $2.5k/month in revenue)
 
-1. Create a project, then add an App Store app with bundle id `com.mycloset.app`. Upload the .p8
+1. Create a project, then add an App Store app with bundle id `com.myclosetapp.mycloset`. Upload the .p8
    key and paste the shared secret.
 2. Import the three products.
 3. Under Integrations → Webhooks:
