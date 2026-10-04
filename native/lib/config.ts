@@ -16,7 +16,7 @@
 // comment above) still means editing the __DEV__ branch by hand, exactly as before.
 export const API_BASE_URL = __DEV__
   ? "http://localhost:3000" // iOS Simulator shares the Mac's network stack directly — localhost just works
-  : "https://REPLACE_WITH_PRODUCTION_DOMAIN"; // TODO before any App Store/Play Store submission — fill in your real deployed https:// domain once the site is live.
+  : "https://mycloset-production-a2c2.up.railway.app"; // Railway deployment — swap for the custom domain once it's set up.
 
 // Legal docs (Terms/Privacy/EULA/Cookies) render in-app via GET /api/legal/[doc] — see
 // components/LegalModal.tsx — not by opening the website. The website's own /terms, /privacy
