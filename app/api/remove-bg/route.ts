@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { removeBackground } from "@imgly/background-removal-node";
+import { removeBackgroundQueued } from "@/lib/bgRemoval";
 import sharp from "sharp";
 import { getSessionFromCookies } from "@/lib/auth/session";
 import { applyApiRateLimit } from "@/lib/security/rateLimit";
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       inputBlob = new Blob([buf], { type: ct.split(";")[0] });
     }
 
-    const blob   = await removeBackground(inputBlob, { model: "medium", output: { format: "image/png" as const } });
+    const blob   = await removeBackgroundQueued(inputBlob);
     const buffer = Buffer.from(await blob.arrayBuffer());
     return new Response(buffer, {
       headers: {

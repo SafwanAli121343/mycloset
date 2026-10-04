@@ -1,3 +1,4 @@
+import { secureImageUrl } from "@/lib/secureImageUrl";
 import { createClient } from "@supabase/supabase-js";
 
 // Service-role client: garment rows are per-user data behind app-level session checks in
@@ -76,7 +77,7 @@ export type NewGarment = Pick<
 
 
 export async function insertGarment(garment: NewGarment): Promise<Garment> {
-  const { data, error } = await supabase.from("garments").insert([garment]).select();
+  const { data, error } = await supabase.from("garments").insert([{ ...garment, image: secureImageUrl(garment.image) }]).select();
   if (error) throw new Error(error.message);
   return data[0];
 }

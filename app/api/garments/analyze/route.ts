@@ -1,3 +1,4 @@
+import { secureImageUrl } from "@/lib/secureImageUrl";
 import { aiChat } from "@/lib/aiGateway";
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
@@ -98,9 +99,9 @@ export async function POST(req: NextRequest) {
       }
 
       const result: Record<string, string | null | string[]> = {
-        image:           scraped.imageUrl ?? null,
+        image:           secureImageUrl(scraped.imageUrl ?? null),
         price:           scraped.price ?? null,
-        candidateImages: scraped.allImages,
+        candidateImages: scraped.allImages.map(secureImageUrl),
       };
 
       // Got text/metadata but no image — not enough to do a full analysis, AI or not

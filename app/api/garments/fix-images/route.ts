@@ -10,7 +10,7 @@ import { getSessionFromCookies } from "@/lib/auth/session";
 import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 import sharp from "sharp";
-import { removeBackground } from "@imgly/background-removal-node";
+import { removeBackgroundQueued } from "@/lib/bgRemoval";
 
 export const maxDuration = 60;
 
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
       let buffer: Buffer;
       try {
         const inputBlob = new Blob([new Uint8Array(pngBuf)], { type: "image/png" });
-        const cleanBlob = await removeBackground(inputBlob, { model: "medium", output: { format: "image/png" } });
+        const cleanBlob = await removeBackgroundQueued(inputBlob);
         const rawBuf = Buffer.from(await cleanBlob.arrayBuffer());
 
         // Snap intermediate alpha values

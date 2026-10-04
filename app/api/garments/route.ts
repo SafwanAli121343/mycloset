@@ -28,7 +28,7 @@ import { assertSafeUrl } from "@/lib/security/ssrfGuard";
 import { getSessionFromCookies } from "@/lib/auth/session";
 import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
-import { removeBackground } from "@imgly/background-removal-node";
+import { removeBackgroundQueued } from "@/lib/bgRemoval";
 import { getUserById } from "@/lib/db/users";
 import { consumeAiCredit, resolveEntitlement } from "@/lib/billing/entitlements";
 import type { InferenceResult } from "@/lib/aiInference";
@@ -677,7 +677,7 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
         // Use the already-fetched buffer (as a Blob) instead of the URL so the bg-removal
         // library doesn't make its own fetch — brand CDNs may block that second request.
         const inputBlob = new Blob([new Uint8Array(srcBuf)], { type: "image/jpeg" });
-        const cleanBlob = await removeBackground(inputBlob, { model: "medium", output: { format: "image/png" } });
+        const cleanBlob = await removeBackgroundQueued(inputBlob);
         const rawBuffer = Buffer.from(await cleanBlob.arrayBuffer());
         const { data: px, info } = await sharp(rawBuffer)
           .ensureAlpha()

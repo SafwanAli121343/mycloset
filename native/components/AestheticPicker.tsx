@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { setKeyboardRoomBelow } from "../lib/useKeyboardLift";
 import { View, TextInput, Text, TouchableOpacity, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, fontFamily } from "../theme/theme";
@@ -43,6 +44,8 @@ export function AestheticPicker({
     <View style={[styles.wrap, containerStyle]}>
       <View style={styles.fieldWrap}>
         <TextInput
+          // Keeps the suggestions (up to 3 options + arrows) visible above the keyboard too.
+          ref={r => setKeyboardRoomBelow(r, 140)}
           value={value}
           onChangeText={handleChangeText}
           onFocus={() => setOpen(true)}

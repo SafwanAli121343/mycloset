@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
-import { removeBackground } from "@imgly/background-removal-node";
+import { removeBackgroundQueued } from "@/lib/bgRemoval";
 import { getSessionFromCookies } from "@/lib/auth/session";
 import { applyApiRateLimit } from "@/lib/security/rateLimit";
 
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     // Convert to JPEG first so the bg-removal model works with any input format (AVIF, HEIC, etc.)
     const jpegBuf   = await sharp(srcBuf).jpeg({ quality: 90 }).toBuffer();
     const inputBlob = new Blob([new Uint8Array(jpegBuf)], { type: "image/jpeg" });
-    const cleanBlob = await removeBackground(inputBlob, { model: "medium", output: { format: "image/png" } });
+    const cleanBlob = await removeBackgroundQueued(inputBlob);
     const rawBuf = Buffer.from(await cleanBlob.arrayBuffer());
 
     // Snap intermediate alpha values: near-transparent → fully transparent, near-opaque → fully opaque
