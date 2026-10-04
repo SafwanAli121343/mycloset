@@ -1,3 +1,4 @@
+import { verificationStatus } from "@/lib/auth/verificationGate";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { createUser, getUserByEmail } from "@/lib/db/users";
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   // token + refreshToken consumed by the native app; the web client relies on httpOnly cookies.
   return NextResponse.json(
-    { id: user.id, email: user.email, token, refreshToken, emailVerified: false, verificationRequired: false },
+    { id: user.id, email: user.email, token, refreshToken, ...verificationStatus({ email_verified: false, created_at: new Date().toISOString() }) },
     { status: 201 }
   );
 }

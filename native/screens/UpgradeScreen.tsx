@@ -1,5 +1,5 @@
 import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { TextButton } from "../components/TextButton";
@@ -7,28 +7,44 @@ import { LegalModal, type LegalDocId } from "../components/LegalModal";
 import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
 import { useEntitlements } from "../lib/billing/Entitlements";
 import { useAuth } from "../lib/AuthContext";
-import { purchaseProduct, restorePurchases, PurchasesNotConfiguredError } from "../lib/billing/purchases";
+import { purchaseProduct, restorePurchases, getLocalizedPrices, PurchasesNotConfiguredError, PurchaseCancelledError } from "../lib/billing/purchases";
 import { SUBSCRIPTION_PLANS, CONSUMABLE_PRODUCTS, type SubscriptionPlan } from "../lib/billing/plans";
 import { colors, type, spacing } from "../theme/theme";
+
+const NOT_LIVE = "In-app purchases aren't available yet.";
+
+// The server grants a purchase when RevenueCat's webhook arrives, usually within a few seconds,
+// so poll entitlements briefly instead of trusting a single refresh.
+async function awaitGrant(refresh: () => Promise<void>) {
+  for (const ms of [1500, 3000, 5000, 8000]) {
+    await new Promise(r => setTimeout(r, ms));
+    await refresh();
+  }
+}
 
 // Same visual language as Settings/Outfits filter panel: centered uppercase labels, plain text
 // buttons (no boxed/filled buttons), hairline dividers between sections. onStatus is the parent
 // screen's single shared status message (see UpgradeScreen) rather than each card owning its
 // own — at most one SUBSCRIBE button is ever actionable at a time (Free has none, Pro is the
 // only paid plan), so one shared message slot is simpler than duplicating the mechanism per card.
-function PlanCard({ plan, current, onStatus }: { plan: SubscriptionPlan; current: boolean; onStatus: (text: string, kind: "good" | "bad") => void }) {
+function PlanCard({ plan, current, price, onStatus }: { plan: SubscriptionPlan; current: boolean; price?: string; onStatus: (text: string, kind: "good" | "bad") => void }) {
   const [busy, setBusy] = useState(false);
   const { emailVerified } = useAuth();
+  const { refresh } = useEntitlements();
 
   async function subscribe() {
     if (!plan.productId) return;
     if (!emailVerified) { onStatus("Verify your email before upgrading to Pro.", "bad"); return; }
     setBusy(true);
     try {
-      await purchaseProduct(plan.productId.ios);
+      await purchaseProduct(Platform.OS === "ios" ? plan.productId.ios : plan.productId.android);
+      onStatus("Thanks! Unlocking Pro...", "good");
+      await awaitGrant(refresh);
     } catch (e) {
-      if (e instanceof PurchasesNotConfiguredError) {
-        onStatus("In-app purchases aren't live yet; check back once this update finishes rolling out.", "bad");
+      if (e instanceof PurchaseCancelledError) {
+        // closed the store sheet: nothing to say
+      } else if (e instanceof PurchasesNotConfiguredError) {
+        onStatus(NOT_LIVE, "bad");
       } else {
         onStatus("Purchase failed. Please try again.", "bad");
       }
@@ -44,7 +60,7 @@ function PlanCard({ plan, current, onStatus }: { plan: SubscriptionPlan; current
          repeated the same word twice, stacked. */}
       {!isFree && <Text style={[type.title, { textAlign: "center" }]}>{plan.name.toUpperCase()}</Text>}
       <Text style={[type.title, { textAlign: "center", marginTop: isFree ? 0 : 4, fontSize: 20 }]}>
-        {isFree ? "FREE" : `$${plan.priceUsd.toFixed(2)}/MO`}
+        {isFree ? "FREE" : `${price ?? `$${plan.priceUsd.toFixed(2)}`}/MO`}
       </Text>
       <Text style={[type.body, { color: colors.textMuted, textAlign: "center", marginTop: spacing.sm }]}>
         {plan.description}
@@ -69,7 +85,14 @@ function PlanCard({ plan, current, onStatus }: { plan: SubscriptionPlan; current
 
 export default function UpgradeScreen() {
   const insets = useSafeAreaInsets();
-  const { tier, aiCredits } = useEntitlements();
+  const { tier, aiCredits, refresh } = useEntitlements();
+  // Store-localized prices; the USD prices in plans.ts show until (or unless) these load.
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const ids = [...SUBSCRIPTION_PLANS.flatMap(p => (p.productId ? [p.productId[Platform.OS === "ios" ? "ios" : "android"]] : [])),
+      ...CONSUMABLE_PRODUCTS.map(c => c.productId[Platform.OS === "ios" ? "ios" : "android"])];
+    getLocalizedPrices(ids).then(setPrices);
+  }, []);
   const [legalDoc, setLegalDoc] = useState<LegalDocId | null>(null);
   const { emailVerified } = useAuth();
   const { status, showStatus } = useStatusMessage();
@@ -78,9 +101,13 @@ export default function UpgradeScreen() {
     if (!emailVerified) { showStatus("Verify your email before upgrading to Pro.", "bad"); return; }
     try {
       await purchaseProduct(productId);
+      showStatus("Thanks! Adding your purchase...", "good");
+      await awaitGrant(refresh);
     } catch (e) {
-      if (e instanceof PurchasesNotConfiguredError) {
-        showStatus("In-app purchases aren't live yet; check back once this update finishes rolling out.", "bad");
+      if (e instanceof PurchaseCancelledError) {
+        // closed the store sheet: nothing to say
+      } else if (e instanceof PurchasesNotConfiguredError) {
+        showStatus(NOT_LIVE, "bad");
       } else {
         showStatus("Purchase failed. Please try again.", "bad");
       }
@@ -91,9 +118,10 @@ export default function UpgradeScreen() {
     try {
       await restorePurchases();
       showStatus("Your purchases have been restored.", "good");
+      awaitGrant(refresh);
     } catch (e) {
       if (e instanceof PurchasesNotConfiguredError) {
-        showStatus("In-app purchases aren't live yet; check back once this update finishes rolling out.", "bad");
+        showStatus(NOT_LIVE, "bad");
       } else {
         showStatus("Restore failed. Please try again.", "bad");
       }
@@ -121,7 +149,7 @@ export default function UpgradeScreen() {
         </View>
 
         {SUBSCRIPTION_PLANS.map(p => (
-          <PlanCard key={p.id} plan={p} current={p.id === tier} onStatus={showStatus} />
+          <PlanCard key={p.id} plan={p} current={p.id === tier} price={p.productId ? prices[Platform.OS === "ios" ? p.productId.ios : p.productId.android] : undefined} onStatus={showStatus} />
         ))}
 
         {/* Apple guideline 3.1.1 / Google Play billing policy both require auto-renewal terms
@@ -148,7 +176,11 @@ export default function UpgradeScreen() {
           {CONSUMABLE_PRODUCTS.map(c => (
             <View key={c.id} style={styles.consumableRow}>
               <Text style={[type.body, { flex: 1, fontWeight: "700", color: colors.text }]}>{c.name}</Text>
-              <TextButton label={`$${c.priceUsd.toFixed(2)}`} size={11} onPress={() => onConsumable(c.productId.ios)} />
+              <TextButton
+                label={prices[Platform.OS === "ios" ? c.productId.ios : c.productId.android] ?? `$${c.priceUsd.toFixed(2)}`}
+                size={11}
+                onPress={() => onConsumable(Platform.OS === "ios" ? c.productId.ios : c.productId.android)}
+              />
             </View>
           ))}
         </View>

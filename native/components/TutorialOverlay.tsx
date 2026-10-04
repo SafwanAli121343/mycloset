@@ -7,6 +7,9 @@ import { useNavBarVisibility } from "../lib/NavBarVisibility";
 import { measureTargetInStage, openSettingsPage, setTour, type Rect, type TutorialStage } from "../lib/tutorial";
 import { BAR_CONTENT_H, BAR_BOTTOM_GAP } from "./BottomNavBar";
 import { colors, spacing } from "../theme/theme";
+import { PAYMENTS_ENABLED } from "../lib/config";
+import { useEntitlements } from "../lib/billing/Entitlements";
+import { useHiddenTabs } from "../lib/billing/paidFeatures";
 import type { MainTabParamList } from "../navigation/MainTabs";
 
 // The first-run tutorial (same steps and wording as the website's components/Tutorial.tsx).
@@ -25,19 +28,23 @@ type Step = {
   settingsPage?: string;
   navbar?: boolean;
   where?: string; // where to open this feature yourself
+  freeText?: string; // free-only release (PAYMENTS_ENABLED false), for accounts without AI
 };
 
-const STEPS: Step[] = [
+const ALL_STEPS: Step[] = [
   { tab: "Closet", target: "closet.main", zone: { x: 0.06, y: 0.16, w: 0.88, h: 0.4 }, title: "MY CLOSET", where: "Open it any time with CLOSET in the nav bar.",
-    text: "Every piece you own lives here; flip through with a swipe or the arrows. The score, pros and cons and pairings on each piece are AI analysis, part of MyCloset Pro." },
+    text: "Every piece you own lives here; flip through with a swipe or the arrows. The score, pros and cons and pairings on each piece are AI analysis, part of MyCloset Pro.",
+    freeText: "Every piece you own lives here; flip through with a swipe or the arrows." },
   { tab: "Add", target: "add.main", zone: { x: 0.08, y: 0.08, w: 0.84, h: 0.1 }, title: "ADD ITEMS", where: "Open it with ADD in the nav bar.",
     text: "Add pieces by taking a photo or pasting a product link. The details get filled in for you." },
   { tab: "Calendar", zone: { x: 0.04, y: 0.13, w: 0.92, h: 0.5 }, title: "CALENDAR", where: "Open it with CAL in the nav bar.",
     text: "An outfit planned for every day of the month, matched to your weather. Tap a day to see it." },
   { tab: "Outfits", zone: { x: 0.04, y: 0.12, w: 0.92, h: 0.55 }, title: "OUTFITS", where: "Open it with OUTFITS in the nav bar.",
-    text: "Every outfit your closet can make, best first. Tap a stack to spread it out. Outfit scores and analysis are part of MyCloset Pro." },
+    text: "Every outfit your closet can make, best first. Tap a stack to spread it out. Outfit scores and analysis are part of MyCloset Pro.",
+    freeText: "Every outfit your closet can make. Tap a stack to spread it out." },
   { tab: "Builder", zone: { x: 0.06, y: 0.14, w: 0.88, h: 0.5 }, title: "BUILD", where: "Open it with BUILD in the nav bar.",
-    text: "Put together your own outfit, piece by piece, and see how it scores." },
+    text: "Put together your own outfit, piece by piece, and see how it scores.",
+    freeText: "Put together your own outfit, piece by piece." },
   { tab: "Preview", zone: { x: 0.06, y: 0.14, w: 0.88, h: 0.5 }, title: "PREVIEW", where: "Open it with PREVIEW in the nav bar.",
     text: "Thinking of buying something? See how it would fit your wardrobe before you buy it." },
   { tab: "Wardrobe", zone: { x: 0.08, y: 0.1, w: 0.84, h: 0.45 }, title: "WARDROBE", where: "Open it with WARDROBE in the nav bar.",
@@ -61,6 +68,11 @@ export function TutorialOverlay({ navigate }: { navigate: (tab: keyof MainTabPar
   const [rect, setRect] = useState<Rect | null>(null);
   const fade = useRef(new Animated.Value(0)).current;
   const suppressedRef = useRef(false);
+  // The tour's steps, fixed when it starts: the free-only release skips pages that are hidden
+  // (Upgrade; Wardrobe without AI) and drops the "part of MyCloset Pro" lines.
+  const { hasAI } = useEntitlements();
+  const hiddenTabs = useHiddenTabs();
+  const [STEPS, setSteps] = useState<Step[]>(ALL_STEPS);
 
   // Offered once, right after ENTER, to accounts created with the prompt pending.
   useEffect(() => {
@@ -73,10 +85,14 @@ export function TutorialOverlay({ navigate }: { navigate: (tab: keyof MainTabPar
     if (yes) {
       hide();
       if (!suppressedRef.current) { setSuppressed(true); suppressedRef.current = true; }
+      const freeOnly = !PAYMENTS_ENABLED && !hasAI;
+      setSteps(ALL_STEPS
+        .filter(st => !hiddenTabs.has(st.tab))
+        .map(st => (freeOnly && st.freeText ? { ...st, text: st.freeText } : st)));
       setTour({ demo: true });
       setStepIdx(0);
     }
-  }, [hide, setSuppressed]);
+  }, [hide, setSuppressed, hasAI, hiddenTabs]);
 
   const release = useCallback(() => {
     if (suppressedRef.current) { setSuppressed(false); suppressedRef.current = false; }

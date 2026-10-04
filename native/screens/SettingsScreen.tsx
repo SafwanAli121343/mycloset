@@ -14,6 +14,7 @@ import { TextButton } from "../components/TextButton";
 import { UnderlineField } from "../components/UnderlineField";
 import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
 import { LegalModal, type LegalDocId } from "../components/LegalModal";
+import { PAYMENTS_ENABLED } from "../lib/config";
 import { colors, type, spacing } from "../theme/theme";
 import type { MainTabParamList } from "../navigation/MainTabs";
 
@@ -276,7 +277,9 @@ export default function SettingsScreen() {
             <Text style={[type.body, { textAlign: "center", marginBottom: spacing.md }]}>
               {tierLabel}
             </Text>
-            <CenteredTextButton label={entitlements.tier === "free" ? "UPGRADE" : "MANAGE PLAN"} onPress={() => navigation.navigate("Upgrade")} />
+            {PAYMENTS_ENABLED && (
+              <CenteredTextButton label={entitlements.tier === "free" ? "UPGRADE" : "MANAGE PLAN"} onPress={() => navigation.navigate("Upgrade")} />
+            )}
             {entitlements.tier !== "free" && !entitlements.isFullAccessOverride && (
               <CenteredTextButton
                 label="CANCEL SUBSCRIPTION"
@@ -291,6 +294,7 @@ export default function SettingsScreen() {
                only the store's in-app purchase. Keys are redeemed on the website instead;
                whatever they grant applies here too (allowed, since Pro is also sold in-app). */}
             {/* One-time purchases you have, by type. */}
+            {PAYMENTS_ENABLED && (
             <View style={{ marginTop: spacing.lg, gap: spacing.xs, alignItems: "center" }}>
               <Text style={[type.body, { fontSize: 12 }]}>Single Item Analysis: {entitlements.itemScans ?? 0}</Text>
               <Text style={[type.body, { fontSize: 12 }]}>Full Wardrobe Analysis: {entitlements.wardrobeScans ?? 0}</Text>
@@ -301,6 +305,7 @@ export default function SettingsScreen() {
                 </Text>
               )}
             </View>
+            )}
 
           </View>
         )}

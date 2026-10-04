@@ -1,4 +1,5 @@
 "use client";
+import { PAYMENTS_LIVE } from "@/lib/client/paidFeatures";
 import { useEntitlements } from "@/contexts/EntitlementsContext";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -290,7 +291,7 @@ export default function SettingsPage() {
           {page === "PLAN" && (
             <div data-tutorial="settings.plan" style={{ textAlign: "center" }}>
               <p style={{ ...BODY, marginBottom: 16 }}>{entitlements.tier.toUpperCase()}</p>
-              <Centered><TextBtn label={entitlements.tier === "free" ? "UPGRADE" : "MANAGE PLAN"} href="/upgrade" /></Centered>
+              {PAYMENTS_LIVE && <Centered><TextBtn label={entitlements.tier === "free" ? "UPGRADE" : "MANAGE PLAN"} href="/upgrade" /></Centered>}
               {/* Keys can be redeemed here (the app can't take them — App Store guideline 3.1.1). */}
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 16, margin: "0 auto", maxWidth: 300 }}>
                 <div style={{ flex: 1 }}>
@@ -299,6 +300,7 @@ export default function SettingsPage() {
                 <TextBtn label={redeeming ? "REDEEMING..." : "REDEEM"} onClick={redeem} disabled={!redeemCode.trim() || redeeming} />
               </div>
               {redeemMsg && <p style={{ ...BODY, fontSize: 11, color: MUTED, marginTop: 8 }}>{redeemMsg}</p>}
+              {PAYMENTS_LIVE && (
               <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 4 }}>
                 <p style={{ ...BODY, fontSize: 12, margin: 0 }}>Single Item Analysis: {entitlements.itemScans ?? 0}</p>
                 <p style={{ ...BODY, fontSize: 12, margin: 0 }}>Full Wardrobe Analysis: {entitlements.wardrobeScans ?? 0}</p>
@@ -308,6 +310,7 @@ export default function SettingsPage() {
                   </p>
                 )}
               </div>
+              )}
               {/* App Store guideline 5.1.2(i) parity with the app's purchase screen. */}
               <p style={{ fontSize: 10, color: FAINT, marginTop: 16, lineHeight: 1.6 }}>
                 AI features send your item photos and details (and your age range and style preference, if set) to OpenAI to

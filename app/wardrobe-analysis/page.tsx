@@ -1,4 +1,5 @@
 ﻿"use client";
+import { PAYMENTS_LIVE } from "@/lib/client/paidFeatures";
 import { useEntitlements } from "@/contexts/EntitlementsContext";
 import { ReadyGate } from "@/components/ReadyGate";
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
@@ -910,7 +911,9 @@ export default function WardrobeAnalysisPage() {
             ? promptText
             : credits > 0
             ? `You have ${credits} wardrobe ${credits === 1 ? "analysis" : "analyses"} available. Add a few more pieces first: a wardrobe analysis needs at least 5 items that make a complete outfit (a top, bottoms and shoes).`
-            : "Wardrobe analysis, gap tracking, and leveling all require AI. Upgrade, or buy a Full Wardrobe Analysis, in the MyCloset app."}
+            : PAYMENTS_LIVE
+            ? "Wardrobe analysis, gap tracking, and leveling all require AI. Upgrade, or buy a Full Wardrobe Analysis, in the MyCloset app."
+            : "The wardrobe report isn't available on your account."}
         </p>
         {credits > 0 && enough && (
           <button onClick={performAnalysis} disabled={analyzing} style={{ ...FONT, border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, letterSpacing: ".14em" }}>

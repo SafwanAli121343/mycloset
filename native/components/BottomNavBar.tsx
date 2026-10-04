@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/AuthContext";
 import { useNavBarVisibility } from "../lib/NavBarVisibility";
+import { useHiddenTabs } from "../lib/billing/paidFeatures";
 import { colors, fontFamily, spacing } from "../theme/theme";
 import type { MainTabParamList } from "../navigation/MainTabs";
 
@@ -30,6 +31,7 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
   const insets = useSafeAreaInsets();
   const { signOut } = useAuth();
   const { visible } = useNavBarVisibility();
+  const hiddenTabs = useHiddenTabs();
   const totalH = BAR_CONTENT_H + insets.bottom + BAR_BOTTOM_GAP;
   // Starts at whichever position actually matches `visible` on this component's first mount
   // (rather than always literally 0) — this mounts for the first time at the exact moment the
@@ -58,7 +60,7 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.row}
       >
-        {TABS.map(t => {
+        {TABS.filter(t => !hiddenTabs.has(t.key)).map(t => {
           const active = activeTab === t.key;
           return (
             <TouchableOpacity key={t.key} style={styles.item} onPress={() => onNavigate(t.key)} hitSlop={4}>

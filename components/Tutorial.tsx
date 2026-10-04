@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { setTutorialDemo } from "@/lib/client/tutorialState";
+import { useEntitlements } from "@/contexts/EntitlementsContext";
+import { PAYMENTS_LIVE, useHiddenPages } from "@/lib/client/paidFeatures";
 
 // The website's first-run tutorial — same steps and wording as the app's
 // native/components/TutorialOverlay.tsx, laid out differently: the app shrinks each page into a
@@ -17,19 +19,22 @@ type Zone = { x: number; y: number; w: number; h: number }; // fractions of the 
 // content as a whole (the area everything visible on it spans).
 // roomBelow: the page has no free space at all (Calendar fills the window) — it's made a little
 // shorter (via --tut-bottom) to open a strip underneath for the text, instead of shifting it down.
-type Step = { href: string; title: string; text: string; target?: string; zone?: Zone; navbar?: boolean; settingsPage?: string; where?: string; roomBelow?: boolean };
+type Step = { href: string; title: string; text: string; freeText?: string; target?: string; zone?: Zone; navbar?: boolean; settingsPage?: string; where?: string; roomBelow?: boolean };
 
-const STEPS: Step[] = [
+const ALL_STEPS: Step[] = [
   { href: "/closet", target: "closet.main", zone: { x: 0.06, y: 0.16, w: 0.88, h: 0.4 }, title: "MY CLOSET", where: "Open it any time with MY CLOSET on the main menu.",
-    text: "Every piece you own lives here; flip through with the arrows. The score, pros and cons and pairings on each piece are AI analysis, part of MyCloset Pro." },
+    text: "Every piece you own lives here; flip through with the arrows. The score, pros and cons and pairings on each piece are AI analysis, part of MyCloset Pro.",
+    freeText: "Every piece you own lives here; flip through with the arrows." },
   { href: "/add-item", target: "add.main", zone: { x: 0.08, y: 0.08, w: 0.84, h: 0.1 }, title: "ADD ITEMS", where: "Open it with ADD ITEM on the main menu.",
     text: "Add pieces by uploading a photo or pasting a product link. The details get filled in for you." },
   { href: "/calendar", target: "calendar.grid", roomBelow: true, title: "CALENDAR", where: "Open it with CALENDAR on the main menu.",
     text: "An outfit planned for every day of the month, matched to your weather. Tap a day to see it." },
   { href: "/outfits", target: "outfits.grid", title: "OUTFITS", where: "Open it with OUTFITS on the main menu.",
-    text: "Every outfit your closet can make, best first. Click a stack to spread it out. Outfit scores and analysis are part of MyCloset Pro." },
+    text: "Every outfit your closet can make, best first. Click a stack to spread it out. Outfit scores and analysis are part of MyCloset Pro.",
+    freeText: "Every outfit your closet can make. Click a stack to spread it out." },
   { href: "/builder", target: "builder.slots", title: "BUILD", where: "Open it with BUILDER on the main menu.",
-    text: "Put together your own outfit, piece by piece, and see how it scores." },
+    text: "Put together your own outfit, piece by piece, and see how it scores.",
+    freeText: "Put together your own outfit, piece by piece." },
   { href: "/preview", target: "preview.slot", title: "PREVIEW", where: "Open it with PREVIEW on the main menu.",
     text: "Thinking of buying something? See how it would fit your wardrobe before you buy it." },
   { href: "/wardrobe-analysis", target: "wardrobe.box", title: "WARDROBE", where: "Open it with WARDROBE on the main menu.",
@@ -305,6 +310,9 @@ export default function Tutorial() {
   const measureRef = useRef<HTMLDivElement>(null);
   const measureCompactRef = useRef<HTMLDivElement>(null);
   const runRef = useRef(0);
+  const stepsRef = useRef<Step[]>(ALL_STEPS);
+  const { hasAI } = useEntitlements();
+  const hiddenPages = useHiddenPages();
   const checkedRef = useRef(false);
   const pathRef = useRef(pathname);
   useEffect(() => { pathRef.current = pathname; }, [pathname]);
@@ -324,7 +332,7 @@ export default function Tutorial() {
   const runStep = useCallback(async (i: number) => {
     const run = ++runRef.current;
     const current = () => runRef.current === run;
-    const step = STEPS[i];
+    const step = stepsRef.current[i];
     setCurtain(true);
     setLayout(null);
     await sleep(FADE_MS);
@@ -432,7 +440,15 @@ export default function Tutorial() {
   function answer(yes: boolean) {
     setPrompt(false);
     fetch("/api/user/tutorial", { method: "POST" }).catch(() => {});
-    if (yes) runStep(0);
+    if (yes) {
+      // Fixed when the tour starts: the free-only release skips hidden pages (Upgrade; Wardrobe
+      // without AI) and drops the "part of MyCloset Pro" lines.
+      const freeOnly = !PAYMENTS_LIVE && !hasAI;
+      stepsRef.current = ALL_STEPS
+        .filter(st => !hiddenPages.has(st.href))
+        .map(st => (freeOnly && st.freeText ? { ...st, text: st.freeText } : st));
+      runStep(0);
+    }
   }
 
   const finish = useCallback(async () => {
@@ -467,8 +483,8 @@ export default function Tutorial() {
   }
   if (stepIdx === null && !curtain) return null;
 
-  const step = stepIdx !== null ? STEPS[stepIdx] : null;
-  const last = stepIdx === STEPS.length - 1;
+  const step = stepIdx !== null ? stepsRef.current[stepIdx] : null;
+  const last = stepIdx === stepsRef.current.length - 1;
   const renderText = (compact: boolean) => step && (
     <>
       <p style={{ color: "#111", fontSize: compact ? 12 : 13, fontWeight: 700, letterSpacing: "0.16em", margin: `0 0 ${compact ? 3 : 6}px` }}>{step.title}</p>

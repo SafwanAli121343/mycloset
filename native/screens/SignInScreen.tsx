@@ -7,6 +7,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "../lib/AuthContext";
+import { apiJson } from "../lib/api";
 import { colors, type, spacing } from "../theme/theme";
 import type { AuthStackParamList } from "../navigation/AuthStack";
 
@@ -61,6 +62,11 @@ export default function SignInScreen() {
   // without waiting for a state re-render cycle
   const activeRef = useRef<"email" | "password">("email");
   const lift = useKeyboardLift();
+  // "FORGOT PASSWORD?" only while reset emails can actually be sent (/api/auth/options).
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  useEffect(() => {
+    apiJson<{ emailEnabled: boolean }>("/api/auth/options").then(d => setEmailEnabled(!!d.emailEnabled)).catch(() => {});
+  }, []);
 
   function handleChange(text: string) {
     if (error) setError("");
@@ -147,7 +153,7 @@ export default function SignInScreen() {
           <Text style={styles.buttonText}>{loading ? "LOGGING IN..." : "LOG IN"}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")} style={{ marginTop: spacing.md }}>
+        <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")} disabled={!emailEnabled} style={{ marginTop: spacing.md, opacity: emailEnabled ? 1 : 0 }}>
           <Text style={styles.link}>FORGOT PASSWORD?</Text>
         </TouchableOpacity>
 

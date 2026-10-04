@@ -15,7 +15,7 @@ export type SampleGarment = {
   id: string; title: string; brand: string | null; sub_type: string; category: string;
   color_primary: string; image: string; aesthetic_tags: string[];
   pros: string[]; cons: string[]; color_pairings: string[]; color_clashes: string[];
-  style_pairings: string[]; ai_unlocked: true;
+  style_pairings: string[]; ai_unlocked: boolean;
 };
 
 export function sampleCloset(img: SampleImages): { garments: SampleGarment[]; scores: Record<string, number> } {

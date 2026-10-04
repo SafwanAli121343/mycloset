@@ -3,6 +3,7 @@ import { AppState } from "react-native";
 import { apiJson, ApiError, invalidateCache } from "../api";
 import { useAuth } from "../AuthContext";
 import { FULL_ACCESS_EMAILS, type TierId } from "./plans";
+import { initPurchases } from "./purchases";
 
 type BillingStatus = {
   tier: TierId;
@@ -58,6 +59,9 @@ export function EntitlementsProvider({ children }: { children: React.ReactNode }
   }, [isSignedIn]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Store purchases are tied to the signed-in account (no-op while PAYMENTS_ENABLED is false).
+  useEffect(() => { if (isLoaded) initPurchases(isSignedIn ? user?.id ?? null : null); }, [isLoaded, isSignedIn, user?.id]);
 
   // Re-checked whenever the app comes back to the foreground: a subscription bought, renewed or
   // lapsed elsewhere (another device, the App Store's own settings) is picked up without a restart.

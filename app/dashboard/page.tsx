@@ -1,4 +1,5 @@
 "use client";
+import { useHiddenPages } from "@/lib/client/paidFeatures";
 import { ReadyGate } from "@/components/ReadyGate";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
@@ -41,6 +42,7 @@ type Ball  = { x: number; y: number; vx: number; vy: number };
 export default function DashboardPage() {
   const router    = useRouter();
   const { signOut } = useAuth();
+  const hiddenPages = useHiddenPages();
   const menuRef   = useRef<HTMLDivElement>(null);
   const imgRefs   = useRef<(HTMLImageElement | null)[]>([]);
   const balls     = useRef<Ball[]>([]);
@@ -187,7 +189,7 @@ export default function DashboardPage() {
         </p>
 
         <div className="border border-black divide-y divide-black w-64">
-          {NAV.map(({ label, href }) => (
+          {NAV.filter(n => !hiddenPages.has(n.href)).map(({ label, href }) => (
             <button
               key={label}
               onClick={() => router.push(href)}

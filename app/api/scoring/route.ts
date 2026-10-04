@@ -1,4 +1,5 @@
 import { getSessionFromCookies } from "@/lib/auth/session";
+import { compressedJson } from "@/lib/http/compressedJson";
 import { applyApiRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@supabase/supabase-js";
 import { scorePiece, scoreWardrobe, generateOutfits } from "@/lib/scoring";
@@ -96,7 +97,7 @@ export async function GET(req: Request) {
       ? g.aesthetic_tags as string[] | null : null,
   }));
 
-  return Response.json({
+  return compressedJson(req, {
     wardrobeScore,
     pieceCount: garments.length,
     pieces,

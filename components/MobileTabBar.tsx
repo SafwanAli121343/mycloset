@@ -1,4 +1,5 @@
 "use client";
+import { useHiddenPages } from "@/lib/client/paidFeatures";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Shirt, PlusCircle, CalendarDays, LayoutGrid, Sparkles } from "lucide-react";
@@ -22,6 +23,7 @@ const SHOWN_ON = new Set(TABS.map(t => t.href).concat(["/dashboard"]));
 export default function MobileTabBar() {
   const pathname = usePathname();
   const isMobile = useIsMobile();
+  const hidden = useHiddenPages();
   if (!isMobile || !SHOWN_ON.has(pathname)) return null;
 
   return (
@@ -32,7 +34,7 @@ export default function MobileTabBar() {
       background: "#fff", borderTop: "1px solid #ebebeb",
       display: "flex", alignItems: "stretch",
     }}>
-      {TABS.map(({ label, href, Icon }) => {
+      {TABS.filter(t => !hidden.has(t.href)).map(({ label, href, Icon }) => {
         const active = pathname === href;
         return (
           <Link

@@ -14,6 +14,7 @@ import { TextButton } from "../components/TextButton";
 import { ReadyGate } from "../components/ReadyGate";
 import { FocusScrollList, type FocusItem } from "../components/FocusScrollList";
 import { bucketOf, sortTops, type Bucket, type SlotGarment } from "../lib/garmentSlots";
+import { PAYMENTS_ENABLED } from "../lib/config";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
 import { useEntitlements } from "../lib/billing/Entitlements";
 import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
@@ -508,10 +509,11 @@ export default function BuilderScreen() {
 
       <View style={styles.topRow}>
         {result ? (
-          isEligible ? (
+          // Free-only release: nothing to upgrade to, so a finished outfit just gets RESET.
+          isEligible || (result.locked && !PAYMENTS_ENABLED) ? (
             // On the nav chevron's exact center line (see ShowNavButton's NAV_ROW_*).
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: NAV_ROW_TOP, height: NAV_ROW_H }}>
-              <Text style={{ fontSize: 24, fontWeight: "700", color: scoreColor(result.score) }}>{result.score}</Text>
+              {isEligible && <Text style={{ fontSize: 24, fontWeight: "700", color: scoreColor(result.score) }}>{result.score}</Text>}
               <TextButton label="RESET" size={9} color={colors.bad} onPress={resetBuilder} />
             </View>
           ) : (

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import Link from "next/link";
 
@@ -11,6 +11,11 @@ export default function SignInPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // "Forgot password?" only while reset emails can actually be sent (/api/auth/options).
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/options").then(r => r.json()).then(d => setEmailEnabled(!!d.emailEnabled)).catch(() => {});
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -60,7 +65,7 @@ export default function SignInPage() {
           </button>
         </form>
 
-        <p className="text-xs text-center mt-4 uppercase tracking-wide text-neutral-500" style={FONT}>
+        <p className="text-xs text-center mt-4 uppercase tracking-wide text-neutral-500" style={{ ...FONT, visibility: emailEnabled ? "visible" : "hidden" }}>
           <Link href="/forgot-password" className="font-bold text-neutral-300">Forgot password?</Link>
         </p>
 

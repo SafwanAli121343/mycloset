@@ -1,4 +1,5 @@
 "use client";
+import { PAYMENTS_LIVE } from "@/lib/client/paidFeatures";
 import { peekCache, rememberCache } from "@/lib/clientCache";
 import { useEntitlements } from "@/contexts/EntitlementsContext";
 import { useTutorialDemo } from "@/lib/client/tutorialState";
@@ -580,7 +581,8 @@ export default function BuilderPage() {
         </div>
 
         {/* Score result */}
-        {result && (
+        {/* Free-only release: nothing to upgrade to, so no locked-scoring box at all. */}
+        {result && !(result.locked && !PAYMENTS_LIVE) && (
           <div style={{ padding: "12px 20px 0", flexShrink: 0 }}>
             {isEligible ? (
               <div style={{ textAlign: "center" }}>
@@ -852,7 +854,8 @@ export default function BuilderPage() {
         </div>
 
         {/* Score result */}
-        {result && (
+        {/* Free-only release: nothing to upgrade to, so no locked-scoring box at all. */}
+        {result && !(result.locked && !PAYMENTS_LIVE) && (
           <div style={{
             width: isEligible ? 5 * B + 4 * G : "fit-content",
             marginBottom: 16,

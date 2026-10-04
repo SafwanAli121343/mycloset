@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { compressedJson } from "@/lib/http/compressedJson";
 import { after } from "next/server";
 import sharp from "sharp";
 import { insertGarment, deleteGarment } from "@/lib/db/garments";
@@ -77,7 +78,7 @@ const AI_GATED_FIELDS = [
   "formality", "design_complexity", "logo_prominence",
 ] as const;
 
-export async function GET(_req: Request) {
+export async function GET(req: Request) {
   const session = await getSessionFromCookies();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -118,7 +119,7 @@ export async function GET(_req: Request) {
   // the closet's 3.5s "analysis pending" poll kept getting the same stale pros:null snapshot,
   // and a just-added/deleted item could be missing/still present after navigating back.
   // Native keeps its own in-memory TTL cache (native/lib/dataCache.ts), so nothing is lost.
-  return Response.json(out, {
+  return compressedJson(req, out, {
     headers: { "Cache-Control": "private, no-store" },
   });
 }

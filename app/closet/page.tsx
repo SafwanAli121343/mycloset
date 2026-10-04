@@ -1,4 +1,5 @@
 ﻿"use client";
+import { PAYMENTS_LIVE } from "@/lib/client/paidFeatures";
 import { peekCache, rememberCache, invalidateClientCache } from "@/lib/clientCache";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -395,7 +396,11 @@ export default function ClosetPage() {
   // First-run tutorial: the sample closet (lib/client/tutorialSamples.ts) in place of this
   // account's own — usually still empty for a new account. Display only; never cached or saved.
   const demo = useTutorialDemo();
-  const sample = useMemo(() => sampleCloset(SAMPLE_IMAGES), []);
+  // Free-only release: the samples show what this account gets — no AI.
+  const sample = useMemo(() => {
+    const c = sampleCloset(SAMPLE_IMAGES);
+    return PAYMENTS_LIVE || hasAI ? c : { ...c, garments: c.garments.map(g => ({ ...g, ai_unlocked: false })) };
+  }, [hasAI]);
   const shownGarments = demo ? (sample.garments as unknown as Garment[]) : garments;
   const shownScores = demo ? sample.scores : scores;
   // Purchased "Use score?" (free tier) — same flow as the app's Closet (lib/client/analysisJobs.ts).

@@ -20,6 +20,7 @@ import { describeColorPairing } from "../lib/colorTheory";
 import { useEntitlements } from "../lib/billing/Entitlements";
 import { AestheticPicker } from "../components/AestheticPicker";
 import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
+import { PAYMENTS_ENABLED } from "../lib/config";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
 import { AnalysisOverlay } from "../components/AnalysisOverlay";
 import { tutorialTarget, useTutorialDemo } from "../lib/tutorial";
@@ -259,7 +260,11 @@ export default function ClosetScreen() {
   // First-run tutorial: show the sample closet (lib/tutorialSamples.ts) instead of this account's
   // own — usually still empty for a new account. Display only; nothing is saved or fetched for it.
   const demo = useTutorialDemo();
-  const sample = useMemo(() => sampleCloset(SAMPLE_IMAGES), []);
+  // Free-only release (PAYMENTS_ENABLED false): the samples show what this account gets — no AI.
+  const sample = useMemo(() => {
+    const c = sampleCloset(SAMPLE_IMAGES);
+    return PAYMENTS_ENABLED || hasAI ? c : { ...c, garments: c.garments.map(g => ({ ...g, ai_unlocked: false })) };
+  }, [hasAI]);
   const shownGarments = demo ? (sample.garments as Garment[]) : garments;
   const shownScores = demo ? sample.scores : scores;
   useEffect(() => { setIndex(0); }, [demo]);

@@ -8,6 +8,7 @@
 //   max   - max outfits to return (default 2000)
 //   tempF - optional temperature in °F for weather-aware scoring
 
+import { compressedJson } from "@/lib/http/compressedJson";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "@/lib/auth/session";
 import { createClient } from "@supabase/supabase-js";
@@ -118,7 +119,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ total: outfits.length, items: itemMap, outfits, hasAI });
+    return compressedJson(req, { total: outfits.length, items: itemMap, outfits, hasAI });
   } catch (e) {
     const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     console.error("[all-combos]", msg);

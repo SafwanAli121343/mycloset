@@ -16,6 +16,7 @@ import {
   type WardrobeAnalysis, type WABackendState, type CrossedEntry,
 } from "../lib/wardrobeAnalysis";
 import { sameColorGroup } from "../lib/colorGroups";
+import { PAYMENTS_ENABLED } from "../lib/config";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
 import { useEntitlements } from "../lib/billing/Entitlements";
 import { LockedScreen } from "../components/LockedFeature";
@@ -404,6 +405,18 @@ export default function WardrobeScreen() {
             <Text style={[type.body, { color: colors.textMuted, textAlign: "center", marginTop: spacing.sm }]}>
               {`You have ${credits} wardrobe ${credits === 1 ? "analysis" : "analyses"} available. Add a few more pieces first: a wardrobe analysis needs at least 5 items that make a complete outfit (a top, bottoms and shoes).`}
             </Text>
+          </ScreenCenter>
+          </ReadyGate>
+        );
+      }
+      // Free-only release: the tab is hidden for these accounts (lib/billing/paidFeatures.ts);
+      // this only shows if it's reached anyway, with nothing to buy.
+      if (!PAYMENTS_ENABLED) {
+        return wrap(
+          <ReadyGate ready>
+          <ScreenCenter>
+            <Text style={[type.title, { textAlign: "center" }]}>WARDROBE</Text>
+            <Text style={[type.body, { color: colors.textMuted, textAlign: "center", marginTop: spacing.sm }]}>The wardrobe report isn't available on your account.</Text>
           </ScreenCenter>
           </ReadyGate>
         );
