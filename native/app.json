@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mycloset",
+    "name": "MYCLOSET",
     "slug": "mycloset",
     "owner": "myclosetapp2026",
     "version": "1.0.0",
@@ -11,9 +11,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.mycloset.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "mycloset uses your camera to photograph clothing items you add to your wardrobe.",
-        "NSPhotoLibraryUsageDescription": "mycloset lets you choose existing photos of clothing items to add to your wardrobe.",
-        "NSLocationWhenInUseUsageDescription": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions.",
+        "NSCameraUsageDescription": "MYCLOSET uses your camera to photograph clothing items you add to your wardrobe.",
+        "NSPhotoLibraryUsageDescription": "MYCLOSET lets you choose existing photos of clothing items to add to your wardrobe.",
+        "NSLocationWhenInUseUsageDescription": "MYCLOSET uses your location to fetch local weather so outfit suggestions and the calendar match real conditions.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         },
@@ -42,14 +42,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "mycloset lets you choose existing photos of clothing items to add to your wardrobe.",
-          "cameraPermission": "mycloset uses your camera to photograph clothing items you add to your wardrobe."
+          "photosPermission": "MYCLOSET lets you choose existing photos of clothing items to add to your wardrobe.",
+          "cameraPermission": "MYCLOSET uses your camera to photograph clothing items you add to your wardrobe."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "mycloset uses your location to fetch local weather so outfit suggestions and the calendar match real conditions."
+          "locationWhenInUsePermission": "MYCLOSET uses your location to fetch local weather so outfit suggestions and the calendar match real conditions."
         }
       ],
       "expo-font"
