@@ -1333,8 +1333,8 @@ export default function CalendarScreen() {
   // Pro: every outfit on the calendar gets its analysis (the server works on it right after a day
   // is generated or edited, and catches up on the rest when a month is viewed). While any of this
   // month's outfits is still waiting, re-check every few seconds so it appears on its own; the
-  // day view shows loading dots in its place meanwhile. Gives up after ~3 minutes (e.g. the
-  // monthly AI budget is used up) and says so, rather than checking forever.
+  // day view shows loading dots in its place meanwhile. Gives up after 8 tries (e.g. the monthly
+  // AI budget is used up) and says so, rather than checking forever.
   const analysisPollsRef = useRef<Record<string, number>>({});
   const [analysisPollTick, setAnalysisPollTick] = useState(0);
   const [analysisGaveUp, setAnalysisGaveUp] = useState<Set<string>>(() => new Set());
@@ -1345,12 +1345,16 @@ export default function CalendarScreen() {
   useEffect(() => {
     if (!analysisPending || generating || analysisGaveUp.has(monthKey)) return;
     const n = analysisPollsRef.current[monthKey] ?? 0;
-    if (n >= 45) { setAnalysisGaveUp(prev => new Set(prev).add(monthKey)); return; }
+    if (n >= 8) { setAnalysisGaveUp(prev => new Set(prev).add(monthKey)); return; }
+    // Asks the server to analyze this month's waiting outfits now and waits for it (a few
+    // seconds), then reloads — rather than only waiting on the background analysis, which can be
+    // lost if the server restarts. Straight away the first time, then a short pause between tries.
     const t = setTimeout(async () => {
       analysisPollsRef.current[monthKey] = n + 1;
+      await apiJson("/api/outfits/analyze-pending", { method: "POST", body: JSON.stringify({ year, month }) }).catch(() => {});
       await loadRef.current(year, month, true);
       setAnalysisPollTick(x => x + 1);
-    }, 4000);
+    }, n === 0 ? 0 : 3000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysisPending, generating, monthKey, analysisPollTick]);

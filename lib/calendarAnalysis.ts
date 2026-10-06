@@ -69,7 +69,12 @@ export async function analyzeCalendarOutfits(
         const styleScore = typeof notes.styleScore === "number" ? notes.styleScore : scoreOutfit(items);
         const configName = typeof notes.configName === "string" ? notes.configName : "outfit";
         try {
-          const analysis = await analyzeOutfit(items, { score: styleScore, configName, aesthetic: deriveOutfitAesthetic(items) }, user);
+          // Bounded: a request that never settles would otherwise keep this outfit in inProgress
+          // (skipped by every later attempt) until the server restarted.
+          const analysis = await Promise.race([
+            analyzeOutfit(items, { score: styleScore, configName, aesthetic: deriveOutfitAesthetic(items) }, user),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("analysis timed out")), 60_000)),
+          ]);
           // Only write if the outfit wasn't changed meanwhile (same notes as when read).
           let upd = sb.from("outfits")
             .update({ notes: JSON.stringify({ ...notes, styleScore, ...analysis }) })
