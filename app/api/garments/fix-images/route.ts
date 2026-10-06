@@ -30,7 +30,7 @@ async function transparencyRatio(buf: Buffer): Promise<number> {
 }
 
 export async function POST(req: Request) {
-  const rateBlock = applyApiRateLimit(req, "garments:fix-images", 20, 3600000);
+  const rateBlock = applyApiRateLimit(req, "garments:fix-images", 1000, 3600000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

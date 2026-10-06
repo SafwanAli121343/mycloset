@@ -43,7 +43,7 @@ function parseNotes(notes: string | null) {
 }
 
 export async function GET(req: Request) {
-  const rateBlock = applyApiRateLimit(req, "outfits:gallery", 60, 60000);
+  const rateBlock = applyApiRateLimit(req, "outfits:gallery", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

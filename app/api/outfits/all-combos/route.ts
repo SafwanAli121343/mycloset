@@ -35,7 +35,7 @@ type GalleryItem = {
 };
 
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "outfits:all-combos", 30, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "outfits:all-combos", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   try {

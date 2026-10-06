@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   // Background removal is expensive — require auth and limit to 30/hour per IP
-  const rateBlock = applyApiRateLimit(req, "remove-bg", 30, 60 * 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "remove-bg", 1000, 60 * 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

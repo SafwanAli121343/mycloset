@@ -16,7 +16,7 @@ export const maxDuration = 120;
 const MAX_COMBOS = 40;
 
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "outfits:combo-analysis", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "outfits:combo-analysis", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

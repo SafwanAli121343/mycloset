@@ -12,7 +12,9 @@ export const maxDuration = 30;
 // Body: { title, brand, category, color_primary, material, fit, image }
 // Returns: { sub_type, aesthetic_tags, pros, cons, color_pairings, color_clashes, formality }
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "preview:deep", 10, 3600000);
+  // Only a runaway-loop ceiling: AI spending is limited by the $5/month Pro cap (lib/aiGateway.ts),
+  // not by request counts — 10/hour here made Preview fail after a few tries.
+  const rateBlock = applyApiRateLimit(req, "preview:deep", 1000, 3600000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

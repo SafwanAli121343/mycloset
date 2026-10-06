@@ -10,7 +10,7 @@ import { geocodeCity, reverseGeocode } from "@/lib/weatherData";
 // geolocation is denied/unavailable) and the "weather based on: X" display label (reverse
 // geocode of whatever coordinates were actually resolved).
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "geocode", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "geocode", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

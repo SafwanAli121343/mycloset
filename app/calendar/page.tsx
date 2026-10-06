@@ -491,9 +491,10 @@ function DayDetailModal({
                 <p key={i} style={{ fontSize: 12, color: "#333", lineHeight: 1.65,
                   margin: "0 0 12px", letterSpacing: "0.02em" }}>{p}</p>
               ))
-              : <p style={{ fontSize: 12, color: "#bbb", lineHeight: 1.6, margin: 0 }}>
-                  {analyzed ? "None" : "No analysis yet for this outfit."}
-                </p>
+              : analyzed
+                ? <p style={{ fontSize: 12, color: "#bbb", lineHeight: 1.6, margin: 0 }}>None</p>
+                // Pro, still being analyzed: dots until it arrives (the page re-checks the month).
+                : <LoadingDots />
             }
           </div>
         </div>
@@ -1012,9 +1013,10 @@ function DayDetailModal({
                 <p key={i} style={{ fontSize: 12, color: "#555", lineHeight: 1.65,
                   margin: "0 0 12px", letterSpacing: "0.02em" }}>{c}</p>
               ))
-              : <p style={{ fontSize: 12, color: "#bbb", lineHeight: 1.6, margin: 0 }}>
-                  {analyzed ? "None" : "No analysis yet for this outfit."}
-                </p>
+              : analyzed
+                ? <p style={{ fontSize: 12, color: "#bbb", lineHeight: 1.6, margin: 0 }}>None</p>
+                // Pro, still being analyzed: dots until it arrives (the page re-checks the month).
+                : <LoadingDots />
             }
           </div>
         </div>

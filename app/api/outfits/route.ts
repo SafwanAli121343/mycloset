@@ -51,7 +51,7 @@ async function analyzeEditedOutfit(userId: string, outfitId: string) {
 // GET /api/outfits?year=2024&month=6
 // Returns { [YYYY-MM-DD]: { id, garments[] } } for the requested month
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "outfits", 120, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "outfits", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

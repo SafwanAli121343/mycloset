@@ -15,7 +15,7 @@ const adminClient = createClient(
 // Computes fresh style_pairings for one garment against the current wardrobe,
 // saves the result back to DB, and returns it.
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "garments:pairings", 60, 60000);
+  const rateBlock = applyApiRateLimit(req, "garments:pairings", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

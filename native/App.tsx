@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useKeyboardLift } from "./lib/useKeyboardLift";
-import { View, Text, TouchableOpacity, Animated, Easing } from "react-native";
+import { View, Text, TouchableOpacity, Animated, Easing, Keyboard } from "react-native";
 import { apiJsonCached } from "./lib/api";
 import { initDataCache } from "./lib/dataCache";
 import { enableScreens } from "react-native-screens";
@@ -92,6 +92,10 @@ function ScreenArea({ children, hasEntered }: { children: React.ReactNode; hasEn
       style={{ flex: 1 }}
       onStartShouldSetResponderCapture={() => { guardedHide(); return false; }}
       onMoveShouldSetResponderCapture={() => { guardedHide(); return false; }}
+      // A tap on empty space (nothing else claims it) closes the keyboard. Buttons, fields and
+      // scroll views still get their own taps first.
+      onStartShouldSetResponder={() => Keyboard.isVisible()}
+      onResponderRelease={() => Keyboard.dismiss()}
     >
       <Animated.View style={{ flex: 1, transform: [{ translateY: Animated.add(top, keyboardLift) }] }}>
         <Animated.View

@@ -19,7 +19,7 @@ export const maxDuration = 20;
 
 
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "wardrobe:gap", 30, 60000);
+  const rateBlock = applyApiRateLimit(req, "wardrobe:gap", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

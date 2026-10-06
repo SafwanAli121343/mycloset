@@ -16,7 +16,7 @@ const adminClient = createClient(
 );
 
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "outfits:readiness", 120, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "outfits:readiness", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

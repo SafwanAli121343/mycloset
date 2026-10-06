@@ -8,7 +8,7 @@ import { getSessionFromCookies } from "@/lib/auth/session";
 // data (and the same WMO condition-code mapping) as the actual outfit-generation/scoring
 // pipeline — so what the calendar shows and what outfits get picked never disagree.
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "weather", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "weather", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   // Every other route under app/api/** enforces its own session check (see proxy.ts's own

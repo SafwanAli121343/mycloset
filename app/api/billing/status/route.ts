@@ -13,7 +13,7 @@ export const maxDuration = 300;
 // launch and after any purchase/redeem flow so the client's gating always reflects the DB,
 // never a locally-cached guess.
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "billing:status", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "billing:status", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

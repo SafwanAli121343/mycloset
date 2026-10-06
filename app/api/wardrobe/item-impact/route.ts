@@ -20,7 +20,7 @@ const FIELDS =
   "pattern, formality, aesthetic_tags, pros, cons, color_pairings, color_clashes, tags, image";
 
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "wardrobe:impact", 30, 60000);
+  const rateBlock = applyApiRateLimit(req, "wardrobe:impact", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

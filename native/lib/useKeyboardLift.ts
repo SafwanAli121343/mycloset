@@ -10,7 +10,9 @@ import { Animated, Keyboard, Platform, TextInput, type KeyboardEvent } from "rea
 // keyboard stays open: iOS can report the keyboard opening before the app hears which field took
 // focus, and switching fields with the keyboard already up sends no new "opening" event at all —
 // the first version of this read the focused field on that event alone and so never moved.
-const GAP = 16;
+// Clear space kept between the field and the keyboard — roomy enough that a line under the
+// field (e.g. Preview's CANCEL) isn't jammed against the keyboard either.
+const GAP = 56;
 const extraBelow = new WeakMap<object, number>();
 let optOuts = 0;
 

@@ -229,7 +229,7 @@ async function uploadBase64ToStorage(dataUri: string, userId: string): Promise<s
 
 export async function POST(request: NextRequest) {
   // AI inference + image processing make this expensive — limit to 30/hour per IP
-  const rateBlock = applyApiRateLimit(request, "garments:post", 30, 60 * 60 * 1000);
+  const rateBlock = applyApiRateLimit(request, "garments:post", 1000, 60 * 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

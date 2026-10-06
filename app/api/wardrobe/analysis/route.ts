@@ -14,7 +14,7 @@ const sb = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "wardrobe:analysis", 10, 3600000);
+  const rateBlock = applyApiRateLimit(req, "wardrobe:analysis", 1000, 3600000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -18,7 +18,9 @@ const SPREAD_H           = 190;
 const SPREAD_SCALE       = 5;
 const ITEMS_PER_ROW      = 3;
 const OVERLAY_TOP_OFFSET = 50;
-const IDEAL_THRESHOLD    = 75;
+// No minimum: every scored outfit gets its score and analysis (the old 75 cut-off rejected
+// lower-scoring outfits in Builder and left them unanalyzed on Outfits).
+const IDEAL_THRESHOLD    = 0;
 const FILTER_PANEL_W = 264;
 const COLORS_CHUNK   = 14;
 const PIECES_CHUNK   = 10;

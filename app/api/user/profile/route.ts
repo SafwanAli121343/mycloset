@@ -15,7 +15,7 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "user:profile", 30, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "user:profile", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

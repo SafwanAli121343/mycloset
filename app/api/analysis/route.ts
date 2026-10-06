@@ -10,7 +10,7 @@ import { resolveEntitlement, consumeAiCredit, consumeErrorMessage } from "@/lib/
 
 export async function POST(request: NextRequest) {
     // OpenAI call — limit to 10/hour per IP
-    const rateBlock = applyApiRateLimit(request, "analysis", 10, 60 * 60 * 1000);
+    const rateBlock = applyApiRateLimit(request, "analysis", 1000, 60 * 60 * 1000);
     if (rateBlock) return rateBlock;
 
     const session = await getSessionFromCookies();

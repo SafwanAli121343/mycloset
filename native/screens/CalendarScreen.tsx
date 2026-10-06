@@ -390,8 +390,11 @@ function AccessoriesSheet({ visible, onClose, children }: { visible: boolean; on
 // over animating the pieces toward a center stack — at that exact instant piecesHidden switches
 // the real grid's images off (they've already been measured via onBoxMeasured by then), so the
 // overlay's floating copies take over from the identical on-screen spot with no visible seam.
-function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden, loading }: {
+function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden, loading, analysisUnavailable }: {
   notes: Notes; garments: Garment[];
+  // Pro, no analysis yet: three dots where the analysis goes while CalendarScreen keeps checking
+  // for it; this is set only once it has given up (e.g. the monthly AI budget is used up).
+  analysisUnavailable?: boolean;
   chromeOpacity: Animated.Value | Animated.AnimatedInterpolation<number> | number;
   onBoxMeasured?: (id: string, rect: BoxRect) => void;
   piecesHidden?: boolean;
@@ -477,9 +480,13 @@ function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden
         {accs.length > 0 && (
           <TextButton label="SHOW ACCESSORIES" size={10} color={colors.textMuted} onPress={() => setShowAccs(true)} style={{ marginTop: spacing.sm }} />
         )}
-        {hasAI && !loading && !notes.analyzed && (
-          <Text style={[type.body, { color: colors.textFaint, marginTop: spacing.md }]}>No analysis yet for this outfit.</Text>
-        )}
+        {hasAI && !loading && !notes.analyzed && (analysisUnavailable ? (
+          <Text style={[type.body, { color: colors.textFaint, marginTop: spacing.md }]}>Analysis isn't available right now.</Text>
+        ) : (
+          <View style={{ height: 195, width: "100%", marginTop: spacing.md, alignItems: "center", justifyContent: "center" }}>
+            <LoadingDots />
+          </View>
+        ))}
         {focusItems.length > 0 && (
           <View style={{ height: 195, width: "100%", marginTop: spacing.md }}>
             <FocusScrollList items={focusItems} focal={0.5} />
@@ -1282,9 +1289,10 @@ export default function CalendarScreen() {
   // Builder's SAVE (after editing a day's outfit there) sends us back here with a fresh
   // timestamp so this already-mounted tab knows to refetch instead of showing stale data.
   useEffect(() => {
-    if (route.params?.refreshAt) load(year, month, true);
+    if (route.params?.refreshAt) { analysisPollsRef.current[monthKey] = 0; load(year, month, true); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.refreshAt]);
+
 
   function openEdit(outfit: OutfitDay, date: string) {
     navigation.navigate("Builder", {
@@ -1321,6 +1329,31 @@ export default function CalendarScreen() {
   const cells = useMemo(() => getCells(year, month), [year, month]);
   const daysInMonth = new Date(year, month, 0).getDate();
   const monthDates = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => toDateStr(year, month, i + 1)), [year, month, daysInMonth]);
+
+  // Pro: every outfit on the calendar gets its analysis (the server works on it right after a day
+  // is generated or edited, and catches up on the rest when a month is viewed). While any of this
+  // month's outfits is still waiting, re-check every few seconds so it appears on its own; the
+  // day view shows loading dots in its place meanwhile. Gives up after ~3 minutes (e.g. the
+  // monthly AI budget is used up) and says so, rather than checking forever.
+  const analysisPollsRef = useRef<Record<string, number>>({});
+  const [analysisPollTick, setAnalysisPollTick] = useState(0);
+  const [analysisGaveUp, setAnalysisGaveUp] = useState<Set<string>>(() => new Set());
+  const analysisPending = hasAI && monthDates.some(d => {
+    const o = outfits[d];
+    return !!o && o.garments.length > 0 && !parseNotes(o.notes ?? null).analyzed;
+  });
+  useEffect(() => {
+    if (!analysisPending || generating || analysisGaveUp.has(monthKey)) return;
+    const n = analysisPollsRef.current[monthKey] ?? 0;
+    if (n >= 45) { setAnalysisGaveUp(prev => new Set(prev).add(monthKey)); return; }
+    const t = setTimeout(async () => {
+      analysisPollsRef.current[monthKey] = n + 1;
+      await loadRef.current(year, month, true);
+      setAnalysisPollTick(x => x + 1);
+    }, 4000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisPending, generating, monthKey, analysisPollTick]);
   const blankDays = monthDates.filter(d => !outfits[d]).length;
   const hasBrokenOutfits = monthDates.some(d => outfits[d] && outfits[d].garments.length === 0);
   const needsGeneration = blankDays > 0 || hasBrokenOutfits;
@@ -1687,7 +1720,16 @@ export default function CalendarScreen() {
   );
   // Full-screen dots only until readiness is known (calReady) — after that, both views show their
   // own layout with in-place dots while content loads (month: per day; day: per box).
-  const calendarReady = calReady === true;
+  // The FIRST reveal waits for the whole view underneath (the day's pieces, or the month's
+  // outfits, weather and images) — it used to wait only for readiness, so the header (top)
+  // appeared at once while the outfits (bottom) were still loading in. Latched: once shown,
+  // later loads (other months/days) use their own in-place dots instead of the full-screen ones.
+  const monthImagesReady = monthDates.every(d =>
+    (outfits[d]?.garments ?? []).every(g => !g.image || bucketOf(g) === "accessory" || readyImagesRef.current.has(g.image)));
+  const firstViewReady = calReady === true && (view === "day" ? dayReady : monthContentReady && monthImagesReady);
+  const [firstShown, setFirstShown] = useState(false);
+  useEffect(() => { if (firstViewReady) setFirstShown(true); }, [firstViewReady]);
+  const calendarReady = firstShown || firstViewReady;
 
   if (calReady === false) {
     return (
@@ -1789,6 +1831,7 @@ export default function CalendarScreen() {
               <DayOutfit
                 notes={focusNotes} garments={focusOutfit.garments} chromeOpacity={dayChromeOpacity}
                 onBoxMeasured={handleBoxMeasured}
+                analysisUnavailable={analysisGaveUp.has(monthKey)}
                 // gathering: hides the real pieces while the day->month closing overlay takes
                 // over (unchanged). growing: hides them for the brief window right after the
                 // month->day distribute animation cuts over to this real view but is still

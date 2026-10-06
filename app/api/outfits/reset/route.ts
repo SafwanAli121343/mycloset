@@ -11,7 +11,7 @@ const adminClient = createClient(
 // DELETE /api/outfits/reset — wipes every outfit for the authenticated user.
 // Used during the initial 3-month setup flow so the page starts fresh.
 export async function DELETE(req: Request) {
-  const rateBlock = applyApiRateLimit(req, "outfits:reset", 10, 3600000);
+  const rateBlock = applyApiRateLimit(req, "outfits:reset", 1000, 3600000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

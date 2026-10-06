@@ -20,7 +20,7 @@ export const maxDuration = 30;
 // Re-runs AI inference on an existing garment to refresh pros, cons, aesthetic_tags,
 // color_pairings, and color_clashes using the current prompt (fragment/note style).
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "garments:reanalyze", 10, 3600000);
+  const rateBlock = applyApiRateLimit(req, "garments:reanalyze", 1000, 3600000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

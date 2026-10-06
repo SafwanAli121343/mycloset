@@ -12,7 +12,7 @@ import { resolveEntitlement, consumeAiCredit, consumeErrorMessage } from "@/lib/
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "analysis:fitcheck", 10, 3600000);
+  const rateBlock = applyApiRateLimit(req, "analysis:fitcheck", 1000, 3600000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

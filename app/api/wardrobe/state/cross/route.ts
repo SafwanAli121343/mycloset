@@ -51,7 +51,7 @@ export async function DELETE(req: NextRequest) {
 // POST /api/wardrobe/state/cross — append CrossedEntry[] when items are added.
 // Called fire-and-forget from add-item page.
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "wardrobe:cross", 60, 60000);
+  const rateBlock = applyApiRateLimit(req, "wardrobe:cross", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

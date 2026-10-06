@@ -66,7 +66,7 @@ async function loadState(userId: string): Promise<{ state: WABackendState | null
 // Returns 200 null when table exists but no state yet (first-time user).
 // Returns 200 WABackendState when state exists.
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "wardrobe:state", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "wardrobe:state", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

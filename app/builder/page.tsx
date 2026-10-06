@@ -14,7 +14,9 @@ const FONT: CSSProperties = { fontFamily: "Arial, sans-serif" };
 const B = 142;
 const G = 5;
 const MIN_ACC = 10;
-const IDEAL_THRESHOLD = 75;
+// No minimum: every scored outfit gets its score and analysis (the old 75 cut-off rejected
+// lower-scoring outfits in Builder and left them unanalyzed on Outfits).
+const IDEAL_THRESHOLD = 0;
 const CATS = ["all","top","bottom","footwear","outerwear","accessory"] as const;
 
 const WAVE_CSS = `
@@ -616,7 +618,7 @@ export default function BuilderPage() {
                     ? "Couldn't score that outfit — try again."
                     : !result.valid
                     ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
-                    : "This outfit scored below the ideal threshold — try a different combination."}
+                    : "Couldn't score that outfit. Try again."}
                 </p>
               </div>
             )}

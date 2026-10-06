@@ -26,7 +26,9 @@ export const COMBO_GARMENT_COLS =
   "pattern, formality, aesthetic_tags, aesthetic_source, pros, cons, color_pairings, color_clashes, tags, image";
 export const COMBO_MAX = 2000;
 // Outfits below this show no score or analysis anywhere (matches both clients).
-export const IDEAL_THRESHOLD = 75;
+// No minimum: every scored outfit gets its score and analysis (the old 75 cut-off rejected
+// lower-scoring outfits in Builder and left them unanalyzed on Outfits).
+export const IDEAL_THRESHOLD = 0;
 // How many top outfits Pro's catch-up analyzes ahead of time (≈ the first screenful).
 const PREWARM_COUNT = 18;
 const MAX_PARALLEL = 4;

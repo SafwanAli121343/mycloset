@@ -51,7 +51,7 @@ function inferCategoryFromText(text: string): string | null {
 
 export async function POST(req: NextRequest) {
   // OpenAI vision call — require auth and rate-limit to 20/hour per IP
-  const rateBlock = applyApiRateLimit(req, "garments:analyze", 20, 60 * 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "garments:analyze", 1000, 60 * 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

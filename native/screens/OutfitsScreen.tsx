@@ -118,7 +118,9 @@ const ANALYSIS_TOP = SCREEN_H * 0.5;
 const ANALYSIS_H = 190;
 
 const SPREAD_ITEMS_PER_ROW = 3;
-const IDEAL_THRESHOLD = 75;
+// No minimum: every scored outfit gets its score and analysis (the old 75 cut-off rejected
+// lower-scoring outfits in Builder and left them unanalyzed on Outfits).
+const IDEAL_THRESHOLD = 0;
 
 function itemSize(count: number): { w: number; h: number } {
   if (count <= 2) return { w: 118, h: 156 };

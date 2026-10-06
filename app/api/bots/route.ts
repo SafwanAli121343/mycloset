@@ -46,7 +46,7 @@ async function getWardrobes(): Promise<BotWardrobe[]> {
 // GET /api/bots
 // Returns all bots with their best outfit score for the bot-select screen.
 export async function GET(req: Request) {
-  const rateBlock = applyApiRateLimit(req, "bots", 60, 60000);
+  const rateBlock = applyApiRateLimit(req, "bots", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });

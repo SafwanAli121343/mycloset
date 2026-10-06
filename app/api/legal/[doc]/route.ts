@@ -6,7 +6,7 @@ import { applyApiRateLimit } from "@/lib/security/rateLimit";
 // app reads this to render the document in-app (see native/screens/LegalScreen.tsx) instead of
 // opening a browser, and a prospective user should be able to read these before ever signing up.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ doc: string }> }) {
-  const rateBlock = applyApiRateLimit(req, "legal", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "legal", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const { doc } = await params;

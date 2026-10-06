@@ -44,7 +44,7 @@ type HypoGarment = Partial<GarmentForScoring> & {
 // Body: { garment: HypoGarment }
 // Returns: { outfitCount, avgScore, aestheticFit, pieceScore, outfits, items }
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "preview:count", 60, 60000);
+  const rateBlock = applyApiRateLimit(req, "preview:count", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -18,7 +18,7 @@ const SELECT_COLS = [
 ].join(",");
 
 export async function POST(req: Request) {
-  const rateBlock = applyApiRateLimit(req, "scoring:outfit", 60, 60000);
+  const rateBlock = applyApiRateLimit(req, "scoring:outfit", 300, 60000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });

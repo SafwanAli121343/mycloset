@@ -17,7 +17,7 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   // Background removal + storage upload — require auth and limit to 30/hour per IP
-  const rateBlock = applyApiRateLimit(req, "upload-image", 30, 60 * 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "upload-image", 1000, 60 * 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

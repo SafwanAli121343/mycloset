@@ -36,7 +36,7 @@ async function scoreAccess(userId: string): Promise<{ hasAI: boolean; purchasedR
 }
 
 export async function GET(req: Request) {
-  const rateBlock = applyApiRateLimit(req, "scoring", 60, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "scoring", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();

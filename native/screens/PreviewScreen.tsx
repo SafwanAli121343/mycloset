@@ -14,7 +14,7 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { apiJson, apiFetch, apiJsonCached } from "../lib/api";
+import { apiJson, apiFetch, apiJsonCached, ApiError } from "../lib/api";
 import { setNavigationBlock } from "../lib/navigationBlock";
 import { useNavBarVisibility, useSuppressNavButton } from "../lib/NavBarVisibility";
 import { TextButton } from "../components/TextButton";
@@ -1293,6 +1293,12 @@ function StepFade({ children }: { children: ReactNode }) {
 // Matches the website's Preview tool: up to 3 input slots, analyzed together — one item gives a
 // single fit check, more than one becomes a comparison. Staged flow mirrors the website's
 // PageStep exactly: input → identifying → confirming (one item at a time) → analyzing → results.
+// The server's own explanation for a failed Preview call (a spending cap, too many requests),
+// shown instead of a guess. Generic 5xx errors aren't worth showing as-is.
+function reasonOf(e: unknown): string | null {
+  return e instanceof ApiError && e.status < 500 && e.status !== 401 && e.message ? e.message : null;
+}
+
 export default function PreviewScreen() {
   const insets = useSafeAreaInsets();
   const { hasAI } = useEntitlements();
@@ -1528,13 +1534,14 @@ export default function PreviewScreen() {
     setStep("identifying");
     setStageLabel("Identifying items…");
     const found: (IdentifyResp & { image: string })[] = [];
+    let failReason: string | null = null;
     for (let i = 0; i < src.length; i++) {
-      const id = await identify(src[i]).catch(e => { console.error(`[Preview] slot ${i} identify failed:`, e); return null; });
+      const id = await identify(src[i]).catch(e => { console.error(`[Preview] slot ${i} identify failed:`, e); failReason = reasonOf(e) ?? failReason; return null; });
       if (id) found.push(id);
     }
     if (found.length === 0) {
       setStep("input"); setStageLabel("");
-      showInputStatus("Couldn't identify — try a clearer photo or a different link.", "bad");
+      showInputStatus(failReason ?? "Couldn't identify this item. Try again, or use a different photo or link.", "bad");
       return;
     }
     setStageLabel("Removing backgrounds…");
@@ -1569,13 +1576,14 @@ export default function PreviewScreen() {
     // usually already warm). A failure just means 0 matches, never a failed analysis.
     const closetColors = (await apiJsonCached<{ color_primary: string | null }[]>("/api/garments").catch(() => []))
       .map(g => g.color_primary).filter((c): c is string => !!c);
+    let failReason: string | null = null;
     const settled = await Promise.all(
       src.map(async (p, i): Promise<ItemResult | null> => {
         const category = normalizeCategory(p.category ?? "top");
         const deep = await apiJson<DeepAttrs>("/api/preview/deep-analyze", {
           method: "POST",
           body: JSON.stringify({ title: p.title ?? "Item", brand: p.brand, category, color_primary: p.color_primary, material: p.material, fit: p.fit, image: p.image }),
-        }).catch(e => { console.error(`[Preview] slot ${i} deep-analyze failed:`, e); return null; });
+        }).catch(e => { console.error(`[Preview] slot ${i} deep-analyze failed:`, e); failReason = reasonOf(e) ?? failReason; return null; });
         if (!deep) return null;
         if (i === 0) setStageLabel("Computing outfit compatibility…");
         const basic: BasicAttrs = { title: p.title ?? "Item", brand: p.brand ?? null, category, color_primary: p.color_primary ?? null, material: p.material ?? null, fit: p.fit ?? null, image: p.image };
@@ -1611,7 +1619,7 @@ export default function PreviewScreen() {
                   : null,
               },
             }),
-          }).catch(e => { console.error(`[Preview] slot ${i} outfit-count failed:`, e); return null; }),
+          }).catch(e => { console.error(`[Preview] slot ${i} outfit-count failed:`, e); failReason = reasonOf(e) ?? failReason; return null; }),
           computeWardrobeImpact({
             title: basic.title, sub_type: deep.sub_type, category: basic.category,
             color_primary: basic.color_primary, pattern: deep.pattern, aesthetic_tags: deep.aesthetic_tags, image: basic.image,
@@ -1625,7 +1633,7 @@ export default function PreviewScreen() {
     const good = settled.filter((r): r is ItemResult => r !== null).sort((a, b) => b.overall - a.overall);
     if (good.length === 0) {
       setStep("input"); setStageLabel("");
-      showInputStatus("Couldn't analyze — try a clearer photo or a different link.", "bad");
+      showInputStatus(failReason ?? "Couldn't analyze this item. Please try again.", "bad");
       return;
     }
     // The analyzing dots stay up until the results' images are actually decoded — each item's

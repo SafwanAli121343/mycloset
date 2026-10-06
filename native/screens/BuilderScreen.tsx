@@ -26,7 +26,9 @@ type Garment = SlotGarment & {
 };
 
 type ScoreResult = { score: number | null; valid: boolean; reason: string | null; serverError?: boolean; locked?: boolean };
-const IDEAL_THRESHOLD = 75;
+// No minimum: every scored outfit gets its score and analysis (the old 75 cut-off rejected
+// lower-scoring outfits in Builder and left them unanalyzed on Outfits).
+const IDEAL_THRESHOLD = 0;
 type Rect = { x: number; y: number; width: number; height: number };
 
 // How many of a given bucket an outfit can actually hold — matches the website's own outfit-
@@ -534,7 +536,7 @@ export default function BuilderScreen() {
                   ? "Couldn't score that outfit. Try again."
                   : !result.valid
                   ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
-                  : "This outfit scored below the ideal threshold. Try a different combination."}
+                  : "Couldn't score that outfit. Try again."}
               </Text>
             </Animated.View>
           )

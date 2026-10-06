@@ -16,7 +16,7 @@ import {
 export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "jobs:get", 120, 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "jobs:get", 300, 60 * 1000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const rateBlock = applyApiRateLimit(req, "jobs:start", 20, 60 * 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "jobs:start", 1000, 60 * 60 * 1000);
   if (rateBlock) return rateBlock;
   const session = await getSessionFromCookies();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

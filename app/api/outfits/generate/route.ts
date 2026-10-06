@@ -29,7 +29,7 @@ const adminClient = createClient(
 
 export async function POST(req: NextRequest) {
   // Full-month outfit generation — AI inference per outfit. 5/hour per IP.
-  const rateBlock = applyApiRateLimit(req, "outfits:generate", 5, 60 * 60 * 1000);
+  const rateBlock = applyApiRateLimit(req, "outfits:generate", 1000, 60 * 60 * 1000);
   if (rateBlock) return rateBlock;
 
   const session = await getSessionFromCookies();
