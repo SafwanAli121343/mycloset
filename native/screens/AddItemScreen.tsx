@@ -10,7 +10,6 @@ import { useEntitlements } from "../lib/billing/Entitlements";
 import { setNavigationBlock } from "../lib/navigationBlock";
 import { TextButton } from "../components/TextButton";
 import { UnderlineField } from "../components/UnderlineField";
-import { useKeyboardLift } from "../lib/useKeyboardLift";
 import { AestheticPicker } from "../components/AestheticPicker";
 import { LoadingDots } from "../components/LoadingDots";
 import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
@@ -288,8 +287,6 @@ export default function AddItemScreen() {
   }
 
   const canAdd = !!(title.trim() && category && !adding);
-  // Fields low on the screen (Fit, Aesthetic) would otherwise sit under the keyboard.
-  const keyboardLift = useKeyboardLift();
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -319,7 +316,7 @@ export default function AddItemScreen() {
          if that space were actually visible, so "centered" content would sit visibly lower than
          the true visible area above the bar. The spacer below (matching PreviewScreen's
          identical fix) reserves that footprint outside the centering pair. */}
-      <Animated.View style={{ flex: 1, justifyContent: imagePreview ? "flex-start" : "center", padding: spacing.xl + 4, paddingTop: NAV_ROW_TOP, transform: [{ translateY: keyboardLift }] }}>
+      <View style={{ flex: 1, justifyContent: imagePreview ? "flex-start" : "center", padding: spacing.xl + 4, paddingTop: NAV_ROW_TOP }}>
         <View style={styles.tabRow} ref={tutorialTarget("add.main")} collapsable={false}>
           <TextButton label="PHOTO" size={11} color={tab === "photo" ? colors.text : colors.textFaint} onPress={() => setTab("photo")} style={styles.tabBtn} />
           <TextButton label="URL" size={11} color={tab === "url" ? colors.text : colors.textFaint} onPress={() => setTab("url")} style={styles.tabBtn} />
@@ -462,7 +459,7 @@ export default function AddItemScreen() {
             />
           </>
         )}
-      </Animated.View>
+      </View>
       {/* Reserves the floating nav bar's own footprint outside the centering pair above — see
          the comment on the root View for why this is needed at all. */}
       <View style={{ flexShrink: 0, height: BAR_CONTENT_H + insets.bottom + BAR_BOTTOM_GAP }} />

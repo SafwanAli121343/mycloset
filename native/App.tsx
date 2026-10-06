@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useKeyboardLift } from "./lib/useKeyboardLift";
 import { View, Text, TouchableOpacity, Animated, Easing } from "react-native";
 import { apiJsonCached } from "./lib/api";
 import { initDataCache } from "./lib/dataCache";
@@ -82,6 +83,9 @@ function ScreenArea({ children, hasEntered }: { children: React.ReactNode; hasEn
     ]).start();
   }, [stage, scale, top]);
   const staged = !!stage;
+  // Keeps the field being typed in above the keyboard on every signed-in screen (Sign In / Sign
+  // Up have their own lift).
+  const keyboardLift = useKeyboardLift(hasEntered);
 
   return (
     <View
@@ -89,7 +93,7 @@ function ScreenArea({ children, hasEntered }: { children: React.ReactNode; hasEn
       onStartShouldSetResponderCapture={() => { guardedHide(); return false; }}
       onMoveShouldSetResponderCapture={() => { guardedHide(); return false; }}
     >
-      <Animated.View style={{ flex: 1, transform: [{ translateY: top }] }}>
+      <Animated.View style={{ flex: 1, transform: [{ translateY: Animated.add(top, keyboardLift) }] }}>
         <Animated.View
           ref={setStageNode as never}
           collapsable={false}

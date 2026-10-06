@@ -34,7 +34,7 @@ type Rect = { x: number; y: number; width: number; height: number };
 // to 3). Everything except Top and Accessories is single-occupancy, which is also why you
 // could add multiple pairs of shoes before — nothing was enforcing this on the native side.
 const MAX_PER_BUCKET: Record<Bucket, number> = {
-  head: 1, outer: 1, top: 3, mid: 1, bottom: 1, shoes: 1, accessory: Infinity,
+  head: 1, outer: 1, top: 1, mid: 1, bottom: 1, shoes: 1, accessory: Infinity,
 };
 
 const { height: SCREEN_H, width: SCREEN_W } = Dimensions.get("window");
@@ -190,6 +190,11 @@ export default function BuilderScreen() {
   const route = useRoute<RouteProp<MainTabParamList, "Builder">>();
   const [allGarments, setAllGarments] = useState<Garment[]>(() => getCached<Garment[]>("/api/garments") ?? []);
   const [outfit, setOutfit] = useState<Garment[]>([]);
+  // Slot overrides for pieces not shown in their own bucket's slot: a calendar day opened for
+  // editing can carry a second top (a tee under a flannel), and Top holds one piece, so the extra
+  // one sits in the free Outer or Mid slot, the way the calendar's own grid draws it.
+  const [placed, setPlaced] = useState<Record<string, Bucket>>({});
+  const slotOf = (g: Garment): Bucket => placed[g.id] ?? bucketOf(g);
   const [loading, setLoading] = useState(!getCached("/api/garments"));
   const [sheetOpen, setSheetOpen] = useState(false);
   const [scoring, setScoring] = useState(false);
@@ -287,6 +292,11 @@ export default function BuilderScreen() {
     const matched = (p.initialIds ?? [])
       .map(id => allGarments.find(g => g.id === id))
       .filter((g): g is Garment => !!g);
+    const extraTops = sortTops(matched.filter(g => bucketOf(g) === "top")).slice(1);
+    const nextPlaced: Record<string, Bucket> = {};
+    const free = (["outer", "mid"] as Bucket[]).filter(b => !matched.some(g => bucketOf(g) === b));
+    for (const g of extraTops) { const b = free.shift(); if (b) nextPlaced[g.id] = b; }
+    setPlaced(nextPlaced);
     setOutfit(matched);
     setEditCtx({ date: p.editDate, outfitId: p.editOutfitId });
     setResult(null);
@@ -337,16 +347,16 @@ export default function BuilderScreen() {
     outfit.some(g => bucketOf(g) === "bottom") &&
     outfit.some(g => bucketOf(g) === "shoes");
 
-  // Single-occupancy buckets (pants, shoes, etc.) replace whatever was already there instead
-  // of stacking a second one in; multi-occupancy buckets (Top's layering, Accessories) just
-  // reject the add once genuinely full rather than silently going over.
+  // Single-occupancy buckets (every slot but Accessories, Top included) replace whatever was
+  // already there instead of stacking a second one in — Top used to take 3, drawn stacked in one
+  // box, so earlier tops peeked out behind the newest and reappeared when it was removed.
   function addItem(g: Garment) {
     const bucket = bucketOf(g);
     const max = MAX_PER_BUCKET[bucket];
     setOutfit(prev => {
-      const inBucket = prev.filter(x => bucketOf(x) === bucket);
+      const inBucket = prev.filter(x => slotOf(x) === bucket);
       if (inBucket.length >= max) {
-        if (max === 1) return [...prev.filter(x => bucketOf(x) !== bucket), g];
+        if (max === 1) return [...prev.filter(x => slotOf(x) !== bucket), g];
         return prev;
       }
       return [...prev, g];
@@ -480,7 +490,7 @@ export default function BuilderScreen() {
   // so the primary/first Top chip is always a true base layer, not whichever button-up/oxford
   // happened to be added first.
   const inBucket = (b: Bucket) => {
-    const items = outfit.filter(g => bucketOf(g) === b);
+    const items = outfit.filter(g => slotOf(g) === b);
     return b === "top" ? sortTops(items) : items;
   };
   const sheetItems = allGarments.filter(g => !outfitIds.has(g.id));
@@ -498,12 +508,10 @@ export default function BuilderScreen() {
     <ReadyGate ready>
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       {editCtx && (
+        // Editing a calendar day: SAVE then CANCEL, top left, where the "EDITING <date>" label was.
         <View style={styles.editBanner}>
-          <Text style={[type.label, { color: colors.textMuted }]}>EDITING {editCtx.date}</Text>
-          <View style={{ flexDirection: "row", gap: 18 }}>
-            <TextButton label="CANCEL" size={9} color={colors.textFaint} onPress={cancelEdit} />
-            <TextButton label={saving ? "SAVING..." : "SAVE"} size={9} color={colors.gold} loading={saving} disabled={saving} onPress={saveEdit} />
-          </View>
+          <TextButton label={saving ? "SAVING..." : "SAVE"} size={9} color={colors.gold} loading={saving} disabled={saving} onPress={saveEdit} />
+          <TextButton label="CANCEL" size={9} color={colors.textFaint} onPress={cancelEdit} />
         </View>
       )}
 
@@ -543,7 +551,7 @@ export default function BuilderScreen() {
 
         <View style={styles.torsoRow}>
           <Slot ref={slotRefs.outer} label="OUTER" single items={inBucket("outer")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotTorso} />
-          <Slot ref={slotRefs.top} label="TOP" single={false} items={inBucket("top")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotTorso} />
+          <Slot ref={slotRefs.top} label="TOP" single items={inBucket("top")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotTorso} />
           <Slot ref={slotRefs.mid} label="MID" single items={inBucket("mid")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotTorso} />
         </View>
 
@@ -621,9 +629,8 @@ const styles = StyleSheet.create({
   resultErrorTitle: { fontSize: 9, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", color: colors.bad, textAlign: "center", marginBottom: 4 },
   resultErrorBody: { fontSize: 11, color: colors.textMuted, lineHeight: 17, textAlign: "center" },
   editBanner: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: spacing.lg, paddingTop: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.sm,
+    flexDirection: "row", alignItems: "center", gap: 18,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm,
   },
   // Without an explicit style={flex:1} on the ScrollView, it sizes to its content and never
   // fills the screen — leaving flexGrow:1 below inert and a short outfit pinned to the top with

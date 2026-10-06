@@ -1,8 +1,8 @@
 import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ScrollView, Share, Linking, Platform } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import * as SecureStore from "expo-secure-store";
@@ -12,6 +12,7 @@ import { apiJson, apiFetch, ApiError } from "../lib/api";
 import { tutorialTarget, setTutorialSettingsHandler } from "../lib/tutorial";
 import { TextButton } from "../components/TextButton";
 import { UnderlineField } from "../components/UnderlineField";
+import { optOutOfKeyboardLift } from "../lib/useKeyboardLift";
 import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
 import { LegalModal, type LegalDocId } from "../components/LegalModal";
 import { PAYMENTS_ENABLED } from "../lib/config";
@@ -37,6 +38,8 @@ function CenteredTextButton({ label, onPress, color, disabled, loading }: {
 
 export default function SettingsScreen() {
   const { user, signOut, emailVerified } = useAuth();
+  // This screen's ScrollView keeps the focused field in view itself (automaticallyAdjustKeyboardInsets).
+  useFocusEffect(useCallback(() => optOutOfKeyboardLift(), []));
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const insets = useSafeAreaInsets();
   const entitlements = useEntitlements();

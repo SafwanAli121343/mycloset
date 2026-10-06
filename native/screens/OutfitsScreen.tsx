@@ -738,6 +738,8 @@ export default function OutfitsScreen() {
   }
 
   const lastLoadedJsonRef = useRef<string | null>(null);
+  // Set once every retry has failed — shown as an error with RETRY, never as an empty closet.
+  const [loadFailed, setLoadFailed] = useState(false);
   const load = useCallback(async () => {
     let willRetry = false;
     try {
@@ -764,6 +766,7 @@ export default function OutfitsScreen() {
         showMoreCountRef.current = 0;
       }
       outfitsRetryCount.current = 0;
+      setLoadFailed(false);
       // Fire-and-forget: first paint (the small INITIAL_PAGE_SIZE batch above) must not wait on
       // however many more batches it takes to cover a full screen.
       autoFillToScreen(res.outfits, res.items, INITIAL_PAGE_SIZE).catch(() => {});
@@ -780,7 +783,10 @@ export default function OutfitsScreen() {
         setTimeout(load, delay);
         return;
       }
-      setData({ total: 0, items: {}, outfits: [] });
+      // Keep whatever was showing; if nothing was, say it failed (it used to set an empty result
+      // here, which read as "add more items" while the closet was actually fine).
+      outfitsRetryCount.current = 0;
+      setLoadFailed(true);
     } finally {
       if (!willRetry) setLoading(false);
     }
@@ -1099,8 +1105,13 @@ export default function OutfitsScreen() {
         ListEmptyComponent={
           <View style={styles.center}>
             <Text style={[type.body, { color: colors.textFaint, textAlign: "center" }]}>
-              {allOutfits.length === 0 ? "Add a few more items to your closet to generate outfit combinations." : "No outfits match filters."}
+              {loadFailed && allOutfits.length === 0
+                ? "Couldn't load your outfits."
+                : allOutfits.length === 0 ? "Add a few more items to your closet to generate outfit combinations." : "No outfits match filters."}
             </Text>
+            {loadFailed && allOutfits.length === 0 && (
+              <TextButton label="RETRY" size={11} onPress={() => { setLoadFailed(false); setLoading(true); load(); }} style={{ marginTop: spacing.md }} />
+            )}
           </View>
         }
         ListFooterComponent={hasMore ? (

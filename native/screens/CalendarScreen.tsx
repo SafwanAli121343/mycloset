@@ -343,6 +343,40 @@ function DayHeader({
   );
 }
 
+// The accessories panel: only the panel itself slides up from the bottom. (It used a Modal with
+// animationType="slide" over a dimmed backdrop, which slid the dark backdrop up along with it.)
+// No dimming; a tap anywhere outside the panel closes it.
+function AccessoriesSheet({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(visible);
+  const y = useRef(new Animated.Value(400)).current;
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      y.setValue(400);
+      Animated.timing(y, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    } else if (mounted) {
+      Animated.timing(y, { toValue: 400, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start(() => setMounted(false));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+  return (
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={onClose}>
+      <View style={{ flex: 1, justifyContent: "flex-end" }}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <Animated.View style={{ backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.lg, paddingBottom: spacing.xl, transform: [{ translateY: y }] }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
+            <Text style={type.label}>ACCESSORIES</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={10}>
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          {children}
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
 // No outer scroll — the day view should show everything (nav, buttons, grid, accessories link)
 // without needing to scroll down to reach it. OutfitSlotGrid's box size is capped compact enough
 // (see OutfitSlotGrid.tsx) that the grid plus everything else here fits in the remaining space
@@ -380,28 +414,17 @@ function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden
   // Accessories popup — same bottom-sheet style as Builder's InventorySheet. Shared by both
   // the Pro and free layouts below.
   const accessoriesModal = (
-      <Modal visible={showAccs} transparent animationType="slide" onRequestClose={() => setShowAccs(false)}>
-        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowAccs(false)} />
-          <View style={{ backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.lg, paddingBottom: spacing.xl }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
-              <Text style={type.label}>ACCESSORIES</Text>
-              <TouchableOpacity onPress={() => setShowAccs(false)} hitSlop={10}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
+    <AccessoriesSheet visible={showAccs} onClose={() => setShowAccs(false)}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ flexDirection: "row", gap: spacing.md }}>
+          {accs.map(g => (
+            <View key={g.id} style={{ width: 80, height: 80, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" }}>
+              {g.image ? <Image source={{ uri: g.image }} style={{ width: "80%", height: "80%" }} contentFit="contain" cachePolicy="memory-disk" transition={0} /> : null}
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={{ flexDirection: "row", gap: spacing.md }}>
-                {accs.map(g => (
-                  <View key={g.id} style={{ width: 80, height: 80, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center" }}>
-                    {g.image ? <Image source={{ uri: g.image }} style={{ width: "80%", height: "80%" }} contentFit="contain" cachePolicy="memory-disk" transition={0} /> : null}
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
+          ))}
         </View>
-      </Modal>
+      </ScrollView>
+    </AccessoriesSheet>
   );
 
   // Free tier: no pros/cons list under the grid, so the grid gets the room instead — bigger
@@ -1643,7 +1666,10 @@ export default function CalendarScreen() {
   // generated for an empty focus day, and the focus day's piece images are decoded. Before this,
   // the header painted immediately while the grid area below still showed its own dots — the
   // top of the screen arriving before the bottom.
-  const autoGenPending = !!calReady && !loading && monthEverLoaded && needsGeneration && !autoGenTriedRef.current.has(monthKey);
+  // Readiness still unknown (calReady null, first open) counts as "about to generate" too: it was
+  // excluded before, so an empty month flashed "No outfit for this day" for the moment between
+  // the month loading and readiness coming back, then switched to dots once generation started.
+  const autoGenPending = calReady !== false && !loading && monthEverLoaded && needsGeneration && !autoGenTriedRef.current.has(monthKey);
   // This month's outfits AND weather are both in for the month on screen, and nothing is being
   // generated for it — until then the month grid shows per-day loading dots (MonthBody).
   const monthDataReady = outfitMonthsLoaded.has(monthKey) && monthKey in weatherByMonth;
