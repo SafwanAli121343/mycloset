@@ -192,6 +192,7 @@ export default function BuilderScreen() {
   const route = useRoute<RouteProp<MainTabParamList, "Builder">>();
   const [allGarments, setAllGarments] = useState<Garment[]>(() => getCached<Garment[]>("/api/garments") ?? []);
   const [outfit, setOutfit] = useState<Garment[]>([]);
+  const [scrollH, setScrollH] = useState(0);
   // Slot overrides for pieces not shown in their own bucket's slot: a calendar day opened for
   // editing can carry a second top (a tee under a flannel), and Top holds one piece, so the extra
   // one sits in the free Outer or Mid slot, the way the calendar's own grid draws it.
@@ -518,15 +519,9 @@ export default function BuilderScreen() {
       )}
 
       <View style={styles.topRow}>
+        {/* Errors only — a score shows under the boxes (with RESET in SCORE's place). */}
         {result ? (
-          // Free-only release: nothing to upgrade to, so a finished outfit just gets RESET.
-          isEligible || (result.locked && !PAYMENTS_ENABLED) ? (
-            // On the nav chevron's exact center line (see ShowNavButton's NAV_ROW_*).
-            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: NAV_ROW_TOP, height: NAV_ROW_H }}>
-              {isEligible && <Text style={{ fontSize: 24, fontWeight: "700", color: scoreColor(result.score) }}>{result.score}</Text>}
-              <TextButton label="RESET" size={9} color={colors.bad} onPress={resetBuilder} />
-            </View>
-          ) : (
+          isEligible || (result.locked && !PAYMENTS_ENABLED) ? null : (
             <Animated.View style={[styles.resultError, { opacity: resultFade }]}>
               <Text style={styles.resultErrorTitle}>{result.locked ? "AI SCORING LOCKED" : result.serverError ? "SOMETHING WENT WRONG" : "ACCESS DENIED"}</Text>
               <Text style={styles.resultErrorBody}>
@@ -543,12 +538,16 @@ export default function BuilderScreen() {
         ) : null}
       </View>
 
+      {/* The boxes, score and SCORE/RESET stay centered in the first screenful (minHeight = the
+         visible height), so scoring never shifts the boxes; the pros and cons sit below it,
+         reached by scrolling down. */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         style={styles.silhouetteScroll}
-        contentContainerStyle={[styles.silhouette, { paddingBottom: insets.bottom + spacing.lg }]}
+        onLayout={e => setScrollH(e.nativeEvent.layout.height)}
         scrollEnabled={!dragGarment}
       >
+       <View style={[styles.silhouette, { minHeight: scrollH, paddingBottom: insets.bottom + spacing.lg }]}>
         <Slot ref={slotRefs.head} label="HEAD" single items={inBucket("head")} onTap={() => setSheetOpen(true)} onRemove={removeItem} style={styles.slotHead} />
 
         <View style={styles.torsoRow}>
@@ -575,31 +574,34 @@ export default function BuilderScreen() {
           disabled={sheetOpen} style={{ marginTop: spacing.md, opacity: sheetOpen ? 0 : 1 }}
         />
 
-        {isEligible && prosConsFocus.length > 0 && (
-          <TextButton
-            label={showProsCons ? "HIDE PROS & CONS" : "VIEW PROS & CONS"}
-            size={9}
-            color={colors.textMuted}
-            onPress={() => setShowProsCons(v => !v)}
-            style={{ marginTop: spacing.sm }}
-          />
-        )}
-        {showProsCons && isEligible && prosConsFocus.length > 0 && (
-          <View style={{ height: 170, width: "100%", marginTop: 8 }}>
-            <FocusScrollList items={prosConsFocus} />
+        {/* Scoring is Pro-only — free users get no SCORE button at all (rather than one that
+           only ever answers "AI SCORING LOCKED"); building and saving outfits still works.
+           The score line's height is always reserved so the boxes never move when it appears. */}
+        {hasAI && (
+          <View style={styles.scoreLine}>
+            {isEligible && <Text style={[styles.scoreText, { color: scoreColor(result!.score) }]}>{result!.score}</Text>}
           </View>
         )}
-
-        {/* Scoring is Pro-only — free users get no SCORE button at all (rather than one that
-           only ever answers "AI SCORING LOCKED"); building and saving outfits still works. */}
-        {hasAI && (
+        {hasAI && (isEligible ? (
+          <TextButton label="RESET" color={colors.bad} onPress={resetBuilder} />
+        ) : (
           <TextButton
             label={scoring ? "SCORING..." : "SCORE"}
             loading={scoring}
             disabled={!canScore || scoring}
             onPress={handleScore}
-            style={{ marginTop: spacing.xs }}
           />
+        ))}
+       </View>
+
+        {isEligible && (pros.length > 0 || cons.length > 0) && (
+          // Bottom padding clears the floating nav bar so the last con can be scrolled into view.
+          <View style={[styles.prosCons, { paddingBottom: insets.bottom + 110 }]}>
+            {pros.length > 0 && <Text style={[type.label, { color: colors.good, textAlign: "center" }]}>PROS</Text>}
+            {pros.map(p => <Text key={`p-${p}`} style={styles.prosConsLine}>{p}</Text>)}
+            {cons.length > 0 && <Text style={[type.label, { color: colors.bad, textAlign: "center", marginTop: pros.length ? spacing.lg : 0 }]}>CONS</Text>}
+            {cons.map(c => <Text key={`c-${c}`} style={styles.prosConsLine}>{c}</Text>)}
+          </View>
         )}
       </ScrollView>
 
@@ -639,6 +641,10 @@ const styles = StyleSheet.create({
   // the rest of the screen blank underneath SCORE. silhouetteScroll makes the ScrollView itself
   // fill the remaining space so flexGrow:1 + center below actually has room to center into.
   silhouetteScroll: { flex: 1, width: "100%" },
+  scoreLine: { height: 48, justifyContent: "center", alignItems: "center", marginTop: -4 },
+  scoreText: { fontSize: 36, lineHeight: 44, fontWeight: "700", textAlign: "center" },
+  prosCons: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.sm, alignItems: "center" },
+  prosConsLine: { fontSize: 13, lineHeight: 19, color: colors.textMuted, textAlign: "center" },
   silhouette: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg, paddingTop: spacing.xs, gap: 16 },
   torsoRow: { flexDirection: "row", gap: 8 },
   slot: {
