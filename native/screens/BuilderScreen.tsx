@@ -594,13 +594,10 @@ export default function BuilderScreen() {
         ))}
        </View>
 
-        {isEligible && (pros.length > 0 || cons.length > 0) && (
-          // Bottom padding clears the floating nav bar so the last con can be scrolled into view.
-          <View style={[styles.prosCons, { paddingBottom: insets.bottom + 110 }]}>
-            {pros.length > 0 && <Text style={[type.label, { color: colors.good, textAlign: "center" }]}>PROS</Text>}
-            {pros.map(p => <Text key={`p-${p}`} style={styles.prosConsLine}>{p}</Text>)}
-            {cons.length > 0 && <Text style={[type.label, { color: colors.bad, textAlign: "center", marginTop: pros.length ? spacing.lg : 0 }]}>CONS</Text>}
-            {cons.map(c => <Text key={`c-${c}`} style={styles.prosConsLine}>{c}</Text>)}
+        {/* Same scrolling pros/cons list as the calendar's day view (FocusScrollList). */}
+        {isEligible && prosConsFocus.length > 0 && (
+          <View style={{ height: 195, width: "100%", marginTop: spacing.sm, marginBottom: insets.bottom + 110 }}>
+            <FocusScrollList items={prosConsFocus} focal={0.5} />
           </View>
         )}
       </ScrollView>
@@ -643,8 +640,6 @@ const styles = StyleSheet.create({
   silhouetteScroll: { flex: 1, width: "100%" },
   scoreLine: { height: 48, justifyContent: "center", alignItems: "center", marginTop: -4 },
   scoreText: { fontSize: 36, lineHeight: 44, fontWeight: "700", textAlign: "center" },
-  prosCons: { paddingHorizontal: spacing.xl, paddingTop: spacing.md, gap: spacing.sm, alignItems: "center" },
-  prosConsLine: { fontSize: 13, lineHeight: 19, color: colors.textMuted, textAlign: "center" },
   silhouette: { flexGrow: 1, alignItems: "center", justifyContent: "center", padding: spacing.lg, paddingTop: spacing.xs, gap: 16 },
   torsoRow: { flexDirection: "row", gap: 8 },
   slot: {
