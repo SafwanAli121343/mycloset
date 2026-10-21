@@ -303,11 +303,27 @@ export default function SettingsScreen() {
               </View>
             )}
 
-            <CenteredTextButton label={exporting ? "EXPORTING..." : "EXPORT MY DATA"} onPress={onExport} disabled={exporting} loading={exporting} />
-            <CenteredTextButton label={deleting ? "DELETING..." : "DELETE ACCOUNT"} color={colors.bad} onPress={confirmDelete} disabled={deleting} loading={deleting} />
-            <View style={{ minHeight: 16, justifyContent: "center" }}>
-              <StatusMessage status={accountStatus} style={{ fontSize: 11 }} />
-            </View>
+            {isGuest ? (
+              // Guest: EXPORT and DELETE sit together lower down, spaced exactly like the gap down to
+              // SIGN OUT (spacing.xl each), with the status line above them.
+              <>
+                <View style={{ minHeight: 16, justifyContent: "center" }}>
+                  <StatusMessage status={accountStatus} style={{ fontSize: 11 }} />
+                </View>
+                <View style={{ alignItems: "center", gap: spacing.xl, marginTop: spacing.xl }}>
+                  <TextButton label={exporting ? "EXPORTING..." : "EXPORT MY DATA"} onPress={onExport} disabled={exporting} loading={exporting} />
+                  <TextButton label={deleting ? "DELETING..." : "DELETE ACCOUNT"} color={colors.bad} onPress={confirmDelete} disabled={deleting} loading={deleting} />
+                </View>
+              </>
+            ) : (
+              <>
+                <CenteredTextButton label={exporting ? "EXPORTING..." : "EXPORT MY DATA"} onPress={onExport} disabled={exporting} loading={exporting} />
+                <CenteredTextButton label={deleting ? "DELETING..." : "DELETE ACCOUNT"} color={colors.bad} onPress={confirmDelete} disabled={deleting} loading={deleting} />
+                <View style={{ minHeight: 16, justifyContent: "center" }}>
+                  <StatusMessage status={accountStatus} style={{ fontSize: 11 }} />
+                </View>
+              </>
+            )}
           </View>
         )}
 
