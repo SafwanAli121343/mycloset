@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { TouchableOpacity, Text, StyleSheet, Animated, ScrollView } from "react-native";
+import { TouchableOpacity, Text, StyleSheet, Animated, ScrollView, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/AuthContext";
@@ -29,7 +29,15 @@ export const BAR_BOTTOM_GAP = 12;
 
 export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | undefined; onNavigate: (tab: TabKey) => void }) {
   const insets = useSafeAreaInsets();
-  const { signOut } = useAuth();
+  const { signOut, isGuest } = useAuth();
+  // A guest has no email to sign back in with, so signing out loses the closet: confirm first.
+  const onSignOut = () => {
+    if (!isGuest) { signOut(); return; }
+    Alert.alert("Sign out?", "You're using a guest account. Signing out deletes access to this closet for good. Create an account in Settings first to keep it.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Sign Out", style: "destructive", onPress: signOut },
+    ]);
+  };
   const { visible } = useNavBarVisibility();
   const hiddenTabs = useHiddenTabs();
   const totalH = BAR_CONTENT_H + insets.bottom + BAR_BOTTOM_GAP;
@@ -71,7 +79,7 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
             </TouchableOpacity>
           );
         })}
-        <TouchableOpacity style={styles.item} onPress={signOut} hitSlop={4}>
+        <TouchableOpacity style={styles.item} onPress={onSignOut} hitSlop={4}>
           <Ionicons name="log-out-outline" size={26} color={colors.bad} />
           <Text style={[styles.label, { color: colors.bad }]}>Sign Out</Text>
         </TouchableOpacity>

@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { GuestButton } from "../components/GuestButton";
 import { useAuth } from "../lib/AuthContext";
 import { colors, type, spacing } from "../theme/theme";
 import { LegalModal, type LegalDocId } from "../components/LegalModal";
@@ -197,6 +198,8 @@ export default function SignUpScreen() {
           <TouchableOpacity onPress={() => navigation.navigate("SignIn")} style={{ marginTop: spacing.md }}>
             <Text style={styles.link}>ALREADY HAVE AN ACCOUNT? <Text style={styles.linkBold}>LOG IN</Text></Text>
           </TouchableOpacity>
+
+          <GuestButton style={{ marginTop: spacing.xl }} />
         </ScrollView>
       </Animated.View>
       <LegalModal doc={legalDoc} visible={legalDoc !== null} onClose={() => setLegalDoc(null)} />

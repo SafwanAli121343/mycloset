@@ -10,6 +10,8 @@ export type AuditAction =
   | "login_failed"
   | "logout"
   | "register"
+  | "register_guest"
+  | "claim_guest"
   | "account_deleted"
   | "data_exported"
   | "password_changed"

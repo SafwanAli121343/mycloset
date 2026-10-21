@@ -28,7 +28,18 @@ type AuthContextType = {
   signOut: () => Promise<void>;
   verifyEmail: (code: string) => Promise<{ error?: string }>;
   resendVerification: () => Promise<{ error?: string }>;
+  // Guest mode (App Store guideline 5.1.1(v)): use the app without registering. A guest is a real
+  // account with no personal info (see the server's lib/auth/guest.ts); claimAccount attaches an
+  // email + password to it later, keeping everything.
+  isGuest: boolean;
+  continueAsGuest: () => Promise<{ error?: string }>;
+  claimAccount: (email: string, password: string) => Promise<{ error?: string }>;
 };
+
+const GUEST_EMAIL_DOMAIN = "guest.mycloset.invalid";
+// The guest's generated sign-in, kept only in the device's secure storage so the guest closet
+// survives an expired session (refresh tokens lapse after 30 days unused).
+const GUEST_CREDS_KEY = "mc_guest_creds_v1";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 const USER_CACHE_KEY = "mc_user_v1";
@@ -58,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearToken();
     await clearRefreshToken();
     SecureStore.deleteItemAsync(USER_CACHE_KEY).catch(() => {});
+    SecureStore.deleteItemAsync(GUEST_CREDS_KEY).catch(() => {});
     // The data cache persists to AsyncStorage across launches — without clearing it, the next
     // person to sign in on this device briefly saw the previous user's closet/calendar/scores.
     invalidateCache();
@@ -73,6 +85,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // A guest whose session lapsed signs back in with the credentials stored at creation.
+  const restoreGuest = useCallback(async () => {
+    const raw = await SecureStore.getItemAsync(GUEST_CREDS_KEY).catch(() => null);
+    if (!raw) return;
+    try {
+      const { email, password } = JSON.parse(raw) as { email: string; password: string };
+      const data = await apiJson<{ id: string; email: string; token: string; refreshToken: string }>(
+        "/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      await saveToken(data.token);
+      await saveRefreshToken(data.refreshToken);
+      const u = { id: data.id, email: data.email };
+      SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(u)).catch(() => {});
+      setUser(u);
+    } catch { /* offline or account gone: stay signed out */ }
+  }, []);
+
   useEffect(() => {
     async function init() {
       const token = await getToken();
@@ -80,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Check for a refresh token — we might be able to silently restore the session
         const refreshToken = await getRefreshToken();
         if (!refreshToken) {
+          await restoreGuest();
           setIsLoaded(true);
           setSessionConfirmed(true);
           return;
@@ -98,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await saveRefreshToken(data.refreshToken);
           } else {
             await clearRefreshToken();
+            await restoreGuest();
             setIsLoaded(true);
             setSessionConfirmed(true);
             return;
@@ -185,6 +215,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyVerification]);
 
+  const continueAsGuest = useCallback(async () => {
+    try {
+      const data = await apiJson<{ id: string; email: string; token: string; refreshToken: string; guestPassword: string }>(
+        "/api/auth/guest", { method: "POST" });
+      await SecureStore.setItemAsync(GUEST_CREDS_KEY, JSON.stringify({ email: data.email, password: data.guestPassword }));
+      await saveToken(data.token);
+      await saveRefreshToken(data.refreshToken);
+      const u = { id: data.id, email: data.email };
+      SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(u)).catch(() => {});
+      setUser(u);
+      applyVerification({ emailVerified: true, verificationRequired: false });
+      return {};
+    } catch (e) {
+      return { error: e instanceof ApiError ? e.message : "Something went wrong. Please try again." };
+    }
+  }, [applyVerification]);
+
+  const claimAccount = useCallback(async (email: string, password: string) => {
+    try {
+      const data = await apiJson<{ id: string; email: string; token: string; refreshToken: string; emailVerified?: boolean; verificationRequired?: boolean }>(
+        "/api/auth/claim", { method: "POST", body: JSON.stringify({ email, password }) });
+      await saveToken(data.token);
+      await saveRefreshToken(data.refreshToken);
+      SecureStore.deleteItemAsync(GUEST_CREDS_KEY).catch(() => {});
+      const u = { id: data.id, email: data.email };
+      SecureStore.setItemAsync(USER_CACHE_KEY, JSON.stringify(u)).catch(() => {});
+      setUser(u);
+      applyVerification(data);
+      return {};
+    } catch (e) {
+      return { error: e instanceof ApiError ? e.message : "Something went wrong. Please try again." };
+    }
+  }, [applyVerification]);
+
   const verifyEmail = useCallback(async (code: string) => {
     try {
       await apiJson("/api/auth/verify-email", { method: "POST", body: JSON.stringify({ code }) });
@@ -209,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{
       user, isLoaded, isSignedIn: !!user, sessionConfirmed, emailVerified, verificationRequired,
       signIn, signUp, signOut, verifyEmail, resendVerification,
+      isGuest: !!user?.email?.endsWith(`@${GUEST_EMAIL_DOMAIN}`), continueAsGuest, claimAccount,
     }}>
       {children}
     </AuthContext.Provider>

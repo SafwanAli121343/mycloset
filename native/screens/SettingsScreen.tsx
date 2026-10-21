@@ -37,7 +37,24 @@ function CenteredTextButton({ label, onPress, color, disabled, loading }: {
 }
 
 export default function SettingsScreen() {
-  const { user, signOut, emailVerified } = useAuth();
+  const { user, signOut, emailVerified, isGuest, claimAccount } = useAuth();
+  // Guest → real account (keeps the closet): email + password, then the server attaches them.
+  const [claimEmail, setClaimEmail] = useState("");
+  const [claimPw, setClaimPw] = useState("");
+  const [claimPw2, setClaimPw2] = useState("");
+  const [claimError, setClaimError] = useState("");
+  const [claimBusy, setClaimBusy] = useState(false);
+  async function submitClaim() {
+    if (claimBusy) return;
+    if (!claimEmail.trim()) { setClaimError("Enter your email."); return; }
+    if (claimPw.length < 8) { setClaimError("Password must be at least 8 characters."); return; }
+    if (claimPw !== claimPw2) { setClaimError("Passwords don't match."); return; }
+    setClaimBusy(true); setClaimError("");
+    const r = await claimAccount(claimEmail.trim(), claimPw);
+    setClaimBusy(false);
+    if (r.error) setClaimError(r.error);
+    else { setClaimEmail(""); setClaimPw(""); setClaimPw2(""); }
+  }
   // This screen's ScrollView keeps the focused field in view itself (automaticallyAdjustKeyboardInsets).
   useFocusEffect(useCallback(() => optOutOfKeyboardLift(), []));
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
@@ -199,7 +216,7 @@ export default function SettingsScreen() {
   }
 
   function confirmSignOut() {
-    Alert.alert("Sign out?", undefined, [
+    Alert.alert("Sign out?", isGuest ? "You're using a guest account. Signing out deletes access to this closet for good. Create an account first to keep it." : undefined, [
       { text: "Cancel", style: "cancel" },
       { text: "Sign Out", style: "destructive", onPress: signOut },
     ]);
@@ -236,7 +253,26 @@ export default function SettingsScreen() {
       <ScrollView showsVerticalScrollIndicator={false} automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, padding: spacing.lg, paddingBottom: insets.bottom + 130, justifyContent: "center" }}>
         {page === "ACCOUNT" && (
           <View>
-            {user && <Text style={[type.body, { textAlign: "center", marginBottom: spacing.md }]}>{user.email}</Text>}
+            {user && !isGuest && <Text style={[type.body, { textAlign: "center", marginBottom: spacing.md }]}>{user.email}</Text>}
+            {isGuest && (
+              <View style={{ marginBottom: spacing.lg }}>
+                <Text style={[type.label, { textAlign: "center", marginBottom: spacing.xs }]}>GUEST</Text>
+                <Text style={[type.body, { textAlign: "center", color: colors.textMuted, fontSize: 12, marginBottom: spacing.md }]}>
+                  Create an account to keep your closet and use it on other devices. Everything you've added stays.
+                </Text>
+                <View style={{ marginBottom: spacing.sm }}>
+                  <UnderlineField hint="EMAIL" value={claimEmail} onChangeText={setClaimEmail} autoCapitalize="none" keyboardType="email-address" autoComplete="email" />
+                </View>
+                <View style={{ marginBottom: spacing.sm }}>
+                  <UnderlineField hint="PASSWORD" value={claimPw} onChangeText={setClaimPw} secureTextEntry autoCapitalize="none" />
+                </View>
+                <View style={{ marginBottom: spacing.md }}>
+                  <UnderlineField hint="CONFIRM" value={claimPw2} onChangeText={setClaimPw2} secureTextEntry autoCapitalize="none" />
+                </View>
+                {!!claimError && <Text style={[type.body, { color: colors.bad, fontSize: 11, textAlign: "center", marginBottom: spacing.sm }]}>{claimError}</Text>}
+                <CenteredTextButton label={claimBusy ? "CREATING..." : "CREATE ACCOUNT"} onPress={submitClaim} disabled={claimBusy} loading={claimBusy} />
+              </View>
+            )}
 
             {!emailVerified && (
               <View style={{ alignItems: "center", marginBottom: spacing.md }}>
@@ -245,7 +281,7 @@ export default function SettingsScreen() {
               </View>
             )}
 
-            {!changingPw ? (
+            {isGuest ? null : !changingPw ? (
               <CenteredTextButton label="CHANGE PASSWORD" onPress={() => setChangingPw(true)} />
             ) : (
               <View style={{ marginBottom: spacing.md }}>

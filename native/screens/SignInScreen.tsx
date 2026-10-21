@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { GuestButton } from "../components/GuestButton";
 import { useAuth } from "../lib/AuthContext";
 import { apiJson } from "../lib/api";
 import { colors, type, spacing } from "../theme/theme";
@@ -160,6 +161,8 @@ export default function SignInScreen() {
         <TouchableOpacity onPress={() => navigation.navigate("SignUp")} style={{ marginTop: spacing.lg }}>
           <Text style={styles.link}>NO ACCOUNT? <Text style={styles.linkBold}>CREATE ONE</Text></Text>
         </TouchableOpacity>
+
+        <GuestButton style={{ marginTop: spacing.xl }} />
       </Animated.View>
     </Pressable>
   );
