@@ -75,13 +75,17 @@ export async function clearRefreshTokenCookie() {
 // web app's exact existing behavior unchanged; the Bearer fallback is purely additive and only
 // engages for clients that don't send the cookie at all.
 export async function getSessionFromCookies(): Promise<SessionPayload | null> {
-  const store = await cookies();
-  const token = store.get(COOKIE_NAME)?.value;
-  if (token) return verifySessionWithRevocation(token);
-
+  // The app's own Bearer token wins over any cookie. The app never needs the cookie, but iOS
+  // keeps cookies from earlier responses — a session cookie left over from a previously signed-in
+  // account used to take priority, so a new (e.g. guest) session briefly saw the OLD account's
+  // closet. Web requests carry no Authorization header and fall through to the cookie as before.
   const hdrs = await headers();
   const auth = hdrs.get("authorization");
   if (auth?.startsWith("Bearer ")) return verifySessionWithRevocation(auth.slice(7));
+
+  const store = await cookies();
+  const token = store.get(COOKIE_NAME)?.value;
+  if (token) return verifySessionWithRevocation(token);
 
   return null;
 }

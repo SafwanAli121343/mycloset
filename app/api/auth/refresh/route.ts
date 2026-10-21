@@ -12,11 +12,11 @@ export async function POST(req: NextRequest) {
   if (rateBlock) return rateBlock;
 
   // Accept refresh token from the httpOnly cookie (web) or request body (native app)
-  let rawToken: string | null = await getRefreshTokenFromCookies();
-  if (!rawToken) {
-    const body = await req.json().catch(() => null);
-    if (body && typeof body.refreshToken === "string") rawToken = body.refreshToken;
-  }
+  // The app's token (in the body) wins over the cookie — a leftover cookie from a previous
+  // account on the phone must never be what gets renewed (see getSessionFromCookies).
+  const body = await req.json().catch(() => null);
+  let rawToken: string | null = body && typeof body.refreshToken === "string" ? body.refreshToken : null;
+  if (!rawToken) rawToken = await getRefreshTokenFromCookies();
 
   if (!rawToken) {
     return NextResponse.json({ error: "No refresh token." }, { status: 401 });

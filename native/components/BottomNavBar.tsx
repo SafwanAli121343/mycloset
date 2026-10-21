@@ -1,10 +1,11 @@
-import { useRef, useEffect } from "react";
-import { TouchableOpacity, Text, StyleSheet, Animated, ScrollView, Alert } from "react-native";
+import { useRef, useEffect, useState } from "react";
+import { TouchableOpacity, Text, StyleSheet, Animated, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/AuthContext";
 import { useNavBarVisibility } from "../lib/NavBarVisibility";
 import { useHiddenTabs } from "../lib/billing/paidFeatures";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { colors, fontFamily, spacing } from "../theme/theme";
 import type { MainTabParamList } from "../navigation/MainTabs";
 
@@ -31,13 +32,8 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
   const insets = useSafeAreaInsets();
   const { signOut, isGuest } = useAuth();
   // A guest has no email to sign back in with, so signing out loses the closet: confirm first.
-  const onSignOut = () => {
-    if (!isGuest) { signOut(); return; }
-    Alert.alert("Sign out?", "You're using a guest account. Signing out deletes access to this closet for good. Create an account in Settings first to keep it.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: signOut },
-    ]);
-  };
+  const [confirmGuestSignOut, setConfirmGuestSignOut] = useState(false);
+  const onSignOut = () => { if (isGuest) setConfirmGuestSignOut(true); else signOut(); };
   const { visible } = useNavBarVisibility();
   const hiddenTabs = useHiddenTabs();
   const totalH = BAR_CONTENT_H + insets.bottom + BAR_BOTTOM_GAP;
@@ -84,6 +80,15 @@ export function BottomNavBar({ activeTab, onNavigate }: { activeTab: TabKey | un
           <Text style={[styles.label, { color: colors.bad }]}>Sign Out</Text>
         </TouchableOpacity>
       </ScrollView>
+      <ConfirmDialog
+        visible={confirmGuestSignOut}
+        title="SIGN OUT?"
+        body="You're using a guest account. Signing out deletes access to this closet for good. Create an account in Settings first to keep it."
+        confirmLabel="SIGN OUT"
+        confirmColor={colors.bad}
+        onCancel={() => setConfirmGuestSignOut(false)}
+        onConfirm={() => { setConfirmGuestSignOut(false); signOut(); }}
+      />
     </Animated.View>
   );
 }

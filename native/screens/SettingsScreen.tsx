@@ -15,6 +15,7 @@ import { UnderlineField } from "../components/UnderlineField";
 import { optOutOfKeyboardLift } from "../lib/useKeyboardLift";
 import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
 import { LegalModal, type LegalDocId } from "../components/LegalModal";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { PAYMENTS_ENABLED } from "../lib/config";
 import { colors, type, spacing } from "../theme/theme";
 import type { MainTabParamList } from "../navigation/MainTabs";
@@ -215,12 +216,8 @@ export default function SettingsScreen() {
     }
   }
 
-  function confirmSignOut() {
-    Alert.alert("Sign out?", isGuest ? "You're using a guest account. Signing out deletes access to this closet for good. Create an account first to keep it." : undefined, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: signOut },
-    ]);
-  }
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  function confirmSignOut() { setSignOutOpen(true); }
 
   const tierLabel = entitlements.tier.toUpperCase();
 
@@ -431,6 +428,15 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </ScrollView>
       <LegalModal doc={legalDoc} visible={legalDoc !== null} onClose={() => setLegalDoc(null)} />
+      <ConfirmDialog
+        visible={signOutOpen}
+        title="SIGN OUT?"
+        body={isGuest ? "You're using a guest account. Signing out deletes access to this closet for good. Create an account first to keep it." : undefined}
+        confirmLabel="SIGN OUT"
+        confirmColor={colors.bad}
+        onCancel={() => setSignOutOpen(false)}
+        onConfirm={() => { setSignOutOpen(false); signOut(); }}
+      />
     </SafeAreaView>
   );
 }
