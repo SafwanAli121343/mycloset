@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Text, TouchableOpacity, View, StyleSheet } from "react-native";
 import { useAuth } from "../lib/AuthContext";
+import { LoadingDots } from "./LoadingDots";
 
 // "CONTINUE WITHOUT AN ACCOUNT" on Log In / Create Account (App Store guideline 5.1.1(v)): starts a
 // guest account with no personal info; Settings → Account offers to add an email later.
@@ -16,8 +17,9 @@ export function GuestButton({ style }: { style?: object }) {
   }
   return (
     <View style={[{ alignItems: "center" }, style]}>
-      <TouchableOpacity onPress={go} disabled={busy} hitSlop={8}>
-        <Text style={styles.link}>{busy ? "STARTING..." : "CONTINUE WITHOUT AN ACCOUNT"}</Text>
+      {/* Same height either way, so nothing shifts while the guest account is being made. */}
+      <TouchableOpacity onPress={go} disabled={busy} hitSlop={8} style={{ height: 16, justifyContent: "center" }}>
+        {busy ? <LoadingDots color="#ccc" size={5} /> : <Text style={styles.link}>CONTINUE WITHOUT AN ACCOUNT</Text>}
       </TouchableOpacity>
       <Text style={styles.note}>By continuing you agree to the Terms of Use and Privacy Policy.</Text>
       {!!error && <Text style={styles.error}>{error}</Text>}
