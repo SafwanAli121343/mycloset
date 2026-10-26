@@ -19,7 +19,7 @@
         },
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "7"
+      "buildNumber": "10"
     },
     "android": {
       "package": "com.myclosetapp.mycloset",
