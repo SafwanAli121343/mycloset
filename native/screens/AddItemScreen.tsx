@@ -210,7 +210,9 @@ export default function AddItemScreen() {
       return;
     }
     if (fit.trim() && !VALID_FITS.has(fit.trim().toLowerCase())) {
-      setFieldError(`"${fit.trim()}" is not a valid fit. Use: slim, regular, relaxed, oversized, baggy, tapered, straight, wide, skinny, or boxy.`);
+      // Red underline on Fit plus the message in the fixed status line, so nothing shifts.
+      setFieldError("fit");
+      showStatus("Fit must be slim, regular, relaxed, oversized, etc.", "bad");
       return;
     }
     setFieldError(null);
@@ -363,6 +365,12 @@ export default function AddItemScreen() {
               // without reserving the same height, switching between PHOTO and URL before
               // adding anything shifted the tab row and everything below it up or down.
               <View style={!imagePreview ? { minHeight: CAPTURE_SECTION_MIN_H, justifyContent: "center" } : undefined}>
+                {/* Floats in the empty space under ANALYZE (absolute, so it takes no layout room):
+                   showing or clearing it never moves the form. Nothing sits below this block
+                   when a link fails, since a failed link leaves no image or fields. */}
+                {urlError && (
+                  <Text pointerEvents="none" style={[type.body, { position: "absolute", top: "100%", left: 0, right: 0, color: colors.bad, fontSize: 12, marginTop: spacing.sm, textAlign: "center" }]}>{urlError}</Text>
+                )}
                 <UnderlineField
                   value={urlInput}
                   onChangeText={setUrlInput}
@@ -382,7 +390,6 @@ export default function AddItemScreen() {
                 />
               </View>
             )}
-            {urlError && <Text style={[type.body, { color: colors.bad, fontSize: 12, marginTop: spacing.sm, textAlign: "center" }]}>{urlError}</Text>}
           </View>
         )}
 
@@ -418,14 +425,13 @@ export default function AddItemScreen() {
               </View>
               <View style={styles.fieldRow}>
                 <UnderlineField containerStyle={styles.fieldHalf} value={price} onChangeText={setPrice} hint="Price" hintWidth={45} keyboardType="decimal-pad" />
-                <UnderlineField containerStyle={styles.fieldHalf} value={fit} onChangeText={setFit} hint="Fit" hintWidth={35} autoCapitalize="none" error={!!fieldError} />
+                <UnderlineField containerStyle={styles.fieldHalf} value={fit} onChangeText={v => { setFit(v); if (fieldError) setFieldError(null); }} hint="Fit" hintWidth={35} autoCapitalize="none" error={!!fieldError} />
               </View>
               {/* Full width, not paired — its dropdown needs the room, and it's the last field
                  before the category row, so the dropdown (which floats below it) never has
                  another real field underneath it to cover. Always available for both free and
                  paid users — this is never AI-filled (see the aesthetic state's own comment). */}
               <AestheticPicker value={aesthetic} onChange={setAesthetic} />
-              {fieldError && <Text style={[type.body, { color: colors.bad, fontSize: 12 }]}>{fieldError}</Text>}
             </View>
 
             <View style={[styles.catRow, { marginTop: SECTION_GAP }]}>
