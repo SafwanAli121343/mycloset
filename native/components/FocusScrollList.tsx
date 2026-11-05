@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, View, Text, StyleSheet, ScrollView, Dimensions, Pressable } from "react-native";
+import { Animated, View, Text, StyleSheet, ScrollView, Dimensions, type GestureResponderEvent } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, fontFamily } from "../theme/theme";
 
@@ -90,6 +90,7 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
   onFocalIndexChange?: (index: number) => void;
 }) {
   const scrollY = useRef(new Animated.Value(0)).current;
+  const offsetRef = useRef(0); // current scroll offset, for mapping a touch to its row
   const [viewportH, setViewportH] = useState(0);
   // Text size per bullet (index into `items`): scale 1 = normal; dir = what the next double tap
   // does. See SIZE_STEP.
@@ -171,6 +172,7 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ y: target, animated: false });
       scrollY.setValue(target);
+      offsetRef.current = target;
       // Make visible only after the scroll position is set.
       setCentered(true);
       reportFocalIndex(target);
@@ -199,7 +201,7 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
 
   const onScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-    { useNativeDriver: true, listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => reportFocalIndex(e.nativeEvent.contentOffset.y) },
+    { useNativeDriver: true, listener: (e: { nativeEvent: { contentOffset: { y: number } } }) => { offsetRef.current = e.nativeEvent.contentOffset.y; reportFocalIndex(e.nativeEvent.contentOffset.y); } },
   );
 
   // Does NOT re-center on item switch, and doesn't need to: with fixed row heights, oneCopyH
@@ -219,17 +221,79 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
     if (Math.abs(target - y) > 0.5) {
       scrollRef.current?.scrollTo({ y: target, animated: false });
       scrollY.setValue(target);
+      offsetRef.current = target;
     }
   };
 
-  if (items.length === 0) return null;
+  // Taps and holds are read from raw touches on the (untransformed) wrapper, then mapped to the
+  // row under the finger from the scroll offset. A Pressable on each row didn't work: the rows
+  // carry 3D perspective transforms, which iOS doesn't hit-test reliably. Touches that move are
+  // scrolls and are ignored.
+  const padY = loop || items.length === 0 ? 0 : Math.max(0, viewportH / 2 - heights[0] / 2);
+  const wrapRef = useRef<View>(null);
+  const wrapTopRef = useRef(0);
+  const touchRef = useRef<{ x: number; y: number; at: number; moved: boolean; idx: number | null } | null>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHoldTimer = () => { if (holdTimerRef.current) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; } };
+  useEffect(() => clearHoldTimer, []);
+  const bodyIndexAt = (pageY: number): number | null => {
+    const y = offsetRef.current + (pageY - wrapTopRef.current) - padY;
+    for (let i = 0; i < loopedHeights.length; i++) {
+      const top = centers[i] - loopedHeights[i] / 2;
+      if (y >= top && y < top + loopedHeights[i]) {
+        const it = loopedItems[i];
+        return "text" in it && !it.header ? i % items.length : null;
+      }
+    }
+    return null;
+  };
+  const onTouchStart = (e: GestureResponderEvent) => {
+    if (e.nativeEvent.touches.length > 1) { touchRef.current = null; return; }
+    const { pageX, pageY } = e.nativeEvent;
+    touchRef.current = { x: pageX, y: pageY, at: Date.now(), moved: false, idx: null };
+    clearHoldTimer();
+    wrapRef.current?.measureInWindow((_x, top) => {
+      wrapTopRef.current = top;
+      if (touchRef.current) touchRef.current.idx = bodyIndexAt(pageY);
+    });
+    holdTimerRef.current = setTimeout(() => {
+      const t = touchRef.current;
+      if (t && !t.moved && t.idx !== null && (sizes[t.idx]?.scale ?? 1) < 1) onBodyHold(t.idx);
+    }, 250);
+  };
+  const onTouchMove = (e: GestureResponderEvent) => {
+    const t = touchRef.current;
+    if (!t || t.moved) return;
+    if (Math.abs(e.nativeEvent.pageX - t.x) > 10 || Math.abs(e.nativeEvent.pageY - t.y) > 10) {
+      t.moved = true; clearHoldTimer(); stopHold();
+    }
+  };
+  const onTouchEnd = () => {
+    const t = touchRef.current;
+    touchRef.current = null;
+    clearHoldTimer();
+    const wasHolding = !!holdRef.current;
+    stopHold();
+    if (!t || t.moved || wasHolding || Date.now() - t.at > 250) return;
+    const idx = t.idx ?? bodyIndexAt(t.y);
+    if (idx !== null) onBodyTap(idx);
+  };
+  const onTouchCancel = () => { touchRef.current = null; clearHoldTimer(); stopHold(); };
 
-  const padY = loop ? 0 : Math.max(0, viewportH / 2 - heights[0] / 2);
+  if (items.length === 0) return null;
 
   return (
     <View
+      ref={wrapRef}
       style={{ flex: 1, opacity: centered || !loop ? 1 : 0 }}
-      onLayout={e => setViewportH(e.nativeEvent.layout.height)}
+      onLayout={e => {
+        setViewportH(e.nativeEvent.layout.height);
+        wrapRef.current?.measureInWindow((_x, top) => { wrapTopRef.current = top; });
+      }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchCancel}
     >
       <Animated.ScrollView
         ref={scrollRef}
@@ -267,13 +331,6 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
                   );
                 })}</View>
               ) : (
-                <Pressable
-                  disabled={!!item.header}
-                  onPress={() => onBodyTap(i % items.length)}
-                  onLongPress={() => onBodyHold(i % items.length)}
-                  delayLongPress={250}
-                  onPressOut={stopHold}
-                >
                 <Text
                   style={[styles.text, { color }, !item.header && (() => {
                     const k = sizes[i % items.length]?.scale ?? 1;
@@ -295,7 +352,6 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
                 >
                   {item.text}
                 </Text>
-                </Pressable>
               )}
             </Animated.View>
           );
