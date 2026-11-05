@@ -16,13 +16,16 @@ const PRODUCT_TO_TIER: Record<string, string> = {
   mycloset_pro_monthly: "pro",
 };
 // One-time purchases, each its own balance (lib/billing/purchaseCredits.ts):
-//   item_scan     → +1 users.ai_credits            ("Single Item Analysis")
-//   wardrobe_scan → +1 users.wardrobe_scan_credits ("Full Wardrobe Analysis")
+//   item_scan     → +5 users.ai_credits            ("5 Item Analyses", $0.99)
+//   wardrobe_scan → +1 users.wardrobe_scan_credits ("Full Wardrobe Analysis", $0.99)
 // wardrobe_scan used to add 9,999 generic AI credits — effectively unlimited AI for one payment.
 const CONSUMABLE_KIND: Record<string, "item" | "wardrobe"> = {
   mycloset_item_scan: "item",
   mycloset_wardrobe_scan: "wardrobe",
 };
+// Uses granted per purchase. $0.99 is the App Store's lowest price, so the item purchase is a
+// 5-pack (each analysis costs ~1–3¢ in AI); the wardrobe purchase stays a single analysis.
+const CONSUMABLE_QTY: Record<"item" | "wardrobe", number> = { item: 5, wardrobe: 1 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Events that mean "the subscription is currently active" — INITIAL_PURCHASE/RENEWAL both
@@ -161,7 +164,7 @@ export async function POST(req: NextRequest) {
     // spend could interleave with.
     if (event.type === "NON_RENEWING_PURCHASE" || event.type === "INITIAL_PURCHASE") {
       // Consumables arrive as NON_RENEWING_PURCHASE in RevenueCat (INITIAL_PURCHASE kept for safety).
-      const { error } = await adminClient.rpc("add_purchase_credit", { p_user: user.id, p_kind: kind, p_n: 1 });
+      const { error } = await adminClient.rpc("add_purchase_credit", { p_user: user.id, p_kind: kind, p_n: CONSUMABLE_QTY[kind] });
       if (error) {
         // Let RevenueCat retry (non-2xx) rather than acknowledge a purchase we failed to grant —
         // and remove the dedupe row so the retry isn't skipped as a duplicate.
@@ -171,8 +174,8 @@ export async function POST(req: NextRequest) {
       }
       auditLog("tier_changed", user.id, null, { creditAdded: kind });
     } else if (event.type === "CANCELLATION") {
-      // A one-time purchase refunded by Apple/Google: take back the credit if it hasn't been used.
-      await adminClient.rpc("add_purchase_credit", { p_user: user.id, p_kind: kind, p_n: -1 });
+      // A one-time purchase refunded by Apple/Google: take back what it granted.
+      await adminClient.rpc("add_purchase_credit", { p_user: user.id, p_kind: kind, p_n: -CONSUMABLE_QTY[kind] });
       auditLog("tier_changed", user.id, null, { creditRefunded: kind });
     }
   }

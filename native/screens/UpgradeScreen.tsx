@@ -140,7 +140,7 @@ export default function UpgradeScreen() {
           {tier === "pro"
             ? "You have full Pro access."
             : (aiCredits ?? 0) > 0
-            ? `You're on the Free plan with ${aiCredits} Single Item Analys${aiCredits === 1 ? "is" : "es"} left. Use them with USE SCORE? in My Closet.`
+            ? `You're on the Free plan with ${aiCredits} Item Analys${aiCredits === 1 ? "is" : "es"} left. Use them with USE SCORE? in My Closet.`
             : "You're on the Free plan: organization and browsing only, no AI."}
         </Text>
 

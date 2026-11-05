@@ -50,7 +50,7 @@ const ALL_STEPS: Step[] = [
   { tab: "Wardrobe", zone: { x: 0.08, y: 0.1, w: 0.84, h: 0.45 }, title: "WARDROBE", where: "Open it with WARDROBE in the nav bar.",
     text: "Your wardrobe report: an overall score, plus the gaps, missing colors and weaknesses to work on next. The report needs MyCloset Pro (or a one-time Full Wardrobe Analysis)." },
   { tab: "Upgrade", zone: { x: 0.06, y: 0.16, w: 0.88, h: 0.42 }, title: "UPGRADE", where: "Open it with UPGRADE in the nav bar, or Settings → Plan.",
-    text: "Go Pro for every AI feature, or buy a single item score or one full wardrobe analysis." },
+    text: "Go Pro for every AI feature, or buy a 5-pack of item scores or one full wardrobe analysis." },
   { tab: "Settings", settingsPage: "FEEDBACK", target: "settings.feedback", zone: { x: 0.08, y: 0.18, w: 0.84, h: 0.4 }, title: "FEEDBACK", where: "Open SETTINGS in the nav bar, then flip to FEEDBACK with the arrows.",
     text: "Found a bug or have an idea? Send it from Settings → Feedback. Every message gets read." },
   { tab: "Closet", navbar: true, title: "NAVIGATION",

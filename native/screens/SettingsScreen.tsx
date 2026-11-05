@@ -348,12 +348,12 @@ export default function SettingsScreen() {
             {/* One-time purchases you have, by type. */}
             {PAYMENTS_ENABLED && (
             <View style={{ marginTop: spacing.lg, gap: spacing.xs, alignItems: "center" }}>
-              <Text style={[type.body, { fontSize: 12 }]}>Single Item Analysis: {entitlements.itemScans ?? 0}</Text>
+              <Text style={[type.body, { fontSize: 12 }]}>Item Analyses: {entitlements.itemScans ?? 0}</Text>
               <Text style={[type.body, { fontSize: 12 }]}>Full Wardrobe Analysis: {entitlements.wardrobeScans ?? 0}</Text>
               {/* Where each one is used — both only spend once the result is actually ready. */}
               {((entitlements.itemScans ?? 0) > 0 || (entitlements.wardrobeScans ?? 0) > 0) && (
                 <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: "center", marginTop: spacing.xs, paddingHorizontal: spacing.lg }}>
-                  Use a Single Item Analysis with USE SCORE? on an item in My Closet, and a Full Wardrobe Analysis from the Wardrobe tab.
+                  Use an Item Analysis with USE SCORE? on an item in My Closet, and a Full Wardrobe Analysis from the Wardrobe tab.
                 </Text>
               )}
             </View>

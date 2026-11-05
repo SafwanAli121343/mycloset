@@ -62,16 +62,16 @@ export type ConsumableProduct = {
 export const CONSUMABLE_PRODUCTS: ConsumableProduct[] = [
   {
     id: "item_scan",
-    name: "Single Item Analysis",
-    priceUsd: 0.29,
-    aiCredits: 1,
-    description: "AI analysis for one item.",
+    name: "5 Item Analyses",
+    priceUsd: 0.99,
+    aiCredits: 5,
+    description: "AI score and analysis for five items.",
     productId: { ios: "mycloset_item_scan", android: "mycloset_item_scan" },
   },
   {
     id: "wardrobe_scan",
     name: "Full Wardrobe Analysis",
-    priceUsd: 0.69,
+    priceUsd: 0.99,
     aiCredits: 0,
     description: "AI analysis for every unanalyzed item in your closet, right now.",
     productId: { ios: "mycloset_wardrobe_scan", android: "mycloset_wardrobe_scan" },

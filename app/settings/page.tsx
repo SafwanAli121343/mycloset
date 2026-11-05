@@ -302,11 +302,11 @@ export default function SettingsPage() {
               {redeemMsg && <p style={{ ...BODY, fontSize: 11, color: MUTED, marginTop: 8 }}>{redeemMsg}</p>}
               {PAYMENTS_LIVE && (
               <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 4 }}>
-                <p style={{ ...BODY, fontSize: 12, margin: 0 }}>Single Item Analysis: {entitlements.itemScans ?? 0}</p>
+                <p style={{ ...BODY, fontSize: 12, margin: 0 }}>Item Analyses: {entitlements.itemScans ?? 0}</p>
                 <p style={{ ...BODY, fontSize: 12, margin: 0 }}>Full Wardrobe Analysis: {entitlements.wardrobeScans ?? 0}</p>
                 {((entitlements.itemScans ?? 0) > 0 || (entitlements.wardrobeScans ?? 0) > 0) && (
                   <p style={{ fontSize: 11, color: MUTED, margin: "4px 0 0", lineHeight: 1.6 }}>
-                    Use a Single Item Analysis with USE SCORE? on an item in My Closet, and a Full Wardrobe Analysis from the Wardrobe page.
+                    Use an Item Analysis with USE SCORE? on an item in My Closet, and a Full Wardrobe Analysis from the Wardrobe page.
                   </p>
                 )}
               </div>

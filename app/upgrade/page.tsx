@@ -19,13 +19,13 @@ const TEXT = "#111111", MUTED = "#555555", FAINT = "#8f8f8f", GOOD = "#1d9e52", 
 
 type Product = "pro" | "item_scan_2" | "wardrobe_scan";
 const ONE_TIME: { id: Product; name: string; price: string; note: string }[] = [
-  { id: "item_scan_2", name: "2 Single Item Analyses", price: "$0.58", note: "AI score and analysis for two items, 29¢ each. Use them with USE SCORE? in My Closet." },
-  { id: "wardrobe_scan", name: "Full Wardrobe Analysis", price: "$0.69", note: "Your wardrobe report: score, gaps, colors and weaknesses. Use it from the Wardrobe page." },
+  { id: "item_scan_2", name: "5 Item Analyses", price: "$0.99", note: "AI score and analysis for five items. Use them with USE SCORE? in My Closet." },
+  { id: "wardrobe_scan", name: "Full Wardrobe Analysis", price: "$0.99", note: "Your wardrobe report: score, gaps, colors and weaknesses. Use it from the Wardrobe page." },
 ];
 const SUMMARY: Record<Product, string> = {
   pro: "MyCloset Pro: $4.99 a month, renews monthly until canceled",
-  item_scan_2: "2 Single Item Analyses: $0.58",
-  wardrobe_scan: "Full Wardrobe Analysis: $0.69",
+  item_scan_2: "5 Item Analyses: $0.99",
+  wardrobe_scan: "Full Wardrobe Analysis: $0.99",
 };
 
 // Stripe's card fields, styled to match the site (Arial, black text, hairline square boxes).
@@ -192,7 +192,7 @@ export default function UpgradePage() {
             </div>
           ))}
           <p style={{ fontSize: 11, color: MUTED, textAlign: "center", margin: "18px 0 0" }}>
-            You have: Single Item Analysis {ent.itemScans ?? 0} · Full Wardrobe Analysis {ent.wardrobeScans ?? 0}
+            You have: Item Analyses {ent.itemScans ?? 0} · Full Wardrobe Analysis {ent.wardrobeScans ?? 0}
           </p>
         </div>
       </div>

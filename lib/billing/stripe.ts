@@ -27,13 +27,13 @@ export function webPaymentsEnabled(): boolean {
   return !!process.env.STRIPE_SECRET_KEY && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && !!process.env.STRIPE_WEBHOOK_SECRET;
 }
 
-// What the website sells. Single Item Analysis is a 2-pack here: card processors have a 50¢
-// minimum charge, so one 29¢ score can't be sold on its own (same 29¢ each as the app).
+// What the website sells — the same packs and prices as the app ($0.99 for 5 item analyses or
+// one full wardrobe analysis). The "item_scan_2" id is kept so existing checkout links still work.
 export type WebProductId = "pro" | "item_scan_2" | "wardrobe_scan";
 export const WEB_PRODUCTS: Record<WebProductId, { name: string; cents: number; kind?: "item" | "wardrobe"; qty?: number }> = {
   pro:           { name: "MyCloset Pro (monthly)", cents: 499 },
-  item_scan_2:   { name: "2 Single Item Analyses", cents: 58, kind: "item", qty: 2 },
-  wardrobe_scan: { name: "Full Wardrobe Analysis", cents: 69, kind: "wardrobe", qty: 1 },
+  item_scan_2:   { name: "5 Item Analyses", cents: 99, kind: "item", qty: 5 },
+  wardrobe_scan: { name: "Full Wardrobe Analysis", cents: 99, kind: "wardrobe", qty: 1 },
 };
 
 // The account's Stripe customer — created on first purchase and remembered.

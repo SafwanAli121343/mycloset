@@ -29,8 +29,8 @@ two flags. This is everything needed to turn paid features on.
    exactly:
    - Auto-renewable subscription `mycloset_pro_monthly`, $4.99/month, in a subscription group
      named "MyCloset Pro".
-   - Consumable `mycloset_item_scan`, $0.29 (Single Item Analysis).
-   - Consumable `mycloset_wardrobe_scan`, $0.69 (Full Wardrobe Analysis).
+   - Consumable `mycloset_item_scan`, $0.99 (5 Item Analyses; the webhook grants 5 uses).
+   - Consumable `mycloset_wardrobe_scan`, $0.99 (Full Wardrobe Analysis).
 3. Give each product a display name, a description and a review screenshot of the Upgrade screen.
 4. Under Users and Access → Integrations, create an **In-App Purchase key** (.p8) for RevenueCat.
 5. Copy the **App-Specific Shared Secret** from the app's App Information page.
