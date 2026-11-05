@@ -40,7 +40,40 @@ type RevenueCatEvent = {
   store: string; // "APP_STORE" | "PLAY_STORE"
   expiration_at_ms?: number;
   transaction_id?: string;
+  // TRANSFER only: the App Store purchases moved between RevenueCat users (= account ids), e.g.
+  // Restore Purchases on a different account than the one that bought.
+  transferred_from?: string[];
+  transferred_to?: string[];
 };
+
+// Restore Purchases on another account (a guest who reinstalled, or someone who signed into a
+// different account) makes RevenueCat move the Apple purchase to that account and send TRANSFER.
+// The subscription moves with it: the new account gets the still-active App Store Pro, and the
+// old one loses it — the same subscription can't be shared by two accounts. One-time credits
+// already granted stay where they were spent.
+async function handleTransfer(event: RevenueCatEvent) {
+  const toId = (event.transferred_to ?? []).find(id => UUID_RE.test(id));
+  if (!toId) return { ok: true, skipped: "no account to transfer to" };
+  const to = await getUserById(toId).catch(() => null);
+  if (!to) return { ok: true, skipped: "unknown account" };
+  for (const fromId of (event.transferred_from ?? []).filter(id => UUID_RE.test(id) && id !== toId)) {
+    const { data: from } = await adminClient.from("users")
+      .select("id, tier, tier_expires_at, tier_source").eq("id", fromId).maybeSingle();
+    const f = from as { id: string; tier: string | null; tier_expires_at: string | null; tier_source: string | null } | null;
+    const active = f && f.tier && f.tier !== "free" && f.tier_source === "purchase" &&
+      (!f.tier_expires_at || new Date(f.tier_expires_at).getTime() > Date.now());
+    if (!active) continue;
+    await setUserTier(to.id, f.tier!, f.tier_expires_at, "purchase");
+    await setUserTier(f.id, f.tier!, new Date().toISOString(), "purchase");
+    auditLog("tier_changed", to.id, null, { transferredFrom: f.id, tier: f.tier, expiresAt: f.tier_expires_at });
+    after(async () => {
+      const job = await maybeStartProBackfill(to.id).catch(() => null);
+      if (job) await runJob(job);
+    });
+    return { ok: true, transferred: true };
+  }
+  return { ok: true, transferred: false };
+}
 
 // POST /api/billing/revenuecat-webhook
 // Configure this URL + REVENUECAT_WEBHOOK_SECRET in the RevenueCat dashboard once a RevenueCat
@@ -62,6 +95,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const event: RevenueCatEvent | undefined = body?.event;
+  if (event?.type === "TRANSFER") return NextResponse.json(await handleTransfer(event));
   if (!event?.app_user_id || !event?.type) {
     return NextResponse.json({ error: "Malformed event" }, { status: 400 });
   }
