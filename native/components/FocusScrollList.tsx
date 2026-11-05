@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from "react-native";
+import { Animated, View, Text, StyleSheet, ScrollView, Dimensions, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, fontFamily } from "../theme/theme";
-import { ConfirmDialog } from "./ConfirmDialog";
 
 const FALLOFF = 56;
 const DEFAULT_FOCAL = 0.45;
@@ -26,9 +25,12 @@ const LINE_H = 24;
 // height was sourced. With heights fixed by kind, a switch changes the TEXT inside rows but
 // never the ROWS' geometry itself (same kind sequence structure independent of what the words
 // are) — there's nothing for native layout to reflow, so there's nothing to catch up to.
-// BODY_H allows up to 3 lines. Longer text first shrinks (down to BODY_MIN_SCALE) to fit those 3
-// lines; anything still too long ends in an ellipsis, and tapping the row shows the full text in
-// a card, so no bullet is ever unreadable while row heights stay fixed.
+// BODY_H fits 3 lines at normal size; longer text ends in an ellipsis. To read it, the user
+// resizes that bullet's text (row heights never change, so nothing reflows):
+//   • double tap: one SIZE_STEP smaller, down to SIZE_MIN (smaller text fits more lines in the
+//     same row); at SIZE_MIN, double taps step back up until it's normal size again;
+//   • press and hold: grows gradually back to normal size while held.
+// Sizes are per bullet (shared by its looped copies) and reset when the list's items change.
 // Was 40 — fine when headers are interleaved with much-taller body rows (InfoCard's own
 // pros/cons lists), where the body rows themselves provide breathing room. A list of NOTHING but
 // headers back-to-back (PreviewScreen's compare metrics) had barely any gap between consecutive
@@ -39,7 +41,11 @@ const LINE_H = 24;
 // the scale/opacity swing between focused and adjacent rows reads as a real, visible effect.
 const HEADER_H = 60;
 const BODY_LINES = 3;
-const BODY_MIN_SCALE = 0.75;
+const SIZE_STEP = 0.1;
+const SIZE_MIN = 0.6;
+const DOUBLE_TAP_MS = 300;
+const HOLD_TICK_MS = 60;
+const HOLD_STEP = 0.025;
 const BODY_H = 16 + BODY_LINES * LINE_H;
 // Tall enough for TWO wrapped lines (was 44, single-line only, with flexWrap:"nowrap" on the row
 // below) — a "words" row's total content (e.g. 3 color names) can genuinely be wider than the
@@ -85,8 +91,42 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
 }) {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [viewportH, setViewportH] = useState(0);
-  // Body row tapped: its full text in a card (see BODY_LINES).
-  const [fullText, setFullText] = useState<{ text: string; color: string } | null>(null);
+  // Text size per bullet (index into `items`): scale 1 = normal; dir = what the next double tap
+  // does. See SIZE_STEP.
+  const [sizes, setSizes] = useState<Record<number, { scale: number; dir: "down" | "up" }>>({});
+  // Keyed on the text itself: screens rebuild `items` on every render, which mustn't reset sizes.
+  const itemsKey = items.map(it => ("text" in it ? it.text : "")).join("\n");
+  useEffect(() => { setSizes({}); }, [itemsKey]);
+  const lastTapRef = useRef<{ idx: number; at: number } | null>(null);
+  const holdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopHold = () => { if (holdRef.current) { clearInterval(holdRef.current); holdRef.current = null; } };
+  useEffect(() => stopHold, []);
+  const onBodyTap = (idx: number) => {
+    const now = Date.now();
+    const last = lastTapRef.current;
+    if (!last || last.idx !== idx || now - last.at > DOUBLE_TAP_MS) { lastTapRef.current = { idx, at: now }; return; }
+    lastTapRef.current = null;
+    setSizes(prev => {
+      const cur = prev[idx] ?? { scale: 1, dir: "down" as const };
+      if (cur.dir === "down") {
+        const scale = Math.max(SIZE_MIN, +(cur.scale - SIZE_STEP).toFixed(3));
+        return { ...prev, [idx]: { scale, dir: scale <= SIZE_MIN ? "up" : "down" } };
+      }
+      const scale = Math.min(1, +(cur.scale + SIZE_STEP).toFixed(3));
+      return { ...prev, [idx]: { scale, dir: scale >= 1 ? "down" : "up" } };
+    });
+  };
+  const onBodyHold = (idx: number) => {
+    stopHold();
+    holdRef.current = setInterval(() => {
+      setSizes(prev => {
+        const cur = prev[idx];
+        if (!cur || cur.scale >= 1) { stopHold(); return cur ? { ...prev, [idx]: { scale: 1, dir: "down" } } : prev; }
+        const scale = Math.min(1, cur.scale + HOLD_STEP);
+        return { ...prev, [idx]: { scale, dir: scale >= 1 ? "down" : cur.dir } };
+      });
+    }, HOLD_TICK_MS);
+  };
   const scrollRef = useRef<ScrollView>(null);
   const loop = items.length > 1;
   const lastFocalIndexRef = useRef<number | null>(null);
@@ -227,14 +267,19 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
                   );
                 })}</View>
               ) : (
-                <TouchableOpacity
-                  activeOpacity={0.6}
+                <Pressable
                   disabled={!!item.header}
-                  onPress={() => setFullText({ text: item.text, color })}
+                  onPress={() => onBodyTap(i % items.length)}
+                  onLongPress={() => onBodyHold(i % items.length)}
+                  delayLongPress={250}
+                  onPressOut={stopHold}
                 >
                 <Text
-                  style={[styles.text, { color }]}
-                  numberOfLines={item.header ? 1 : BODY_LINES}
+                  style={[styles.text, { color }, !item.header && (() => {
+                    const k = sizes[i % items.length]?.scale ?? 1;
+                    return k < 1 ? { fontSize: FONT_SIZE * k, lineHeight: (LINE_H - 2) * k } : null;
+                  })()]}
+                  numberOfLines={item.header ? 1 : Math.max(BODY_LINES, Math.floor((BODY_H - 16) / (LINE_H * (sizes[i % items.length]?.scale ?? 1))))}
                   ellipsizeMode="tail"
                   // Headers get one row all to themselves and should basically never need this —
                   // but a genuinely long field name still shouldn't truncate with "…" when it
@@ -245,12 +290,12 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
                   // exactly the cut-off-mid-word look this was meant to prevent in the first
                   // place. Lower floor gives long phrases real room to shrink into before that
                   // fallback ever kicks in.
-                  adjustsFontSizeToFit
-                  minimumFontScale={item.header ? 0.5 : BODY_MIN_SCALE}
+                  adjustsFontSizeToFit={item.header}
+                  minimumFontScale={item.header ? 0.5 : undefined}
                 >
                   {item.text}
                 </Text>
-                </TouchableOpacity>
+                </Pressable>
               )}
             </Animated.View>
           );
@@ -258,15 +303,6 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
       </Animated.ScrollView>
       <LinearGradient colors={[colors.bg, `${colors.bg}00`]} style={styles.fadeTop} pointerEvents="none" />
       <LinearGradient colors={[`${colors.bg}00`, colors.bg]} style={styles.fadeBottom} pointerEvents="none" />
-      <ConfirmDialog
-        visible={!!fullText}
-        body={fullText?.text}
-        bodyStyle={{ fontSize: 16, lineHeight: 22, color: fullText?.color ?? colors.text }}
-        confirmLabel="CLOSE"
-        cancelLabel={null}
-        onConfirm={() => setFullText(null)}
-        onCancel={() => setFullText(null)}
-      />
     </View>
   );
 }
