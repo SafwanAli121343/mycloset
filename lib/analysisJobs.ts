@@ -43,11 +43,15 @@ export type Job = {
 export const STALE_MS = 10 * 60 * 1000;
 const HEARTBEAT_MS = 20 * 1000;
 // Don't re-run Pro's catch-up more often than this (each run only does what's still missing).
+// Shorter while closet items are still waiting: someone who adds pieces and upgrades right away
+// shouldn't wait half an hour for scores (the first run skips items that weren't settled yet).
 const BACKFILL_COOLDOWN_MS = 30 * 60 * 1000;
+const BACKFILL_RETRY_MS = 2 * 60 * 1000;
 
-// Items added in the last few minutes may still be mid-analysis from Add Item itself — the
-// catch-up leaves them alone rather than paying for the same analysis twice.
-const settledBefore = () => new Date(Date.now() - 5 * 60 * 1000).toISOString();
+// Items added in the last moments may still be mid-analysis from Add Item itself (a Pro add
+// analyzes before it responds, well under this) — the catch-up leaves them alone rather than
+// paying for the same analysis twice.
+const settledBefore = () => new Date(Date.now() - 90 * 1000).toISOString();
 
 const ANALYSIS_COLS = "id, title, brand, category, sub_type, material, color_primary, color_secondary, fit, formality, image, aesthetic_source";
 
@@ -169,13 +173,17 @@ export async function maybeStartProBackfill(userId: string): Promise<Job | null>
   const { data: recent } = await sb.from("analysis_jobs").select("id, status, created_at")
     .eq("user_id", userId).eq("kind", "pro_backfill").order("created_at", { ascending: false }).limit(1);
   const last = recent?.[0] as { status: string; created_at: string } | undefined;
-  if (last && (last.status === "running" || Date.now() - new Date(last.created_at).getTime() < BACKFILL_COOLDOWN_MS)) return null;
+  if (last?.status === "running") return null;
+  const sinceLast = last ? Date.now() - new Date(last.created_at).getTime() : Infinity;
+  if (sinceLast < BACKFILL_RETRY_MS) return null;
 
   // Anything to do? Unanalyzed items, or no report yet with enough pieces.
   const [{ count }, status] = await Promise.all([
     sb.from("garments").select("id", { count: "exact", head: true }).eq("user_id", userId).is("pros", null).lt("created_at", settledBefore()),
     wardrobeStatus(userId),
   ]);
+  // Items still waiting → the short retry window; otherwise the normal cooldown.
+  if ((count ?? 0) === 0 && sinceLast < BACKFILL_COOLDOWN_MS) return null;
   const needsWork = (count ?? 0) > 0 || (status.report === "none" && status.enoughPieces) || !last;
   if (!needsWork) return null;
 

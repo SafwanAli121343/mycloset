@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { compressedJson } from "@/lib/http/compressedJson";
 import { after } from "next/server";
+import { maybeStartProBackfill, runJob } from "@/lib/analysisJobs";
 import sharp from "sharp";
 import { insertGarment, deleteGarment } from "@/lib/db/garments";
 import { getFunctionalSlot } from "@/lib/wardrobeAnalysis";
@@ -97,6 +98,15 @@ export async function GET(req: Request) {
   if (error) return Response.json({ error: "Something went wrong." }, { status: 500 });
 
   const hasAI = !!billingUser && resolveEntitlement(billingUser).hasAI;
+  // Pro with items still unanalyzed (added while free, e.g. right before upgrading): the Closet
+  // polls this while it shows them as pending, so it's what starts Pro's catch-up for them
+  // (maybeStartProBackfill only starts one when there's something to do, and not too often).
+  if (hasAI && (data ?? []).some(g => g.pros == null)) {
+    after(async () => {
+      const job = await maybeStartProBackfill(session.userId).catch(() => null);
+      if (job) await runJob(job);
+    });
+  }
   const out = hasAI
     ? data
     : (data ?? []).map(g => {
