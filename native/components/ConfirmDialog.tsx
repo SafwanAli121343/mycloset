@@ -1,4 +1,4 @@
-import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Modal, View, Text, TouchableOpacity, StyleSheet, type StyleProp, type TextStyle } from "react-native";
 import { colors } from "../theme/theme";
 
 // The app's own confirm card — same look as the first-run "TUTORIAL?" card (TutorialOverlay):
@@ -6,11 +6,12 @@ import { colors } from "../theme/theme";
 // (cancel left, action right). Used instead of the system Alert everywhere in the app — for
 // confirmations, and (with secondaryLabel) for a choice between two actions, like Add Photo.
 export function ConfirmDialog({
-  visible, title, body, confirmLabel, confirmColor = colors.text, cancelLabel = "CANCEL", onConfirm, onCancel,
+  visible, title, body, bodyStyle, confirmLabel, confirmColor = colors.text, cancelLabel = "CANCEL", onConfirm, onCancel,
   secondaryLabel, onSecondary,
 }: {
-  visible: boolean; title: string; body?: string; confirmLabel: string; confirmColor?: string;
-  cancelLabel?: string; onConfirm: () => void; onCancel: () => void;
+  // title may be empty (e.g. a plain "full text" card); cancelLabel null = a single button.
+  visible: boolean; title?: string; body?: string; bodyStyle?: StyleProp<TextStyle>; confirmLabel: string; confirmColor?: string;
+  cancelLabel?: string | null; onConfirm: () => void; onCancel: () => void;
   secondaryLabel?: string; onSecondary?: () => void;
 }) {
   const three = !!secondaryLabel && !!onSecondary;
@@ -18,10 +19,12 @@ export function ConfirmDialog({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <TouchableOpacity style={styles.dim} activeOpacity={1} onPress={onCancel}>
         <TouchableOpacity style={styles.card} activeOpacity={1}>
-          <Text style={styles.title}>{title}</Text>
-          {!!body && <Text style={styles.body}>{body}</Text>}
+          {!!title && <Text style={styles.title}>{title}</Text>}
+          {!!body && <Text style={[styles.body, !title && { marginTop: 0 }, bodyStyle]}>{body}</Text>}
           <View style={[styles.row, three && { gap: 22 }]}>
-            <TouchableOpacity onPress={onCancel} hitSlop={12}><Text style={[styles.btn, { color: colors.textFaint }]}>{cancelLabel}</Text></TouchableOpacity>
+            {cancelLabel !== null && (
+              <TouchableOpacity onPress={onCancel} hitSlop={12}><Text style={[styles.btn, { color: colors.textFaint }]}>{cancelLabel}</Text></TouchableOpacity>
+            )}
             {three && (
               <TouchableOpacity onPress={onSecondary} hitSlop={12}><Text style={[styles.btn, { color: colors.text }]}>{secondaryLabel}</Text></TouchableOpacity>
             )}

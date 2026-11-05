@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, View, Text, StyleSheet, ScrollView, Dimensions } from "react-native";
+import { Animated, View, Text, StyleSheet, ScrollView, Dimensions, TouchableOpacity } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, fontFamily } from "../theme/theme";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 const FALLOFF = 56;
 const DEFAULT_FOCAL = 0.45;
@@ -25,8 +26,9 @@ const LINE_H = 24;
 // height was sourced. With heights fixed by kind, a switch changes the TEXT inside rows but
 // never the ROWS' geometry itself (same kind sequence structure independent of what the words
 // are) — there's nothing for native layout to reflow, so there's nothing to catch up to.
-// BODY_H allows up to 3 lines; longer text truncates with an ellipsis (numberOfLines below)
-// rather than silently overflowing into the next row, which fixed heights would otherwise risk.
+// BODY_H allows up to 3 lines. Longer text first shrinks (down to BODY_MIN_SCALE) to fit those 3
+// lines; anything still too long ends in an ellipsis, and tapping the row shows the full text in
+// a card, so no bullet is ever unreadable while row heights stay fixed.
 // Was 40 — fine when headers are interleaved with much-taller body rows (InfoCard's own
 // pros/cons lists), where the body rows themselves provide breathing room. A list of NOTHING but
 // headers back-to-back (PreviewScreen's compare metrics) had barely any gap between consecutive
@@ -37,6 +39,7 @@ const LINE_H = 24;
 // the scale/opacity swing between focused and adjacent rows reads as a real, visible effect.
 const HEADER_H = 60;
 const BODY_LINES = 3;
+const BODY_MIN_SCALE = 0.75;
 const BODY_H = 16 + BODY_LINES * LINE_H;
 // Tall enough for TWO wrapped lines (was 44, single-line only, with flexWrap:"nowrap" on the row
 // below) — a "words" row's total content (e.g. 3 color names) can genuinely be wider than the
@@ -82,6 +85,8 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
 }) {
   const scrollY = useRef(new Animated.Value(0)).current;
   const [viewportH, setViewportH] = useState(0);
+  // Body row tapped: its full text in a card (see BODY_LINES).
+  const [fullText, setFullText] = useState<{ text: string; color: string } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const loop = items.length > 1;
   const lastFocalIndexRef = useRef<number | null>(null);
@@ -222,6 +227,11 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
                   );
                 })}</View>
               ) : (
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  disabled={!!item.header}
+                  onPress={() => setFullText({ text: item.text, color })}
+                >
                 <Text
                   style={[styles.text, { color }]}
                   numberOfLines={item.header ? 1 : BODY_LINES}
@@ -235,11 +245,12 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
                   // exactly the cut-off-mid-word look this was meant to prevent in the first
                   // place. Lower floor gives long phrases real room to shrink into before that
                   // fallback ever kicks in.
-                  adjustsFontSizeToFit={item.header}
-                  minimumFontScale={item.header ? 0.5 : undefined}
+                  adjustsFontSizeToFit
+                  minimumFontScale={item.header ? 0.5 : BODY_MIN_SCALE}
                 >
                   {item.text}
                 </Text>
+                </TouchableOpacity>
               )}
             </Animated.View>
           );
@@ -247,6 +258,15 @@ export function FocusScrollList({ items, focal = DEFAULT_FOCAL, onFocalIndexChan
       </Animated.ScrollView>
       <LinearGradient colors={[colors.bg, `${colors.bg}00`]} style={styles.fadeTop} pointerEvents="none" />
       <LinearGradient colors={[`${colors.bg}00`, colors.bg]} style={styles.fadeBottom} pointerEvents="none" />
+      <ConfirmDialog
+        visible={!!fullText}
+        body={fullText?.text}
+        bodyStyle={{ fontSize: 16, lineHeight: 22, color: fullText?.color ?? colors.text }}
+        confirmLabel="CLOSE"
+        cancelLabel={null}
+        onConfirm={() => setFullText(null)}
+        onCancel={() => setFullText(null)}
+      />
     </View>
   );
 }
