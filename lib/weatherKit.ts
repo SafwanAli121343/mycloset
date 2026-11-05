@@ -12,10 +12,8 @@
 // membership — that's an account-level requirement, not a platform restriction on who consumes
 // the data afterward.
 //
-// STATUS: not yet connected to the real API — the exact response field names below are written
-// from documentation knowledge, not verified against a live call (no credentials exist yet to
-// test with). Treat this as a strong first draft: once real credentials exist, make one real
-// call, log the raw response, and fix any field-name mismatches before trusting it in production.
+// Check it's live after setting the variables: GET /api/weather/source returns
+// {"weatherKit":true}, and Railway's logs show no "[weatherKit]" errors.
 //
 // Setup, once enrolled in the Apple Developer Program ($99/yr, already needed for the App Store):
 //   1. developer.apple.com → Certificates, IDs & Profiles → Identifiers → register a new
@@ -59,25 +57,26 @@ async function buildToken(): Promise<string> {
     .sign(key);
 }
 
-// WeatherKit's own WMO-adjacent condition strings (e.g. "MostlyClear", "Rain", "Snow",
-// "Thunderstorms") are a different vocabulary from the WMO numeric codes weatherCodeToCondition
-// expects (see lib/weatherOutfitFilter.ts) — mapped here to the same small internal condition set
-// ("clear"|"cloudy"|"windy"|"light_rain"|"heavy_rain"|"snow") everything downstream already uses,
-// so nothing else in the app needs to know which weather provider is actually active.
-function weatherKitConditionToInternal(code: string): ReturnType<typeof weatherCodeToCondition> {
+// WeatherKit condition codes (Clear, MostlyCloudy, Drizzle, HeavyRain, Flurries, Blizzard,
+// WintryMix, Thunderstorms, ...) mapped to the same small internal set everything downstream
+// uses ("clear"|"cloudy"|"windy"|"light_rain"|"heavy_rain"|"snow"), matching how
+// weatherCodeToCondition treats the equivalent WMO codes for Open-Meteo (partly cloudy counts as
+// cloudy, freezing rain as rain, wind over 25 mph turns a dry day windy).
+function weatherKitConditionToInternal(code: string, windKmh: number): ReturnType<typeof weatherCodeToCondition> {
   const c = code.toLowerCase();
-  if (c.includes("snow") || c.includes("sleet") || c.includes("ice") || c.includes("hail")) return "snow";
-  if (c.includes("thunder") || c.includes("heavy")) return "heavy_rain";
-  if (c.includes("rain") || c.includes("drizzle") || c.includes("showers")) return "light_rain";
-  if (c.includes("windy") || c.includes("breezy")) return "windy";
-  if (c.includes("cloud") || c.includes("overcast") || c.includes("haze") || c.includes("fog")) return "cloudy";
+  if (/snow|sleet|flurr|blizzard|wintry|hail/.test(c)) return "snow";
+  if (/thunder|heavy|hurricane|tropical/.test(c)) return "heavy_rain";
+  if (/rain|drizzle|shower/.test(c)) return "light_rain";
+  if (/windy|breezy/.test(c)) return "windy";
+  if (windKmh * 0.621 > 25) return "windy";
+  if (/cloud|overcast|haze|fog|smoke|dust/.test(c)) return "cloudy";
   return "clear";
 }
 
 type WeatherKitDailyForecast = {
   forecastDaily?: {
     days?: {
-      forecastStart: string; // ISO 8601, local to the requested timezone
+      forecastStart: string; // UTC instant of local midnight in the requested timezone
       temperatureMax: number; // Celsius
       temperatureMin: number; // Celsius
       conditionCode: string;
@@ -86,25 +85,35 @@ type WeatherKitDailyForecast = {
   };
 };
 
-// Fetches per-day temperature + condition for every date in `wantedDates` at the given
-// coordinates, mirroring fetchMonthWeather's own signature/contract exactly so
-// lib/weatherData.ts can call either one interchangeably. tempF is (max+min)/2 — WeatherKit's
-// daily forecast gives a high/low pair, not a single blended mean the way Open-Meteo's
-// temperature_2m_mean does; averaging the two is the closest equivalent to what this app already
-// expects everywhere (a single representative tempF per day), and empirically (see the real
-// Open-Meteo comparison done while debugging this) a true 24h mean usually lands within a degree
-// or two of this same midpoint anyway.
-export async function fetchMonthWeatherViaWeatherKit(
-  lat: number,
-  lon: number,
-  wantedDates: string[],
-): Promise<Map<string, DayWeather>> {
+// The daily forecast covers ~10 days, so the same location is asked for the same data over and
+// over (calendar opens, month switches, outfit generation). Kept for 30 minutes per ~1 km area
+// so the free 500K-calls/month quota goes a long way.
+const CACHE_MS = 30 * 60 * 1000;
+const cache = new Map<string, { at: number; days: Map<string, DayWeather> }>();
+
+// "YYYY-MM-DD" of an instant, as a calendar date in `timeZone`.
+function localDate(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+    .format(new Date(iso));
+}
+
+// Per-day temperature + condition at the given coordinates for whatever days the forecast covers.
+// `timeZone` is the location's IANA zone (Open-Meteo's timezone=auto supplies it), so days run
+// local midnight to midnight like they do in Apple's Weather app. tempF is the midpoint of the
+// high and low, the closest match to Open-Meteo's daily mean that the rest of the app expects.
+// Returns an empty map (and Open-Meteo covers everything) on any failure.
+export async function fetchWeatherKitDays(lat: number, lon: number, timeZone: string): Promise<Map<string, DayWeather>> {
   const result = new Map<string, DayWeather>();
   if (!isWeatherKitConfigured()) return result;
 
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)},${timeZone}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.days;
+
   try {
     const token = await buildToken();
-    const url = `https://weatherkit.apple.com/api/v1/weather/en/${lat}/${lon}?dataSets=forecastDaily&timezone=UTC`;
+    const params = new URLSearchParams({ dataSets: "forecastDaily", timezone: timeZone });
+    const url = `https://weatherkit.apple.com/api/v1/weather/en/${lat.toFixed(4)}/${lon.toFixed(4)}?${params}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(8000),
@@ -115,16 +124,20 @@ export async function fetchMonthWeatherViaWeatherKit(
     }
     const data = await res.json() as WeatherKitDailyForecast;
     for (const day of data.forecastDaily?.days ?? []) {
-      const date = day.forecastStart.slice(0, 10); // "YYYY-MM-DDTHH:mm:ssZ" -> "YYYY-MM-DD"
-      if (!wantedDates.includes(date) || result.has(date)) continue;
+      if (typeof day.temperatureMax !== "number" || typeof day.temperatureMin !== "number") continue;
+      const date = localDate(day.forecastStart, timeZone);
+      if (result.has(date)) continue;
       const maxF = day.temperatureMax * 9 / 5 + 32;
       const minF = day.temperatureMin * 9 / 5 + 32;
-      const wind = day.windSpeedMax ?? 0; // already km/h, matching weatherCodeToCondition's own unit expectation elsewhere
       result.set(date, {
         date,
         tempF: Math.round((maxF + minF) / 2),
-        condition: weatherKitConditionToInternal(day.conditionCode) as DayWeather["condition"],
+        condition: weatherKitConditionToInternal(day.conditionCode ?? "", day.windSpeedMax ?? 0) as DayWeather["condition"],
       });
+    }
+    if (result.size > 0) {
+      cache.set(key, { at: Date.now(), days: result });
+      if (cache.size > 2000) cache.delete(cache.keys().next().value!);
     }
   } catch (err) {
     console.error("[weatherKit] fetch failed:", err instanceof Error ? err.message : err);

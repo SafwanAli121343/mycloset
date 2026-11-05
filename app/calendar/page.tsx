@@ -1375,6 +1375,12 @@ export default function OutfitsPage() {
   const [geoResolved,  setGeoResolved]  = useState(false);
   const [userLoc,      setUserLoc]      = useState<{ lat: number; lon: number } | null>(null);
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  // Weather credit (GET /api/weather/source): Apple requires the Apple Weather mark and a link to
+  // its data-sources page while WeatherKit is live; Open-Meteo still fills the later days.
+  const [weatherSource, setWeatherSource] = useState<{ weatherKit: boolean; appleLogoLight: string | null; appleLegalUrl: string | null; openMeteoUrl: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/weather/source").then(r => r.ok ? r.json() : null).then(setWeatherSource).catch(() => {});
+  }, []);
   const [showLocInput,  setShowLocInput]  = useState(false);
   const [locQuery,      setLocQuery]      = useState("");
   const [locResults,    setLocResults]    = useState<{ lat: number; lon: number; label: string }[]>([]);
@@ -1931,6 +1937,21 @@ export default function OutfitsPage() {
             LOCATION UNAVAILABLE — SET MANUALLY
           </button>
         ) : null}
+
+        {weatherSource && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 8, fontSize: 8, letterSpacing: "0.08em", color: "#bbb", ...FONT }}>
+            ·
+            {weatherSource.weatherKit && weatherSource.appleLogoLight && weatherSource.appleLegalUrl && (
+              <a href={weatherSource.appleLegalUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#bbb" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={weatherSource.appleLogoLight} alt="Apple Weather" style={{ height: 9, width: "auto" }} />
+                <span style={{ textDecoration: "underline" }}>DATA SOURCES</span>
+              </a>
+            )}
+            {weatherSource.weatherKit && " ·"}
+            <a href={weatherSource.openMeteoUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#bbb", textDecoration: "none" }}>OPEN-METEO</a>
+          </span>
+        )}
 
         {showLocInput && (
           <div style={{

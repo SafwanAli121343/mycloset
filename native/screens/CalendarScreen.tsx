@@ -21,6 +21,7 @@ import { ReadyGate } from "../components/ReadyGate";
 import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
 import { OutfitSlotGrid, BOX as DAY_BOX, BOX_LARGE as DAY_BOX_LARGE, type BoxRect } from "../components/OutfitSlotGrid";
 import { FocusScrollList, type FocusItem } from "../components/FocusScrollList";
+import { WeatherAttribution } from "../components/WeatherAttribution";
 import { colors, type, spacing, scoreColor } from "../theme/theme";
 import { bucketOf, type SlotGarment } from "../lib/garmentSlots";
 import type { MainTabParamList } from "../navigation/MainTabs";
@@ -705,6 +706,11 @@ const MonthBody = memo(function MonthBody({
                 </TouchableOpacity>
               );
             })}
+          </View>
+          {/* Weather credit (Apple Weather + Open-Meteo) — opacity-hidden, not unmounted, until
+             the month is in so the block's measured height never changes. */}
+          <View style={!contentReady && { opacity: 0 }} pointerEvents={contentReady ? "auto" : "none"}>
+            <WeatherAttribution />
           </View>
           </View>
         )}
