@@ -22,8 +22,8 @@ export const API_BASE_URL = __DEV__
 // "Pro" mentions, and the RevenueCat SDK is never started. For the paid update: create the
 // products in App Store Connect + RevenueCat, paste the RevenueCat iOS public key below, flip
 // this to true and ship a new build (full checklist: docs/PAID_UPDATE.md).
-export const PAYMENTS_ENABLED = false;
-export const REVENUECAT_IOS_API_KEY = ""; // "appl_..." from RevenueCat → Project → API keys
+export const PAYMENTS_ENABLED = true;
+export const REVENUECAT_IOS_API_KEY = "appl_cNUFIxKqOcFTJqcQkCEVEgCLvEv"; // "appl_..." from RevenueCat → Project → API keys
 export const REVENUECAT_ANDROID_API_KEY = ""; // "goog_..." once the Play Store version exists
 
 // Legal docs (Terms/Privacy/EULA/Cookies) render in-app via GET /api/legal/[doc] — see

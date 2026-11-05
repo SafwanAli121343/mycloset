@@ -3,7 +3,7 @@
     "name": "MYCLOSET",
     "slug": "mycloset",
     "owner": "myclosetapp2026",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
         },
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "10"
+      "buildNumber": "11"
     },
     "android": {
       "package": "com.myclosetapp.mycloset",

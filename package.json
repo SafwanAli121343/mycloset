@@ -50,5 +50,10 @@
     "msw@2.13.1": true,
     "onnxruntime-node@1.17.3": true,
     "unrs-resolver@1.11.1": true
+  },
+  "overrides": {
+    "@imgly/background-removal-node": {
+      "sharp": "$sharp"
+    }
   }
 }
