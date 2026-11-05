@@ -262,7 +262,7 @@ export function validateOutfit(slots: SlotKey[], tempF?: number): OutfitValidati
     return { valid: false, hardError: "cannot wear a dress and jumpsuit simultaneously", warnings };
 
   if (has("overalls") && (has("pants") || has("shorts") || has("skirt")))
-    return { valid: false, hardError: "overalls already cover the lower body — no separate bottom", warnings };
+    return { valid: false, hardError: "overalls already cover the lower body, so no separate bottom", warnings };
 
   // Outer needs a sleeved top underneath — a bare chest under a jacket is not an outfit
   if (has("outer") && !has("base-top") && !has("overshirt") && !has("mid-layer"))
@@ -292,21 +292,21 @@ export function validateOutfit(slots: SlotKey[], tempF?: number): OutfitValidati
   const cool = tempF !== undefined && tempF < 65;
   const warm = tempF !== undefined && tempF >= 60;
 
-  if (hot  && has("outer"))               warnings.push("jacket/coat in hot weather (75°F+) — likely too warm");
-  if (hot  && has("mid-layer") && !has("outer")) warnings.push("hoodie/sweater in hot weather — likely too warm");
-  if (cold && has("shorts"))              warnings.push("shorts in cold weather (below 50°F) — not appropriate");
+  if (hot  && has("outer"))               warnings.push("jacket/coat in hot weather (75°F+), likely too warm");
+  if (hot  && has("mid-layer") && !has("outer")) warnings.push("hoodie/sweater in hot weather, likely too warm");
+  if (cold && has("shorts"))              warnings.push("shorts in cold weather (below 50°F), not appropriate");
   if (warm && has("sandals") && !has("dress") && !has("skirt"))
     warnings.push("sandals with pants in warm weather is acceptable but sandals pair best with shorts/skirts/dresses");
 
   // Sandals below 55°F: hard reject. 55–64°F: soft warning.
   if (tempF !== undefined && tempF < 55 && has("sandals"))
-    return { valid: false, hardError: `sandals at ${tempF}°F — too cold (min 65°F for sandals)`, warnings };
+    return { valid: false, hardError: `sandals at ${tempF}°F, too cold (min 65°F for sandals)`, warnings };
   if (cool && has("sandals"))
-    warnings.push("sandals below 65°F — borderline too cold; prefer closed shoes");
+    warnings.push("sandals below 65°F, borderline too cold; prefer closed shoes");
 
   // Dress/jumpsuit + bottom is unusual (dress over jeans exists but is advanced)
   if (hasFullBody && (has("pants") || has("shorts") || has("skirt")))
-    warnings.push("dress/jumpsuit + separate bottom is unconventional — omit unless intentional");
+    warnings.push("dress/jumpsuit + separate bottom is unconventional, omit unless intentional");
 
   return { valid: true, warnings };
 }

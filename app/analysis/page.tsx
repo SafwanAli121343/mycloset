@@ -143,7 +143,7 @@ function AnalysisPageInner() {
         {mode === "wardrobe" && (
           <div>
             <p style={{ fontSize: 11, color: "#bbb", marginBottom: 28, lineHeight: 1.7, letterSpacing: "0.03em" }}>
-              AI analyzes your entire closet — brand diversity, color balance, style coherence,
+              AI analyzes your entire closet: brand diversity, color balance, style coherence,
               what pairs well, and what&apos;s missing.
             </p>
             <button onClick={runWardrobeAnalysis} disabled={loading} style={primaryBtn(!loading)}>
@@ -242,7 +242,7 @@ function AnalysisPageInner() {
                   }}>
                     {result.verdict as string}
                   </span>
-                  <span style={{ fontSize: 11, color: "#999" }}>— {result.summary as string}</span>
+                  <span style={{ fontSize: 11, color: "#999" }}>{result.summary as string}</span>
                 </div>
                 <Section title="WHY">{result.reasoning as string}</Section>
                 {Array.isArray(result.pairsWith) && (result.pairsWith as string[]).length > 0 && (
@@ -277,7 +277,7 @@ function AnalysisPageInner() {
                     onChange={e => { setCmpA(e.target.value); setCmpAUrl(""); }}
                     style={{ ...inputStyle, marginBottom: 8 }}
                   >
-                    <option value="">— from closet —</option>
+                    <option value="">Choose from closet</option>
                     {garments.map(g => (
                       <option key={g.id} value={g.id}>{g.title}</option>
                     ))}
@@ -306,7 +306,7 @@ function AnalysisPageInner() {
                     onChange={e => { setCmpB(e.target.value); setCmpBUrl(""); }}
                     style={{ ...inputStyle, marginBottom: 8 }}
                   >
-                    <option value="">— from closet —</option>
+                    <option value="">Choose from closet</option>
                     {garments.map(g => (
                       <option key={g.id} value={g.id}>{g.title}</option>
                     ))}

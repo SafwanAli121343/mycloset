@@ -28,7 +28,7 @@ export async function startJob(kind: "item" | "wardrobe", garmentId?: string): P
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, garmentId }),
   }).catch(() => null);
   const body = await r?.json().catch(() => null);
-  if (!r || !r.ok) throw new JobStartError(body?.error ?? "Couldn't start the analysis. Nothing was used — please try again.");
+  if (!r || !r.ok) throw new JobStartError(body?.error ?? "Couldn't start the analysis. Nothing was used. Please try again.");
   return body.job as JobInfo;
 }
 
@@ -60,8 +60,8 @@ export function jobFailureMessage(job: JobInfo): string {
     return "Your wardrobe analysis didn't find anything new to add. Nothing was used.";
   }
   return job.kind === "wardrobe"
-    ? "Your wardrobe analysis didn't finish. Nothing was used — you can try again."
-    : "That score didn't finish. Nothing was used — you can try again.";
+    ? "Your wardrobe analysis didn't finish. Nothing was used, so you can try again."
+    : "That score didn't finish. Nothing was used, so you can try again.";
 }
 
 export const ITEM_STAGES = [

@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   return NextResponse.json(
-    { error: "Scraping from the admin UI isn't wired up yet — run `npx tsx --env-file=.env.local scripts/scrape-products.mjs <brand>` from the terminal instead." },
+    { error: "Scraping from the admin UI isn't wired up yet. Run `npx tsx --env-file=.env.local scripts/scrape-products.mjs <brand>` from the terminal instead." },
     { status: 501 },
   );
 }

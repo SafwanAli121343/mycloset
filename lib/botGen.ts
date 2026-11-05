@@ -63,14 +63,14 @@ const TIER_PROS: Record<string, string[]> = {
 const TIER_CONS: Record<string, string[]> = {
   luxury: [
     "Risk of looking try-hard in casual contexts",
-    "Statement pieces draw attention — not for understated looks",
+    "Statement pieces draw attention, not for understated looks",
   ],
   premium: [
     "Polarizing outside streetwear and fashion circles",
     "Heavy branding can limit outfit flexibility",
   ],
   mid: [
-    "Oversaturated — common on the street",
+    "Oversaturated: common on the street",
     "Fits a narrow aesthetic range",
     "Limited recognition outside core communities",
   ],
@@ -406,7 +406,7 @@ export const BOT_ARCHETYPES: BotArchetype[] = [
   {
     id: "oliver",
     name: "OLIVER",
-    bio: "Quiet luxury. Nothing loud, nothing obvious — you just know.",
+    bio: "Quiet luxury. Nothing loud, nothing obvious. You just know.",
     preferredBrands: ["The Row", "Lemaire", "Ami Paris"],
     tier: "luxury",
     aesthetics: ["quiet-luxury", "old-money", "minimalist"],

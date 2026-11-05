@@ -24,6 +24,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import { withBreaker } from "@/lib/openaiCircuitBreaker";
 import { isSafeUrl } from "@/lib/security/ssrfGuard";
+import { noEmDashText } from "@/lib/text/noEmDash";
 import { estimateCostCents } from "@/lib/billing/aiCost";
 import { resolveEntitlement, PRO_MONTHLY_CAP_CENTS, consumeErrorMessage } from "@/lib/billing/entitlements";
 import type { User } from "@/lib/db/users";
@@ -218,7 +219,7 @@ export async function aiChat(label: string, params: ChatParams, actor: AiActor, 
   const key = await cacheKey("chat", req).catch(() => null);
   if (key && !opts.fresh) {
     const hit = await cacheGet(key);
-    if (hit != null) return { content: hit, finishReason: "stop", cached: true };
+    if (hit != null) return { content: noEmDashText(hit), finishReason: "stop", cached: true };
   }
 
   const reserved = estimateCostCents(req.model, {
@@ -252,7 +253,8 @@ export async function aiChat(label: string, params: ChatParams, actor: AiActor, 
     if (ok && opts.cacheable) ok = opts.cacheable(content);
     if (ok) await cachePut(key, label, req.model, content);
   }
-  return { content, finishReason, cached: false };
+  // Stored raw (above); every answer handed out has its em dashes removed (lib/text/noEmDash.ts).
+  return { content: noEmDashText(content), finishReason, cached: false };
 }
 
 // The Responses API with web search (brand lookup by domain). Flat reservation: the search fee
@@ -269,7 +271,7 @@ export async function aiWebSearch(label: string, input: string, actor: AiActor, 
   const key = await cacheKey("web", params).catch(() => null);
   if (key && !opts.fresh) {
     const hit = await cacheGet(key);
-    if (hit != null) return hit;
+    if (hit != null) return noEmDashText(hit);
   }
   const reservation = await reserve(actor, WEB_SEARCH_RESERVE_CENTS, opts);
   let response: OpenAI.Responses.Response;
@@ -285,7 +287,7 @@ export async function aiWebSearch(label: string, input: string, actor: AiActor, 
   }
   const text = (response.output_text ?? "").trim();
   if (key && text && response.status === "completed") await cachePut(key, label, "gpt-4o", text);
-  return text;
+  return noEmDashText(text);
 }
 
 // Any other paid API with a known flat per-call price (Google Lens via SerpAPI, Cloud Vision):

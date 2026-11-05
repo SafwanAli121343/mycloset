@@ -636,10 +636,10 @@ console.log(`[route] source="${source}" sourceBrand="${sourceBrand}"`);
   if (isNovelty) {
     analysisUpdate.pros = [
       "Bold statement piece with a distinctive graphic design",
-      "Eye-catching — immediately sets the tone of an outfit",
+      "Eye-catching, immediately sets the tone of an outfit",
     ];
     analysisUpdate.cons = [
-      "Extremely difficult to style — pairs only with solid, neutral pieces",
+      "Extremely difficult to style: pairs only with solid, neutral pieces",
       "All-over graphic print clashes with most patterns and busy designs",
       "Very limited outfit versatility due to the novelty design",
     ];

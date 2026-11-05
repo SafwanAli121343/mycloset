@@ -294,7 +294,7 @@ export default function GeneratePage() {
                 </div>
 
                 <p style={{ ...FONT, margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", color: scoreColor }}>
-                  {score != null ? `${score} / 100` : "—"}
+                  {score != null ? `${score} / 100` : "-"}
                 </p>
               </div>
             );

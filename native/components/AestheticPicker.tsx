@@ -62,7 +62,7 @@ export function AestheticPicker({
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setOpen(false)} />
           <View style={styles.dropdown}>
             {pageItems.length === 0 ? (
-              <Text style={styles.optionText}>No matches — your own text is still fine</Text>
+              <Text style={styles.optionText}>No matches. Your own text is still fine</Text>
             ) : (
               pageItems.map(a => (
                 <TouchableOpacity key={a} onPress={() => selectValue(a)} style={styles.option}>

@@ -56,6 +56,6 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     if (e instanceof JobError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error("[jobs POST]", e);
-    return NextResponse.json({ error: "Couldn't start the analysis. Nothing was used — please try again." }, { status: 500 });
+    return NextResponse.json({ error: "Couldn't start the analysis. Nothing was used. Please try again." }, { status: 500 });
   }
 }

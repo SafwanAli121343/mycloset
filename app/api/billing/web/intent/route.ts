@@ -60,6 +60,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ clientSecret: pi.client_secret, amountCents: product.cents, kind: "payment" });
   } catch (e) {
     console.error("[billing/web/intent]", e instanceof Error ? e.message : e);
-    return NextResponse.json({ error: "Couldn't start checkout. You haven't been charged — please try again." }, { status: 500 });
+    return NextResponse.json({ error: "Couldn't start checkout. You haven't been charged. Please try again." }, { status: 500 });
   }
 }

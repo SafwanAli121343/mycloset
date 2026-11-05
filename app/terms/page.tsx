@@ -3,7 +3,7 @@ import Link from "next/link";
 import { TERMS_SECTIONS as sections } from "@/lib/legal/content";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — MYCLOSET",
+  title: "Terms of Service | MYCLOSET",
 };
 
 const FONT = { fontFamily: "Arial, sans-serif" };

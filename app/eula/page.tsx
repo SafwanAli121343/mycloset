@@ -3,7 +3,7 @@ import Link from "next/link";
 import { EULA_SECTIONS as sections } from "@/lib/legal/content";
 
 export const metadata: Metadata = {
-  title: "End User License Agreement — MYCLOSET",
+  title: "End User License Agreement | MYCLOSET",
 };
 
 const FONT = { fontFamily: "Arial, sans-serif" };

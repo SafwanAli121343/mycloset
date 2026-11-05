@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PRIVACY_SECTIONS as sections } from "@/lib/legal/content";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — MYCLOSET",
+  title: "Privacy Policy | MYCLOSET",
 };
 
 const FONT = { fontFamily: "Arial, sans-serif" };

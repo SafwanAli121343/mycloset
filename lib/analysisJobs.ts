@@ -127,7 +127,7 @@ export async function startJob(userId: string, kind: "item" | "wardrobe", target
   if (!user) throw new JobError("Unauthorized", 401);
   if (resolveEntitlement(user).hasAI) {
     // Pro already has every item scored and the full report — a purchased credit would be wasted.
-    throw new JobError("You already have this with Pro — no need to use a purchase.", 409);
+    throw new JobError("You already have this with Pro, so there's no need to use a purchase.", 409);
   }
 
   const jobs = await getJobs(userId);
@@ -155,7 +155,7 @@ export async function startJob(userId: string, kind: "item" | "wardrobe", target
   if (error || !data) {
     // 23505 = the one-running-job-per-kind index caught a concurrent start (double tap / 2 devices).
     if (error?.code === "23505") throw new JobError("An analysis is already running.", 409);
-    throw new JobError("Couldn't start the analysis. Nothing was used — please try again.", 500);
+    throw new JobError("Couldn't start the analysis. Nothing was used. Please try again.", 500);
   }
   return data as Job;
 }

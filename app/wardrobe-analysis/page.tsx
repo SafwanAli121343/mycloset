@@ -750,7 +750,7 @@ export default function WardrobeAnalysisPage() {
       await followJob(job.id);
     } catch (e) {
       setAnalyzing(false);
-      setJobMsg(e instanceof Error ? e.message : "Couldn't start the analysis. Nothing was used — please try again.");
+      setJobMsg(e instanceof Error ? e.message : "Couldn't start the analysis. Nothing was used. Please try again.");
       fetchJobs().then(setWj).catch(() => {});
     }
   }

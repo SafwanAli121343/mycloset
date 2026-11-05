@@ -615,7 +615,7 @@ export default function BuilderPage() {
                   {result.locked
                     ? "Scoring outfits is a Pro feature. Upgrade in the MyCloset app."
                     : result.serverError
-                    ? "Couldn't score that outfit — try again."
+                    ? "Couldn't score that outfit. Try again."
                     : !result.valid
                     ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
                     : "Couldn't score that outfit. Try again."}
@@ -934,10 +934,10 @@ export default function BuilderPage() {
                   {result.locked
                     ? "Scoring outfits is a Pro feature. Upgrade in the MyCloset app."
                     : result.serverError
-                    ? "Couldn't score that outfit — try again."
+                    ? "Couldn't score that outfit. Try again."
                     : !result.valid
                     ? `This outfit combination is not valid: ${result.reason ?? "missing required pieces"}.`
-                    : "This outfit scored below the ideal threshold — try a different combination."
+                    : "This outfit scored below the ideal threshold. Try a different combination."
                   }
                 </p>
               </div>
@@ -1103,7 +1103,7 @@ export default function BuilderPage() {
                 gridColumn: "1 / -1", textAlign: "center", fontSize: 11, color: "#c00",
                 letterSpacing: "0.06em", padding: "40px 0", ...FONT,
               }}>
-                Couldn't load your wardrobe — refresh to try again.
+                Couldn't load your wardrobe. Refresh to try again.
               </p>
             )}
             {editAvail.map(g => (

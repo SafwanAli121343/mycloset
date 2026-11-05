@@ -88,7 +88,7 @@ const SLIDES = [
   { title: "LAY IT FLAT",      body: "Place the item completely flat on a plain, solid-colour surface. Unfold it fully so all details are visible.", visual: "flat" },
   { title: "FILL THE FRAME",   body: "Get close enough that the item fills most of the photo. Leave only a small border of background around it.",  visual: "frame" },
   { title: "EVEN LIGHTING",    body: "Use soft, indirect light. Avoid harsh shadows from overhead lamps, camera flash, or direct sunlight.",         visual: "light" },
-  { title: "PLAIN BACKGROUND", body: "A single-colour surface works best — white, grey, or black. Avoid patterns or other objects nearby.",          visual: "bg" },
+  { title: "PLAIN BACKGROUND", body: "A single-colour surface works best: white, grey, or black. Avoid patterns or other objects nearby.",          visual: "bg" },
   { title: "ONE ITEM ONLY",    body: "Each photo should contain exactly one item. For multiple pieces, photograph each one separately.",              visual: "one" },
 ];
 
@@ -397,7 +397,7 @@ export default function AddItemPage() {
       });
       const json = await res.json();
       if (!res.ok) {
-        if (!productUrl) showNotice("err", json.error ?? "Analysis failed — fill in fields manually.");
+        if (!productUrl) showNotice("err", json.error ?? "Analysis failed. Fill in the fields manually.");
         return false;
       }
       applyAIFields(json as AIFields);
@@ -407,7 +407,7 @@ export default function AddItemPage() {
       if (imageToProcess) applyBgRemoval(imageToProcess);
       return true;
     } catch {
-      if (!productUrl) showNotice("err", "Analysis failed — fill in fields manually.");
+      if (!productUrl) showNotice("err", "Analysis failed. Fill in the fields manually.");
       return false;
     } finally {
       setAnalyzing(false);
@@ -449,7 +449,7 @@ export default function AddItemPage() {
         }),
       });
     } catch {
-      showNotice("err", "Couldn't reach the server — check your connection and try again.");
+      showNotice("err", "Couldn't reach the server. Check your connection and try again.");
       setAdding(false);
       return;
     }

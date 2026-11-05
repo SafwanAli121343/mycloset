@@ -61,12 +61,12 @@ export function jobFailureMessage(job: JobInfo): string {
     return "Your wardrobe analysis didn't find anything new to add. Nothing was used.";
   }
   return job.kind === "wardrobe"
-    ? "Your wardrobe analysis didn't finish. Nothing was used — you can try again."
-    : "That score didn't finish. Nothing was used — you can try again.";
+    ? "Your wardrobe analysis didn't finish. Nothing was used, so you can try again."
+    : "That score didn't finish. Nothing was used, so you can try again.";
 }
 
 export function startErrorMessage(e: unknown): string {
-  return e instanceof ApiError ? e.message : "Couldn't start the analysis. Nothing was used — please try again.";
+  return e instanceof ApiError ? e.message : "Couldn't start the analysis. Nothing was used. Please try again.";
 }
 
 export const ITEM_STAGES = [

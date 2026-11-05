@@ -66,7 +66,7 @@ function GamePageInner() {
     stopTimer();
     if (items.length === 0) {
       setFinalScore(null);
-      setScoreFactor("No items selected — outfit didn't count.");
+      setScoreFactor("No items selected, so the outfit didn't count.");
       setGameState("done");
       return;
     }
@@ -80,7 +80,7 @@ function GamePageInner() {
 
       if (!res.ok) {
         setFinalScore(null);
-        setScoreFactor("Could not calculate score — try again.");
+        setScoreFactor("Could not calculate score. Try again.");
         setGameState("done");
         return;
       }
@@ -89,7 +89,7 @@ function GamePageInner() {
         // Invalid outfit — did not count
         setFinalScore(null);
         const reason: string = data.reason ?? "missing required layers";
-        setScoreFactor(`Outfit invalid — ${reason}. Needs a top, bottom, and footwear.`);
+        setScoreFactor(`Outfit invalid: ${reason}. Needs a top, bottom, and footwear.`);
         setGameState("done");
         return;
       }
@@ -97,13 +97,13 @@ function GamePageInner() {
       const score: number = data.score ?? 0;
       setFinalScore(score);
       if (score >= 80) {
-        setScoreFactor("Excellent — strong pieces, cohesive aesthetic, great color harmony.");
+        setScoreFactor("Excellent: strong pieces, cohesive aesthetic, great color harmony.");
       } else if (score >= 65) {
-        setScoreFactor("Solid — good piece quality with minor clashes or formality gaps.");
+        setScoreFactor("Solid: good piece quality with minor clashes or formality gaps.");
       } else if (score >= 50) {
-        setScoreFactor("Decent — some color or aesthetic tension pulling the score down.");
+        setScoreFactor("Decent: some color or aesthetic tension pulling the score down.");
       } else {
-        setScoreFactor("Low score — color clashes, mismatched formality, or weak piece quality.");
+        setScoreFactor("Low score: color clashes, mismatched formality, or weak piece quality.");
       }
     } catch {
       setFinalScore(null);

@@ -76,7 +76,7 @@ export function consumeErrorMessage(reason: ConsumeResult["reason"]): string {
     return "AI analysis is turned off. Turn it on in Settings to use this.";
   }
   if (reason === "cap_reached") {
-    return "You've reached this month's AI usage limit for Pro. It resets in about a month — thanks for using the app so much!";
+    return "You've reached this month's AI usage limit for Pro. It resets in about a month. Thanks for using the app so much!";
   }
   return "You're out of AI credits. Upgrade to Pro or buy a one-time analysis to continue.";
 }

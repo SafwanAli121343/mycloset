@@ -716,7 +716,7 @@ export default function OutfitsPage() {
             <input type="range" min={0} max={100} step={5} value={filterMinScore}
               onChange={e=>setFilterMinScore(Number(e.target.value))} style={{flex:1,accentColor:"#000"}}/>
             <span style={{...FONT,fontSize:12,color:"#555",minWidth:24,textAlign:"right"}}>
-              {filterMinScore>0?filterMinScore:"—"}
+              {filterMinScore>0?filterMinScore:"-"}
             </span>
           </div>
         </div>
@@ -831,7 +831,7 @@ export default function OutfitsPage() {
 
       {shownOutfits.length === 0 && (
         <div className="center-lift" style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100dvh"}}>
-          <p style={{fontSize:10,letterSpacing:".14em",textTransform:"uppercase",color:"#bbb"}}>NO OUTFITS — ADD MORE ITEMS TO YOUR CLOSET</p>
+          <p style={{fontSize:10,letterSpacing:".14em",textTransform:"uppercase",color:"#bbb"}}>NO OUTFITS YET · ADD MORE ITEMS TO YOUR CLOSET</p>
         </div>
       )}
 

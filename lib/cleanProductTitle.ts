@@ -8,7 +8,7 @@
 import { COLOR_GROUPS, normalizeColorName } from "@/lib/constants/colors";
 
 const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ", ndash: "–", mdash: "—",
+  amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " ", ndash: "-", mdash: "-",
   rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', hellip: "…", trade: "", reg: "", copy: "",
   eacute: "é", egrave: "è", uuml: "ü", ouml: "ö", auml: "ä", ntilde: "ñ", ccedil: "ç",
 };

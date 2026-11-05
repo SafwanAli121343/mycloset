@@ -74,7 +74,7 @@ export const CONSUMABLE_PRODUCTS: ConsumableProduct[] = [
     name: "5 Item Analyses",
     priceUsd: 0.99,
     aiCredits: 5,
-    description: "AI score and analysis for five items — category, material, fit, and color pairings.",
+    description: "AI score and analysis for five items: category, material, fit, and color pairings.",
     productId: { ios: "mycloset_item_scan", android: "mycloset_item_scan" },
   },
   {

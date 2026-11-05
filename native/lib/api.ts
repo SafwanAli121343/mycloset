@@ -1,3 +1,4 @@
+import { noEmDash, noEmDashDeep } from "./noEmDash";
 import * as SecureStore from "expo-secure-store";
 import { API_BASE_URL } from "./config";
 
@@ -112,9 +113,11 @@ export async function apiJson<T>(path: string, options: RequestInit = {}): Promi
   const res = await apiFetch(path, options);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(body.error ?? `Request failed (${res.status})`, res.status);
+    throw new ApiError(noEmDash(body.error ?? `Request failed (${res.status})`), res.status);
   }
-  return res.json();
+  // Every string the server sends (stored pros/cons, AI answers, messages) is shown without em
+  // dashes, the app-wide text rule (lib/noEmDash.ts).
+  return noEmDashDeep(await res.json());
 }
 
 export class ApiError extends Error {

@@ -369,7 +369,7 @@ function SidePanel({ sections, side = "right", spacerHeight = "20vh" }: { sectio
 function freeSections(item: { color_primary?: string | null }, pairings: string[]): PanelSection[] {
   const colorMatches = item.color_primary ? describeColorPairing(item.color_primary) : [];
   return [
-    { label: "PAIRS WITH", items: pairings, color: "#555", emptyText: "nothing in your wardrobe pairs well with this yet — add more items" },
+    { label: "PAIRS WITH", items: pairings, color: "#555", emptyText: "nothing in your wardrobe pairs well with this yet, so add more items" },
     ...(colorMatches.length ? [{ label: "COLORS", items: [colorMatches.join(" · ")], color: "#555" }] : []),
   ];
 }
@@ -636,7 +636,7 @@ export default function ClosetPage() {
       await followJob(job.id, garmentId);
     } catch (e) {
       setScoringId(null);
-      setRemoveError(e instanceof Error ? e.message : "Couldn't start the analysis. Nothing was used — please try again.");
+      setRemoveError(e instanceof Error ? e.message : "Couldn't start the analysis. Nothing was used. Please try again.");
       fetchJobs().then(setJobs).catch(() => {});
     }
   }
@@ -671,11 +671,11 @@ export default function ClosetPage() {
     try {
       res = await fetch(`/api/garments?id=${id}`, { method: "DELETE" });
     } catch {
-      setRemoveError("Couldn't reach the server — check your connection and try again.");
+      setRemoveError("Couldn't reach the server. Check your connection and try again.");
       return;
     }
     if (!res.ok) {
-      setRemoveError("Couldn't remove that item — try again.");
+      setRemoveError("Couldn't remove that item. Try again.");
       return;
     }
     const data = await res.json().catch(() => ({}) as Record<string, unknown>);
@@ -893,7 +893,7 @@ export default function ClosetPage() {
                     fontSize: 22, fontWeight: 700, margin: "2px 0 0",
                     color: scoreColor(shownScores[item.id]),
                   }}>
-                    {shownScores[item.id] != null ? shownScores[item.id] : "—"}
+                    {shownScores[item.id] != null ? shownScores[item.id] : "-"}
                   </p>
                 )}
                 {scoreButton}
@@ -902,7 +902,7 @@ export default function ClosetPage() {
               <MobileScrollFade padding={`4px 24px calc(20px + ${TAB_BAR_H}px + var(--safe-bottom))`}>
                 {(!hasAI && !item.ai_unlocked ? freeSections(item, pairingsForItem) : [
                   { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
-                  { label: "PAIRS WITH", items: pairingsForItem, color: "#555", emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet — add more items" },
+                  { label: "PAIRS WITH", items: pairingsForItem, color: "#555", emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet, so add more items" },
                   { label: "COLORS", items: item.color_pairings ?? [], color: "#555" },
                   { label: "CONS", items: item.cons ?? [], color: "#c00", emptyText: item.cons === null ? "analyzing…" : "no cons" },
                   { label: "AVOID", items: item.color_clashes ?? [], color: "#c00", emptyText: item.color_clashes === null ? "analyzing…" : "none" },
@@ -939,13 +939,13 @@ export default function ClosetPage() {
                   : !hasAI && !item.ai_unlocked
                   ? freeSections(item, pairingsForItem)
                   : [
-                      ...(hasAI || item.ai_unlocked ? [{ label: "SCORE", items: [shownScores[item.id] != null ? `${shownScores[item.id]} / 100` : "—"], color: "#111" }] : []),
+                      ...(hasAI || item.ai_unlocked ? [{ label: "SCORE", items: [shownScores[item.id] != null ? `${shownScores[item.id]} / 100` : "-"], color: "#111" }] : []),
                       { label: "PROS", items: item.pros ?? [], color: "#2e7d32", emptyText: item.pros === null ? "analyzing…" : "none" },
                       {
                         label: "PAIRS WITH",
                         items: pairingsForItem,
                         color: "#555",
-                        emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet — add more items",
+                        emptyText: item.pros === null ? "analyzing…" : "nothing in your wardrobe pairs well with this yet, so add more items",
                       },
                       { label: "COLORS", items: item.color_pairings ?? [], color: "#555" },
                     ]

@@ -1313,9 +1313,9 @@ async function callGenerate(year: number, month: number, lat?: number, lon?: num
     if (data.code === "INSUFFICIENT_WARDROBE") {
       return { ok: false, message: "Add a few more items to your wardrobe (at least one top, bottom, and pair of shoes) to generate outfits." };
     }
-    return { ok: false, message: typeof data.error === "string" ? data.error : "Couldn't generate outfits — try again." };
+    return { ok: false, message: typeof data.error === "string" ? data.error : "Couldn't generate outfits. Try again." };
   } catch {
-    return { ok: false, message: "Couldn't reach the server — check your connection and try again." };
+    return { ok: false, message: "Couldn't reach the server. Check your connection and try again." };
   }
 }
 
@@ -1934,7 +1934,7 @@ export default function OutfitsPage() {
             onClick={() => setShowLocInput(v => !v)}
             style={{ background: "none", border: "none", cursor: "pointer", fontSize: 8, letterSpacing: "0.08em", color: "#c8a800", ...FONT }}
           >
-            LOCATION UNAVAILABLE — SET MANUALLY
+            LOCATION UNAVAILABLE · SET MANUALLY
           </button>
         ) : null}
 

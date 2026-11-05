@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Cookie Policy — MYCLOSET",
+  title: "Cookie Policy | MYCLOSET",
 };
 
 const FONT = { fontFamily: "Arial, sans-serif" };
@@ -53,7 +53,7 @@ export default function CookiesPage() {
                 <tbody className="text-gray-700">
                   <tr className="border-b border-gray-100">
                     <td className="py-3 pr-4 font-mono">mycloset_session</td>
-                    <td className="py-3 pr-4">Keeps you logged in between pages. Contains a signed JWT that identifies your session. httpOnly, Secure, SameSite=Strict — not accessible to JavaScript.</td>
+                    <td className="py-3 pr-4">Keeps you logged in between pages. Contains a signed JWT that identifies your session. httpOnly, Secure, SameSite=Strict, and not accessible to JavaScript.</td>
                     <td className="py-3 pr-4">1 hour</td>
                     <td className="py-3">Strictly necessary</td>
                   </tr>
@@ -73,7 +73,7 @@ export default function CookiesPage() {
               3. What We Do Not Use
             </h2>
             <p className="text-sm leading-relaxed text-gray-700" style={FONT}>
-              We do not use: advertising or marketing cookies; cross-site tracking pixels; third-party analytics scripts (Google Analytics, Mixpanel, etc.); social media tracking buttons; or any persistent identifiers beyond the session and refresh tokens described above. Because we use only strictly necessary cookies, no cookie consent banner is shown — your use of the Service constitutes acknowledgment of this minimal essential use only.
+              We do not use: advertising or marketing cookies; cross-site tracking pixels; third-party analytics scripts (Google Analytics, Mixpanel, etc.); social media tracking buttons; or any persistent identifiers beyond the session and refresh tokens described above. Because we use only strictly necessary cookies, no cookie consent banner is shown. Your use of the Service constitutes acknowledgment of this minimal essential use only.
             </p>
           </section>
 

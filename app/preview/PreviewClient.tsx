@@ -350,7 +350,7 @@ export default function PreviewPage() {
       json=await res.json();
       if (!res.ok||json.error) { updateSlot(idx,{basicError:json.error??"Could not identify item."}); return; }
     } catch {
-      updateSlot(idx,{basicError:"Couldn't reach the server — check your connection and try again."});
+      updateSlot(idx,{basicError:"Couldn't reach the server. Check your connection and try again."});
       return;
     }
     const basic:BasicAttrs={...json,category:normalizeCategory(json?.category)};
@@ -373,7 +373,7 @@ export default function PreviewPage() {
       const deepRes=await fetch("/api/preview/deep-analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:confirmed.title,brand:confirmed.brand,category:confirmed.category,color_primary:confirmed.color_primary,material:confirmed.material,fit:confirmed.fit,image:img})});
       const deepJson=await deepRes.json();
       if (!deepRes.ok||deepJson.error) {
-        const msg=deepRes.status===401?"Session expired — please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
+        const msg=deepRes.status===401?"Session expired. Please go to the dashboard and log in again.":(deepJson.error??"Analysis failed.");
         updateSlot(idx,{deepError:msg,analysisStep:null}); return;
       }
       const deep:DeepAttrs=deepJson;
@@ -387,12 +387,12 @@ export default function PreviewPage() {
       const outfitRes=await fetch("/api/preview/outfit-count",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({garment:{title:confirmed.title,brand:confirmed.brand,category:confirmed.category,sub_type:deep.sub_type,material:confirmed.material,color_primary:confirmed.color_primary,formality:deep.formality,aesthetic_tags:deep.aesthetic_tags,pros:deep.pros,cons:deep.cons,color_pairings:deep.color_pairings,color_clashes:deep.color_clashes,image:confirmed.image}})});
       const outfitJson=await outfitRes.json();
       if (!outfitRes.ok||outfitJson.error) {
-        const msg=outfitRes.status===401?"Session expired — please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
+        const msg=outfitRes.status===401?"Session expired. Please go to the dashboard and log in again.":(outfitJson.error??"Outfit analysis failed.");
         updateSlot(idx,{deepError:msg,analysisStep:null}); return;
       }
       updateSlot(idx,{outfitData:outfitJson as OutfitCountResult,analysisStep:null});
     } catch {
-      updateSlot(idx,{deepError:"Couldn't reach the server — check your connection and try again.",analysisStep:null});
+      updateSlot(idx,{deepError:"Couldn't reach the server. Check your connection and try again.",analysisStep:null});
     }
   }
 
@@ -1132,7 +1132,7 @@ type RankLabel = "best"|"second"|"worst";
 const RANK_BADGE: Record<RankLabel,{badge:string;color:string}> = {
   best:   {badge:"★", color:"#1d9e52"},
   second: {badge:"•", color:"#f0b429"},
-  worst:  {badge:"—", color:"#c83030"},
+  worst:  {badge:"-", color:"#c83030"},
 };
 // Layout constants for the 5-column compare view. Responsive via CSS min() rather than a
 // fixed 230px — three 230px-wide flexShrink:0 columns (690px+) would force horizontal

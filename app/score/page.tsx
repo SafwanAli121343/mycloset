@@ -80,7 +80,7 @@ function ScorePageInner() {
             WARDROBE SCORE
           </p>
           <div className="flex items-baseline gap-2">
-            <span className="text-8xl font-bold text-black leading-none">{data.wardrobeScore ?? "—"}</span>
+            <span className="text-8xl font-bold text-black leading-none">{data.wardrobeScore ?? "-"}</span>
             <span className="text-2xl text-gray-400 font-bold">/ 100</span>
           </div>
           <p className="mt-3 text-xs uppercase tracking-widest text-gray-400" style={FONT}>

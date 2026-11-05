@@ -451,10 +451,10 @@ export function computeItemImpact(
     .slice(0, 3);
 
   let verdict: string;
-  if (delta >= 5) verdict = `Strong addition — lifts wardrobe score by ${delta} points.`;
-  else if (delta >= 2) verdict = `Solid pick — adds ${delta} points and expands wardrobe versatility.`;
-  else if (delta >= 0) verdict = `Neutral addition — minimal score impact but adds variety.`;
-  else verdict = `Diminishing returns — this slot is already well-covered; score dips ${Math.abs(delta)} pts.`;
+  if (delta >= 5) verdict = `Strong addition: lifts wardrobe score by ${delta} points.`;
+  else if (delta >= 2) verdict = `Solid pick: adds ${delta} points and expands wardrobe versatility.`;
+  else if (delta >= 0) verdict = `Neutral addition: minimal score impact but adds variety.`;
+  else verdict = `Diminishing returns: this slot is already well-covered; score dips ${Math.abs(delta)} pts.`;
 
   if (addsAesthetics.length) verdict += ` Brings ${addsAesthetics.join(", ")} aesthetic previously missing.`;
   if (redundantWith.length >= 2 && delta < 2) verdict += ` Overlaps significantly with: ${redundantWith.slice(0, 2).join(", ")}.`;
