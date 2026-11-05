@@ -3,21 +3,28 @@ import { colors } from "../theme/theme";
 
 // The app's own confirm card — same look as the first-run "TUTORIAL?" card (TutorialOverlay):
 // dimmed backdrop, centered white card, bold spaced title, muted body, two text buttons
-// (cancel left, action right). Used instead of the system Alert for in-app confirmations.
+// (cancel left, action right). Used instead of the system Alert everywhere in the app — for
+// confirmations, and (with secondaryLabel) for a choice between two actions, like Add Photo.
 export function ConfirmDialog({
   visible, title, body, confirmLabel, confirmColor = colors.text, cancelLabel = "CANCEL", onConfirm, onCancel,
+  secondaryLabel, onSecondary,
 }: {
   visible: boolean; title: string; body?: string; confirmLabel: string; confirmColor?: string;
   cancelLabel?: string; onConfirm: () => void; onCancel: () => void;
+  secondaryLabel?: string; onSecondary?: () => void;
 }) {
+  const three = !!secondaryLabel && !!onSecondary;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <TouchableOpacity style={styles.dim} activeOpacity={1} onPress={onCancel}>
         <TouchableOpacity style={styles.card} activeOpacity={1}>
           <Text style={styles.title}>{title}</Text>
           {!!body && <Text style={styles.body}>{body}</Text>}
-          <View style={styles.row}>
+          <View style={[styles.row, three && { gap: 22 }]}>
             <TouchableOpacity onPress={onCancel} hitSlop={12}><Text style={[styles.btn, { color: colors.textFaint }]}>{cancelLabel}</Text></TouchableOpacity>
+            {three && (
+              <TouchableOpacity onPress={onSecondary} hitSlop={12}><Text style={[styles.btn, { color: colors.text }]}>{secondaryLabel}</Text></TouchableOpacity>
+            )}
             <TouchableOpacity onPress={onConfirm} hitSlop={12}><Text style={[styles.btn, { color: confirmColor }]}>{confirmLabel}</Text></TouchableOpacity>
           </View>
         </TouchableOpacity>

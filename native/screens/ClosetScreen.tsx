@@ -1,8 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import {
-  View, Text, Animated, Easing, StyleSheet, TouchableOpacity, Alert,
-  PanResponder, Dimensions, type PanResponderGestureState,
-} from "react-native";
+import { View, Text, Animated, Easing, StyleSheet, TouchableOpacity, PanResponder, Dimensions, type PanResponderGestureState } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -12,6 +9,7 @@ import { getCached, subscribeCached } from "../lib/dataCache";
 import { FocusScrollList, type FocusItem } from "../components/FocusScrollList";
 import { ScreenCenter } from "../components/ScreenCenter";
 import { ReadyGate } from "../components/ReadyGate";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TextButton } from "../components/TextButton";
 import { UnderlineField } from "../components/UnderlineField";
 import { useStatusMessage, StatusMessage } from "../components/StatusMessage";
@@ -552,13 +550,11 @@ export default function ClosetScreen() {
     })
   ).current;
 
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
   function confirmRemove() {
     const item = garments[index];
     if (!item) return;
-    Alert.alert("Remove item?", `${item.brand ?? item.title} will be removed from your closet.`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: () => removeItem(item.id) },
-    ]);
+    setRemoveTarget({ id: item.id, name: item.brand ?? item.title });
   }
 
   async function removeItem(id: string) {
@@ -715,6 +711,15 @@ export default function ClosetScreen() {
         <TextButton label="EDIT" size={10} color={colors.textFaint} onPress={openEdit} />
         <TextButton label="REMOVE ITEM" size={10} color={colors.textFaint} onPress={confirmRemove} />
       </View>
+      <ConfirmDialog
+        visible={!!removeTarget}
+        title="REMOVE ITEM?"
+        body={removeTarget ? `${removeTarget.name} will be removed from your closet.` : undefined}
+        confirmLabel="REMOVE"
+        confirmColor={colors.bad}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={() => { const t = removeTarget; setRemoveTarget(null); if (t) removeItem(t.id); }}
+      />
 
       <View style={{ minHeight: 16, justifyContent: "center", marginTop: spacing.xs }}>
         <StatusMessage status={status} style={{ fontSize: 11 }} />

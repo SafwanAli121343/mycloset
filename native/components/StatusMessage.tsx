@@ -6,9 +6,8 @@ export type Status = { text: string; kind: "good" | "bad" } | null;
 
 // Replaces native Alert.alert() for pure notifications (success/failure confirmations that just
 // need to be seen, not decided on) — a real iOS/Android system alert is a jarring, modal
-// interruption for something as routine as "item added." Genuine yes/no confirmations (delete
-// account, sign out, remove item) still use Alert.alert on purpose: those need a real blocking
-// choice, which a self-dismissing message can't provide.
+// interruption for something as routine as "item added." Yes/no choices (delete account, sign
+// out, remove item, add photo) use the app's own ConfirmDialog — the app avoids system alerts.
 //
 // A generation counter (not just clearing/resetting a timeout) guards against a slow-arriving
 // message extending or cutting short a newer one that already showed — e.g. two rapid taps each

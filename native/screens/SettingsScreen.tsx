@@ -1,6 +1,6 @@
 import { NAV_ROW_TOP, NAV_ROW_H } from "../components/ShowNavButton";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ScrollView, Share, Linking, Platform } from "react-native";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Share, Linking, Platform } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -194,16 +194,8 @@ export default function SettingsScreen() {
     }
   }
 
-  function confirmDelete() {
-    Alert.alert(
-      "Delete account?",
-      "This permanently deletes your account, closet, and all saved outfits. This can't be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: doDelete },
-      ]
-    );
-  }
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  function confirmDelete() { setDeleteOpen(true); }
 
   async function doDelete() {
     setDeleting(true);
@@ -431,11 +423,22 @@ export default function SettingsScreen() {
       <ConfirmDialog
         visible={signOutOpen}
         title="SIGN OUT?"
-        body={isGuest ? "You're using a guest account. Signing out deletes access to this closet for good. Create an account first to keep it." : undefined}
+        body={isGuest
+          ? `You're using a guest account. Signing out deletes access to this closet${(entitlements.itemScans ?? 0) > 0 || (entitlements.wardrobeScans ?? 0) > 0 ? " and your unused analyses" : ""} for good. Create an account first to keep ${(entitlements.itemScans ?? 0) > 0 || (entitlements.wardrobeScans ?? 0) > 0 ? "them" : "it"}.`
+          : undefined}
         confirmLabel="SIGN OUT"
         confirmColor={colors.bad}
         onCancel={() => setSignOutOpen(false)}
         onConfirm={() => { setSignOutOpen(false); signOut(); }}
+      />
+      <ConfirmDialog
+        visible={deleteOpen}
+        title="DELETE ACCOUNT?"
+        body="This permanently deletes your account, closet, and all saved outfits. This can't be undone."
+        confirmLabel="DELETE"
+        confirmColor={colors.bad}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => { setDeleteOpen(false); doDelete(); }}
       />
     </SafeAreaView>
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo, type ReactNode } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Animated, Easing, Dimensions, ScrollView, unstable_batchedUpdates } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Animated, Easing, Dimensions, ScrollView, unstable_batchedUpdates } from "react-native";
 // Reanimated, for JUST the two/three-piece preview's position animation (see pieceXShared's own
 // comment for why: every variation of the classic Animated API tried for this — native-driver
 // transform, JS-driven transform, JS-driven layout properties — updated the JS-side value
@@ -17,6 +17,7 @@ import * as ImagePicker from "expo-image-picker";
 import { apiJson, apiFetch, apiJsonCached, ApiError } from "../lib/api";
 import { setNavigationBlock } from "../lib/navigationBlock";
 import { useNavBarVisibility, useSuppressNavButton } from "../lib/NavBarVisibility";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TextButton } from "../components/TextButton";
 import { UnderlineField } from "../components/UnderlineField";
 import { LoadingDots } from "../components/LoadingDots";
@@ -1514,12 +1515,15 @@ export default function PreviewScreen() {
     updateSlot(i, { image: `data:${mime};base64,${result.assets[0].base64}` });
   }
 
-  function openPhotoPicker(i: number) {
-    Alert.alert("Add Photo", undefined, [
-      { text: "Take Photo", onPress: () => pickPhoto(i, true) },
-      { text: "Choose from Library", onPress: () => pickPhoto(i, false) },
-      { text: "Cancel", style: "cancel" },
-    ]);
+  // Which slot the ADD PHOTO dialog is choosing a photo for (null = closed).
+  const [photoPickerSlot, setPhotoPickerSlot] = useState<number | null>(null);
+  function openPhotoPicker(i: number) { setPhotoPickerSlot(i); }
+  // The dialog is a Modal, and iOS can't present the camera/library while another Modal is still
+  // on screen, so close it first and open the picker once its fade-out is done.
+  function choosePhoto(fromCamera: boolean) {
+    const i = photoPickerSlot;
+    setPhotoPickerSlot(null);
+    if (i !== null) setTimeout(() => { pickPhoto(i, fromCamera); }, 350);
   }
 
   const active = slots.some(s => (s.mode === "photo" && s.image) || (s.mode === "url" && s.url.trim()));
@@ -2228,6 +2232,15 @@ export default function PreviewScreen() {
         onClose={closeGallerySpread}
       />
     )}
+    <ConfirmDialog
+      visible={photoPickerSlot !== null}
+      title="ADD PHOTO"
+      confirmLabel="CAMERA"
+      secondaryLabel="LIBRARY"
+      onSecondary={() => choosePhoto(false)}
+      onConfirm={() => choosePhoto(true)}
+      onCancel={() => setPhotoPickerSlot(null)}
+    />
     </>
   );
 }
