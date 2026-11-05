@@ -45,6 +45,10 @@ export async function analyzeCalendarOutfits(
   user: User,
   filter: { ids?: string[]; dates?: string[]; from?: string; to?: string },
   deadline = Date.now() + 100_000,
+  // Also wait (until the deadline) for matching outfits another request is already analyzing,
+  // e.g. the Pro catch-up right after upgrading. Without this, a caller that wants the answer now
+  // (analyze-pending) got back "0 done" instantly while that work was still running.
+  opts: { waitForOthers?: boolean } = {},
 ): Promise<number> {
   if (!resolveEntitlement(user).hasAI) return 0;
   const mine: string[] = [];
@@ -56,7 +60,9 @@ export async function analyzeCalendarOutfits(
     if (filter.to) q = q.lte("date", filter.to);
     const { data, error } = await q;
     if (error) return 0;
-    const queue = ((data ?? []) as unknown as Row[]).filter(o => !hasCalendarAnalysis(o.notes) && !inProgress.has(o.id));
+    const missing = ((data ?? []) as unknown as Row[]).filter(o => !hasCalendarAnalysis(o.notes));
+    const busyElsewhere = missing.filter(o => inProgress.has(o.id)).map(o => o.id);
+    const queue = missing.filter(o => !inProgress.has(o.id));
     for (const o of queue) { inProgress.add(o.id); mine.push(o.id); }
     let done = 0;
     let stop = false;
@@ -89,6 +95,11 @@ export async function analyzeCalendarOutfits(
       }
     };
     await Promise.all(Array.from({ length: PARALLEL }, worker));
+    if (opts.waitForOthers) {
+      while (!stop && Date.now() < deadline && busyElsewhere.some(id => inProgress.has(id))) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
     return done;
   } finally {
     for (const id of mine) inProgress.delete(id);

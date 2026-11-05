@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
     user,
     { from: `${year}-${mm}-01`, to: `${year}-${mm}-${String(last).padStart(2, "0")}` },
     Date.now() + 45_000,
+    { waitForOthers: true },
   );
   return NextResponse.json({ done });
 }

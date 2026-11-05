@@ -481,18 +481,20 @@ function DayOutfit({ notes, garments, chromeOpacity, onBoxMeasured, piecesHidden
         {accs.length > 0 && (
           <TextButton label="SHOW ACCESSORIES" size={10} color={colors.textMuted} onPress={() => setShowAccs(true)} style={{ marginTop: spacing.sm }} />
         )}
-        {hasAI && !loading && !notes.analyzed && (analysisUnavailable ? (
-          <Text style={[type.body, { color: colors.textFaint, marginTop: spacing.md }]}>Analysis isn't available right now.</Text>
-        ) : (
-          <View style={{ height: 195, width: "100%", marginTop: spacing.md, alignItems: "center", justifyContent: "center" }}>
-            <LoadingDots />
-          </View>
-        ))}
-        {focusItems.length > 0 && (
-          <View style={{ height: 195, width: "100%", marginTop: spacing.md }}>
-            <FocusScrollList items={focusItems} focal={0.5} />
-          </View>
-        )}
+        {/* One fixed 195pt slot, whatever state the analysis is in, so SHOW ACCESSORIES and the
+           grid above never move. (Waiting used to show the dots AND the aesthetic-only list
+           stacked, too tall for the space, which pushed this whole block up over the grid.) */}
+        <View style={{ height: 195, width: "100%", marginTop: spacing.md, alignItems: "center", justifyContent: "center" }}>
+          {loading ? null : !notes.analyzed ? (
+            analysisUnavailable
+              ? <Text style={[type.body, { color: colors.textFaint }]}>Analysis isn't available right now.</Text>
+              : <LoadingDots />
+          ) : focusItems.length > 0 ? (
+            <View style={{ width: "100%", height: "100%" }}>
+              <FocusScrollList items={focusItems} focal={0.5} />
+            </View>
+          ) : null}
+        </View>
       </Animated.View>
 
       {accessoriesModal}
@@ -1344,12 +1346,20 @@ export default function CalendarScreen() {
   const analysisPollsRef = useRef<Record<string, number>>({});
   const [analysisPollTick, setAnalysisPollTick] = useState(0);
   const [analysisGaveUp, setAnalysisGaveUp] = useState<Set<string>>(() => new Set());
-  const analysisPending = hasAI && monthDates.some(d => {
+  const analysisWaiting = hasAI ? monthDates.filter(d => {
     const o = outfits[d];
     return !!o && o.garments.length > 0 && !parseNotes(o.notes ?? null).analyzed;
-  });
+  }).length : 0;
+  const analysisPending = analysisWaiting > 0;
+  // The 8 tries count only checks where nothing new got analyzed: a big month after upgrading
+  // can take a few rounds, and giving up while it's still making progress showed "isn't
+  // available" for analysis that was about to land.
+  const analysisLastWaitingRef = useRef<Record<string, number>>({});
   useEffect(() => {
     if (!analysisPending || generating || analysisGaveUp.has(monthKey)) return;
+    const prevWaiting = analysisLastWaitingRef.current[monthKey];
+    if (prevWaiting !== undefined && analysisWaiting < prevWaiting) analysisPollsRef.current[monthKey] = 0;
+    analysisLastWaitingRef.current[monthKey] = analysisWaiting;
     const n = analysisPollsRef.current[monthKey] ?? 0;
     if (n >= 8) { setAnalysisGaveUp(prev => new Set(prev).add(monthKey)); return; }
     // Asks the server to analyze this month's waiting outfits now and waits for it (a few
