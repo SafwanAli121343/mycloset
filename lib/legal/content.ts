@@ -76,7 +76,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   },
   {
     heading: "17. Apple App Store: Additional Terms",
-    body: "These Terms are entered into between you and MYCLOSET only, not with Apple Inc. Apple is not responsible for the Service and has no obligation to furnish any maintenance or support services for it. Apple has no warranty obligations with respect to the Service, except to refund any applicable purchase price to you. Apple is not responsible for addressing any claims by you or a third party relating to the Service. If there is a claim that the Service infringes a third party's intellectual property, Apple is not responsible for the investigation or settlement of such claim. Apple and Apple's subsidiaries are third-party beneficiaries of these Terms and may enforce these Terms against you. Our EULA is available at mycloset.app/eula.",
+    body: "These Terms are entered into between you and MYCLOSET only, not with Apple Inc. Apple is not responsible for the Service and has no obligation to furnish any maintenance or support services for it. Apple has no warranty obligations with respect to the Service, except to refund any applicable purchase price to you. Apple is not responsible for addressing any claims by you or a third party relating to the Service. If there is a claim that the Service infringes a third party's intellectual property, Apple is not responsible for the investigation or settlement of such claim. Apple and Apple's subsidiaries are third-party beneficiaries of these Terms and may enforce these Terms against you. Our EULA is available at https://mycloset-production-a2c2.up.railway.app/eula.",
   },
   { heading: "18. Contact", body: "Questions about these Terms? Email alizsafwan@outlook.com." },
 ];
