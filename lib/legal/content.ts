@@ -7,7 +7,7 @@
 export type LegalSection = { heading: string; body: string };
 export type LegalDoc = { title: string; lastUpdated: string; sections: LegalSection[] };
 
-const LAST_UPDATED = "October 2, 2026";
+const LAST_UPDATED = "November 5, 2026";
 
 export const TERMS_SECTIONS: LegalSection[] = [
   {
@@ -68,7 +68,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   },
   {
     heading: "15. Governing Law and Dispute Resolution",
-    body: "These Terms are governed by the laws of the State of Texas, USA, without regard to conflict-of-law principles. Any dispute arising under these Terms shall be resolved by binding arbitration administered under the American Arbitration Association rules (except for claims eligible for small claims court). Class action and class arbitration waiver: you waive any right to bring or participate in a class action lawsuit or class-wide arbitration. Some jurisdictions do not allow mandatory arbitration or class action waivers; if you reside in such a jurisdiction, the local law controls to the extent it conflicts with this section.",
+    body: "These Terms are governed by the laws of the State of California, USA, without regard to conflict-of-law principles. Any dispute arising under these Terms shall be resolved by binding arbitration administered under the American Arbitration Association rules (except for claims eligible for small claims court). Class action and class arbitration waiver: you waive any right to bring or participate in a class action lawsuit or class-wide arbitration. Some jurisdictions do not allow mandatory arbitration or class action waivers; if you reside in such a jurisdiction, the local law controls to the extent it conflicts with this section.",
   },
   {
     heading: "16. Changes to These Terms",
@@ -177,7 +177,7 @@ export const EULA_SECTIONS: LegalSection[] = [
     heading: "11. Termination",
     body: "This EULA is effective until terminated. Your rights under this EULA will terminate automatically without notice from MYCLOSET if you fail to comply with any term of this EULA. Upon termination of this EULA, you shall cease all use of the App and destroy all copies of the App in your possession.",
   },
-  { heading: "12. Governing Law", body: "This EULA is governed by the laws of the State of Texas, USA, without regard to conflict-of-law principles." },
+  { heading: "12. Governing Law", body: "This EULA is governed by the laws of the State of California, USA, without regard to conflict-of-law principles." },
   { heading: "13. Contact", body: "Questions about this EULA? Contact us at alizsafwan@outlook.com." },
 ];
 
